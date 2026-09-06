@@ -9,6 +9,7 @@ import registrySnapshot from './settings-registry.json';
 
 type SettingsRegistryGateField = {
   scope: string;
+  perSurface?: boolean;
   computed?: boolean;
   local?: boolean;
   owner?: string;

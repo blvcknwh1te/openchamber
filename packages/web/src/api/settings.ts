@@ -1,5 +1,6 @@
 import type { SettingsAPI, SettingsLoadResult, SettingsPayload } from '@openchamber/ui/lib/api/types';
 import { runtimeFetch } from '@openchamber/ui/lib/runtime-fetch';
+import { SETTINGS_SURFACE_HEADER, getSettingsSurface } from '@openchamber/ui/lib/settings/surface';
 
 const SETTINGS_ENDPOINT = '/api/config/settings';
 const RELOAD_ENDPOINT = '/api/config/reload';
@@ -13,7 +14,8 @@ export const createWebSettingsAPI = (): SettingsAPI => ({
   async load(): Promise<SettingsLoadResult> {
     const response = await runtimeFetch(SETTINGS_ENDPOINT, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      // The server resolves per-surface profile fields for this surface kind.
+      headers: { Accept: 'application/json', [SETTINGS_SURFACE_HEADER]: getSettingsSurface() },
     });
 
     if (!response.ok) {
@@ -33,6 +35,7 @@ export const createWebSettingsAPI = (): SettingsAPI => ({
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        [SETTINGS_SURFACE_HEADER]: getSettingsSurface(),
       },
       body: JSON.stringify(changes),
     });

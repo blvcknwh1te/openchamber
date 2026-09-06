@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildPreferencesFields,
   flattenPreferences,
+  isPerSurfaceSettingsKey,
   instancePartOf,
   isDeviceSettingsKey,
   isProfileSettingsKey,
@@ -116,5 +117,56 @@ describe('round trip', () => {
     const parsed = parsePreferencesDocument(text);
     assert.deepEqual(parsed, { ok: true, fields });
     assert.deepEqual(flattenPreferences(fields), { themeId: 'nord', defaultModel: 'zen/gpt-5' });
+  });
+});
+
+describe('per-surface keys', () => {
+  const perSurfaceKey = Object.keys(SETTINGS_REGISTRY_FIELDS).find((key) => SETTINGS_REGISTRY_FIELDS[key].perSurface === true);
+  const plainProfileKey = Object.keys(SETTINGS_REGISTRY_FIELDS).find(
+    (key) => SETTINGS_REGISTRY_FIELDS[key].scope === 'profile' && SETTINGS_REGISTRY_FIELDS[key].perSurface !== true,
+  );
+
+  test('the snapshot names at least one per-surface profile key', () => {
+    assert.ok(perSurfaceKey && isPerSurfaceSettingsKey(perSurfaceKey));
+    assert.ok(plainProfileKey && !isPerSurfaceSettingsKey(plainProfileKey));
+  });
+
+  test('a surface write lands under the surface and leaves the base as it was', () => {
+    assert.ok(perSurfaceKey && plainProfileKey);
+    const previous = { [perSurfaceKey]: { value: 'base', updatedAt: 1 } };
+    const next = buildPreferencesFields(previous, { [perSurfaceKey]: 'mine', [plainProfileKey]: 'shared' }, 5, {
+      surface: 'vscode',
+      changedKeys: [perSurfaceKey, plainProfileKey],
+    });
+    assert.deepEqual(next[perSurfaceKey], { value: 'base', updatedAt: 1, surfaces: { vscode: { value: 'mine', updatedAt: 5 } } });
+    assert.deepEqual(next[plainProfileKey], { value: 'shared', updatedAt: 5 });
+    assert.equal(flattenPreferences(next, 'vscode')[perSurfaceKey], 'mine');
+    assert.equal(flattenPreferences(next, 'mobile')[perSurfaceKey], 'base');
+    assert.equal(flattenPreferences(next)[perSurfaceKey], 'base');
+  });
+
+  test('a per-surface key the write did not change keeps its whole entry', () => {
+    assert.ok(perSurfaceKey && plainProfileKey);
+    const previous = { [perSurfaceKey]: { value: 'base', updatedAt: 1, surfaces: { mobile: { value: 'phone', updatedAt: 2 } } } };
+    const next = buildPreferencesFields(previous, { [perSurfaceKey]: 'base', [plainProfileKey]: 'x' }, 9, {
+      surface: 'vscode',
+      changedKeys: [plainProfileKey],
+    });
+    assert.deepEqual(next[perSurfaceKey], previous[perSurfaceKey]);
+  });
+
+  test('a per-surface key first set from one surface has no base', () => {
+    assert.ok(perSurfaceKey);
+    const next = buildPreferencesFields({}, { [perSurfaceKey]: 'mine' }, 3, { surface: 'vscode', changedKeys: [perSurfaceKey] });
+    assert.equal('value' in next[perSurfaceKey], false);
+    assert.deepEqual(next[perSurfaceKey].surfaces, { vscode: { value: 'mine', updatedAt: 3 } });
+    const parsed = parsePreferencesDocument(serializePreferencesDocument(next));
+    assert.ok(parsed.ok);
+    assert.equal(flattenPreferences(parsed.fields, 'mobile')[perSurfaceKey], undefined);
+  });
+
+  test('rejects an unknown surface in the file', () => {
+    const result = parsePreferencesDocument(JSON.stringify({ version: 1, fields: { x: { surfaces: { toaster: { value: 1 } } } } }));
+    assert.equal(result.ok, false);
   });
 });

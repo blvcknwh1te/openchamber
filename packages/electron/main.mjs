@@ -588,9 +588,17 @@ const readPreferencesValues = () => {
   const fields = root && typeof root === 'object' && root.version === 1 && root.fields && typeof root.fields === 'object'
     ? root.fields
     : {};
+  // Per-surface keys (theme mode among them) are resolved for the desktop
+  // shell: its own value first, the base value otherwise.
   const values = {};
   for (const [key, entry] of Object.entries(fields)) {
-    if (entry && typeof entry === 'object' && 'value' in entry) values[key] = entry.value;
+    if (!entry || typeof entry !== 'object') continue;
+    const own = entry.surfaces && typeof entry.surfaces === 'object' ? entry.surfaces.desktop : undefined;
+    if (own && typeof own === 'object' && 'value' in own) {
+      values[key] = own.value;
+    } else if ('value' in entry) {
+      values[key] = entry.value;
+    }
   }
   return values;
 };

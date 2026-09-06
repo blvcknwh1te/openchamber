@@ -16,8 +16,18 @@ import { SETTINGS_REGISTRY_FIELDS } from './settings-registry-gate';
 const PREFERENCES_FILE_NAME = 'preferences.json';
 const PREFERENCES_DOCUMENT_VERSION = 1;
 
+type SettingsSurface = 'web' | 'desktop' | 'vscode' | 'mobile';
+const SETTINGS_SURFACES: readonly SettingsSurface[] = ['web', 'desktop', 'vscode', 'mobile'];
+// SAFETY: widening the tuple to `readonly string[]` only for the membership test; the guard's result is what narrows.
+const isSettingsSurface = (value: string): value is SettingsSurface => (SETTINGS_SURFACES as readonly string[]).includes(value);
+
+/** The extension host is always the VS Code surface kind. */
+export const VSCODE_SETTINGS_SURFACE: SettingsSurface = 'vscode';
+
 // Boundary parser: values are whatever JSON the file (or the webview) carries.
-type PreferenceField = { value: unknown; updatedAt: number };
+type SurfaceValue = { value: unknown; updatedAt: number };
+// The base value is optional: a per-surface key first set from one surface kind has none.
+type PreferenceField = { value?: unknown; updatedAt: number; surfaces?: Partial<Record<SettingsSurface, SurfaceValue>> };
 export type PreferenceFields = Record<string, PreferenceField>;
 
 type ParsedPreferencesDocument =
@@ -30,12 +40,17 @@ const getSettingsScope = (key: string): string | null =>
 
 export const isProfileSettingsKey = (key: string): boolean => getSettingsScope(key) === 'profile';
 export const isDeviceSettingsKey = (key: string): boolean => getSettingsScope(key) === 'device';
+/** Profile keys the owner chose to store per surface kind. */
+export const isPerSurfaceSettingsKey = (key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(SETTINGS_REGISTRY_FIELDS, key) && SETTINGS_REGISTRY_FIELDS[key].perSurface === true;
 
 export const preferencesFilePathFor = (settingsFilePath: string): string =>
   path.join(path.dirname(settingsFilePath), PREFERENCES_FILE_NAME);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const parseStamp = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
 const sameValue = (left: unknown, right: unknown): boolean => {
   if (left === right) return true;
@@ -60,11 +75,22 @@ export const parsePreferencesDocument = (raw: string): ParsedPreferencesDocument
   }
   const fields: PreferenceFields = {};
   for (const [key, entry] of Object.entries(parsed.fields)) {
-    if (!isPlainObject(entry) || !('value' in entry)) {
+    if (!isPlainObject(entry) || (!('value' in entry) && !isPlainObject(entry.surfaces))) {
       return { ok: false, reason: `field "${key}" is not a { value, updatedAt } entry` };
     }
-    const updatedAt = typeof entry.updatedAt === 'number' && Number.isFinite(entry.updatedAt) ? entry.updatedAt : 0;
-    fields[key] = { value: entry.value, updatedAt };
+    const next: PreferenceField = { updatedAt: parseStamp(entry.updatedAt) };
+    if ('value' in entry) next.value = entry.value;
+    if (isPlainObject(entry.surfaces)) {
+      const surfaces: Partial<Record<SettingsSurface, SurfaceValue>> = {};
+      for (const [surface, surfaceEntry] of Object.entries(entry.surfaces)) {
+        if (!isSettingsSurface(surface) || !isPlainObject(surfaceEntry) || !('value' in surfaceEntry)) {
+          return { ok: false, reason: `field "${key}" has an invalid surface entry "${surface}"` };
+        }
+        surfaces[surface] = { value: surfaceEntry.value, updatedAt: parseStamp(surfaceEntry.updatedAt) };
+      }
+      next.surfaces = surfaces;
+    }
+    fields[key] = next;
   }
   return { ok: true, fields };
 };
@@ -72,11 +98,20 @@ export const parsePreferencesDocument = (raw: string): ParsedPreferencesDocument
 export const serializePreferencesDocument = (fields: PreferenceFields): string =>
   JSON.stringify({ version: PREFERENCES_DOCUMENT_VERSION, fields }, null, 2);
 
-/** The plain key → value view of preference fields. */
-export const flattenPreferences = (fields: PreferenceFields): Record<string, unknown> => {
+/**
+ * The plain key → value view of preference fields as one surface kind sees it:
+ * that surface's own value first, the base value otherwise; a key with neither
+ * is absent (the webview keeps what it holds, or its default).
+ */
+export const flattenPreferences = (fields: PreferenceFields, surface: SettingsSurface | null = null): Record<string, unknown> => {
   const values: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(fields)) {
-    values[key] = entry.value;
+    const own = surface ? entry.surfaces?.[surface] : undefined;
+    if (own) {
+      values[key] = own.value;
+    } else if ('value' in entry) {
+      values[key] = entry.value;
+    }
   }
   return values;
 };
@@ -91,14 +126,35 @@ export const buildPreferencesFields = (
   previousFields: PreferenceFields,
   document: Record<string, unknown>,
   now: number,
+  options: { surface?: SettingsSurface | null; changedKeys?: Iterable<string> | null } = {},
 ): PreferenceFields => {
+  const surface = options.surface ?? null;
+  const changed = options.changedKeys ? new Set(options.changedKeys) : null;
   const fields: PreferenceFields = {};
   for (const [key, value] of Object.entries(document)) {
     if (value === undefined || !isProfileSettingsKey(key)) continue;
     const previous = previousFields[key];
-    fields[key] = previous && sameValue(previous.value, value)
-      ? previous
-      : { value, updatedAt: now };
+    // Per-surface keys: a surface's write lands under its own entry and leaves
+    // the base as it was; a key the write did not change keeps its whole entry
+    // (the document only carries this surface's resolved view of it).
+    if (surface && isPerSurfaceSettingsKey(key)) {
+      if (changed && !changed.has(key)) {
+        if (previous) fields[key] = previous;
+        continue;
+      }
+      const previousOwn = previous?.surfaces?.[surface];
+      const own: SurfaceValue = previousOwn && sameValue(previousOwn.value, value) ? previousOwn : { value, updatedAt: now };
+      fields[key] = {
+        ...(previous ?? { updatedAt: 0 }),
+        surfaces: { ...(previous?.surfaces ?? {}), [surface]: own },
+      };
+      continue;
+    }
+    if (previous && 'value' in previous && sameValue(previous.value, value)) {
+      fields[key] = previous;
+    } else {
+      fields[key] = { ...(previous ?? {}), value, updatedAt: now };
+    }
   }
   return fields;
 };

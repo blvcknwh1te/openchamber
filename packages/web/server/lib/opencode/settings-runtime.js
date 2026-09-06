@@ -5,6 +5,7 @@ import {
   instancePartOf,
   isDeviceSettingsKey,
   isProfileSettingsKey,
+  normalizeSettingsSurface,
   parsePreferencesDocument,
   preferencesFilePathFor,
   seedPreferencesFrom,
@@ -547,7 +548,7 @@ export const createSettingsRuntime = (deps) => {
   // that predates the split, the profile keys still sitting in settings.json
   // seed preferences.json (settings.json itself is left intact, so an older
   // build still finds everything where it used to be).
-  const readSettingsFromDisk = async () => {
+  const readSettingsFromDisk = async ({ surface = null } = {}) => {
     const instance = await readInstanceSettingsFromDisk();
     const preferences = await readPreferenceFields();
     if (preferences.status === 'failed') {
@@ -564,7 +565,7 @@ export const createSettingsRuntime = (deps) => {
       }
       return instance;
     }
-    return { ...instance, ...flattenPreferences(preferences.fields) };
+    return { ...instance, ...flattenPreferences(preferences.fields, normalizeSettingsSurface(surface)) };
   };
 
   // Strict variant for callers that REGENERATE persisted identity when a key is
@@ -670,7 +671,7 @@ export const createSettingsRuntime = (deps) => {
    * when their value changed), everything else to settings.json. While
    * preferences.json is unreadable its part is skipped rather than replaced.
    */
-  const writeSettingsToDisk = async (settings) => {
+  const writeSettingsToDisk = async (settings, { surface = null, changedKeys = null } = {}) => {
     await writeJsonFileAtomic(SETTINGS_FILE_PATH, JSON.stringify(instancePartOf(settings), null, 2));
     if (preferencesUnavailable) {
       return;
@@ -681,7 +682,10 @@ export const createSettingsRuntime = (deps) => {
       return;
     }
     const previousFields = current.status === 'ok' ? current.fields : {};
-    await writePreferencesToDisk(buildPreferencesFields(previousFields, settings, Date.now()));
+    await writePreferencesToDisk(buildPreferencesFields(previousFields, settings, Date.now(), {
+      surface: normalizeSettingsSurface(surface),
+      changedKeys,
+    }));
   };
 
   const validateProjectEntries = async (projects) => {
@@ -969,7 +973,7 @@ export const createSettingsRuntime = (deps) => {
 
   let hasCleanedOrphanedTempFiles = false;
 
-  const readSettingsFromDiskMigrated = async () => {
+  const readSettingsFromDiskMigrated = async ({ surface = null } = {}) => {
     if (!hasCleanedOrphanedTempFiles) {
       hasCleanedOrphanedTempFiles = true;
       await cleanupOrphanedSettingsTempFiles(path.dirname(SETTINGS_FILE_PATH));
@@ -986,15 +990,17 @@ export const createSettingsRuntime = (deps) => {
     if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
       await writeSettingsToDisk(migration8.settings);
     }
-    return migration8.settings;
+    // Migrations run on the base view; a surface asks for its own resolution
+    // of the per-surface keys on top of the migrated files.
+    return normalizeSettingsSurface(surface) ? readSettingsFromDisk({ surface }) : migration8.settings;
   };
 
-  const persistSettings = async (changes) => {
+  const persistSettings = async (changes, { surface = null } = {}) => {
     persistSettingsLock = persistSettingsLock.then(async () => {
       // Log field names only — changes can carry credentials (UI password,
       // client tokens, tunnel tokens) that must never reach the log file.
       console.log('[persistSettings] Updating fields:', Object.keys(changes || {}).join(', ') || '(none)');
-      const current = await readSettingsFromDisk();
+      const current = await readSettingsFromDisk({ surface });
       const sanitized = sanitizeSettingsUpdate(changes);
       for (const key of Object.keys(sanitized)) {
         // Device state belongs to the install in front of the user, never to
@@ -1069,7 +1075,7 @@ export const createSettingsRuntime = (deps) => {
         }
       }
 
-      await writeSettingsToDisk(next);
+      await writeSettingsToDisk(next, { surface, changedKeys: Object.keys(sanitized) });
       return formatSettingsResponse(next);
     });
 

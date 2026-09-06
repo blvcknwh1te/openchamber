@@ -6,7 +6,7 @@ import path from 'path';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { createSettingsRuntime } from './settings-runtime.js';
 
-const createRuntime = async () => {
+const createRuntime = async ({ mergePersistedSettings = (_current, changes) => changes } = {}) => {
   const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-runtime-'));
   const settingsFilePath = path.join(tempRoot, 'settings.json');
   const runtime = createSettingsRuntime({
@@ -16,7 +16,7 @@ const createRuntime = async () => {
     SETTINGS_FILE_PATH: settingsFilePath,
     sanitizeProjects: (projects) => Array.isArray(projects) ? projects : [],
     sanitizeSettingsUpdate: (settings) => settings,
-    mergePersistedSettings: (_current, changes) => changes,
+    mergePersistedSettings,
     normalizeSettingsPaths: (settings) => ({ settings, changed: false }),
     normalizeStringArray: (values) => Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [],
     formatSettingsResponse: (settings) => settings,
@@ -329,6 +329,76 @@ describe('settings runtime: preferences.json split', () => {
       const settings = await readJson(settingsFilePath);
       expect(settings.desktopKeepAwakeEnabled).toBe(true);
       expect(settings).not.toHaveProperty('fontSize');
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe('settings runtime: per-surface profile keys', () => {
+  const readJson = async (filePath) => JSON.parse(await fsPromises.readFile(filePath, 'utf8'));
+  // These sequences persist several times; the default stub replaces the
+  // document with the changes, the real merge keeps the current document.
+  const createMergingRuntime = () => createRuntime({ mergePersistedSettings: (current, changes) => ({ ...current, ...changes }) });
+
+  it('stores a per-surface key under the writing surface and leaves the base alone', async () => {
+    const { runtime, tempRoot, cleanup } = await createMergingRuntime();
+    try {
+      await runtime.persistSettings({ fontSize: 100 }); // base (no surface): migrations and legacy callers
+      await runtime.persistSettings({ fontSize: 130, showReasoningTraces: false }, { surface: 'mobile' });
+
+      const stored = await readJson(path.join(tempRoot, 'preferences.json'));
+      expect(stored.fields.fontSize.value).toBe(100);
+      expect(stored.fields.fontSize.surfaces.mobile.value).toBe(130);
+      // Not per-surface: written to the base regardless of the surface.
+      expect(stored.fields.showReasoningTraces.value).toBe(false);
+      expect(stored.fields.showReasoningTraces.surfaces).toBeUndefined();
+
+      expect((await runtime.readSettingsFromDisk({ surface: 'mobile' })).fontSize).toBe(130);
+      expect((await runtime.readSettingsFromDisk({ surface: 'desktop' })).fontSize).toBe(100);
+      expect((await runtime.readSettingsFromDisk()).fontSize).toBe(100);
+      expect((await runtime.readSettingsFromDiskMigrated({ surface: 'mobile' })).fontSize).toBe(130);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a per-surface key set only from one surface has no base and stays absent elsewhere', async () => {
+    const { runtime, tempRoot, cleanup } = await createMergingRuntime();
+    try {
+      await runtime.persistSettings({ stickyUserHeader: false }, { surface: 'mobile' });
+      const stored = await readJson(path.join(tempRoot, 'preferences.json'));
+      expect(stored.fields.stickyUserHeader).not.toHaveProperty('value');
+      expect(stored.fields.stickyUserHeader.surfaces.mobile.value).toBe(false);
+      expect((await runtime.readSettingsFromDisk({ surface: 'desktop' })).stickyUserHeader).toBeUndefined();
+      expect((await runtime.readSettingsFromDisk({ surface: 'mobile' })).stickyUserHeader).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a surface write of an unrelated key does not copy the resolved per-surface view into the file', async () => {
+    const { runtime, tempRoot, cleanup } = await createMergingRuntime();
+    try {
+      await runtime.persistSettings({ fontSize: 100 });
+      await runtime.persistSettings({ fontSize: 130 }, { surface: 'mobile' });
+      await runtime.persistSettings({ showReasoningTraces: true }, { surface: 'mobile' });
+      const stored = await readJson(path.join(tempRoot, 'preferences.json'));
+      expect(stored.fields.fontSize.value).toBe(100);
+      expect(stored.fields.fontSize.surfaces.mobile.value).toBe(130);
+      expect(stored.fields.fontSize.surfaces.desktop).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('ignores an unknown surface header value and writes the base', async () => {
+    const { runtime, tempRoot, cleanup } = await createMergingRuntime();
+    try {
+      await runtime.persistSettings({ fontSize: 90 }, { surface: 'toaster' });
+      const stored = await readJson(path.join(tempRoot, 'preferences.json'));
+      expect(stored.fields.fontSize.value).toBe(90);
+      expect(stored.fields.fontSize.surfaces).toBeUndefined();
     } finally {
       await cleanup();
     }

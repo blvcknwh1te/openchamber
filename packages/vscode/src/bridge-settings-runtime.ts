@@ -15,6 +15,7 @@ import {
   seedPreferencesFrom,
   serializePreferencesDocument,
   type PreferenceFields,
+  VSCODE_SETTINGS_SURFACE,
 } from './settings-files';
 
 const SETTINGS_KEY = 'openchamber.settings';
@@ -280,19 +281,27 @@ const readSharedSettingsFromDisk = (): Record<string, unknown> => {
   if (preferences.status !== 'ok') {
     return settings;
   }
-  return { ...settings, ...flattenPreferences(preferences.fields) };
+  return { ...settings, ...flattenPreferences(preferences.fields, VSCODE_SETTINGS_SURFACE) };
 };
 
 // Write a complete merged document: profile keys go to preferences.json (keeping
 // the stamps of unchanged values), everything else to settings.json. A key the
 // document no longer carries leaves whichever file owned it.
-const writeSharedSettingsToDisk = async (document: Record<string, unknown>): Promise<void> => {
+const writeSharedSettingsToDisk = async (
+  document: Record<string, unknown>,
+  changedKeys: Iterable<string> | null = null,
+): Promise<void> => {
   const preferences = readPreferencesFromDisk();
   if (preferencesUnavailable) {
     console.warn('[OpenChamber] preferences.json is unreadable; profile settings were not saved.');
   } else {
     const previousFields = preferences.status === 'ok' ? preferences.fields : {};
-    const nextFields = buildPreferencesFields(previousFields, document, Date.now());
+    // This host is always the VS Code surface kind: per-surface profile keys it
+    // changed land under `surfaces.vscode`; keys it did not change keep their entry.
+    const nextFields = buildPreferencesFields(previousFields, document, Date.now(), {
+      surface: VSCODE_SETTINGS_SURFACE,
+      changedKeys,
+    });
     await writeJsonAtomic(OPENCHAMBER_PREFERENCES_PATH, serializePreferencesDocument(nextFields));
   }
   await writeJsonAtomic(OPENCHAMBER_SHARED_SETTINGS_PATH, JSON.stringify(instancePartOf(document), null, 2));
@@ -454,7 +463,7 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   // Write to the shared files (canonical, cross-client); a failed write rejects
   // so the webview reports the save as failed. Also mirror into globalState so
   // older builds can still read recent values if a user downgrades the extension.
-  await writeSharedSettingsToDisk(persistable);
+  await writeSharedSettingsToDisk(persistable, [...Object.keys(restChanges), ...keysToClear]);
   await ctx?.context?.globalState.update(SETTINGS_KEY, persistable);
 
   // Return the same shape as readSettings (with derived fields re-applied).

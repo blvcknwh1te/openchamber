@@ -15,6 +15,7 @@ import {
   parseSettingsDocument,
   SETTINGS_KEYS,
 } from '@/lib/settings/registry';
+import { SETTINGS_SURFACE_HEADER, getSettingsSurface } from '@/lib/settings/surface';
 
 export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void => {
   if (typeof window === 'undefined') {
@@ -527,7 +528,7 @@ const fetchWebSettings = async (context = captureSettingsRuntimeContext()): Prom
       try {
         const response = await runtimeFetch('/api/config/settings', {
           method: 'GET',
-          headers: { Accept: 'application/json' },
+          headers: { Accept: 'application/json', [SETTINGS_SURFACE_HEADER]: getSettingsSurface() },
         });
         if (!isSettingsRuntimeContextCurrent(context)) return null;
         if (!response.ok) {
@@ -714,6 +715,7 @@ async function _flushSettingsUpdate({ keepalive = false }: { keepalive?: boolean
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            [SETTINGS_SURFACE_HEADER]: getSettingsSurface(),
           },
           body: JSON.stringify(changes),
           keepalive,

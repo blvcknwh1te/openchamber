@@ -20,6 +20,18 @@ const getSettingsScope = (key) => registry.fields[key]?.scope ?? null;
 export const isProfileSettingsKey = (key) => getSettingsScope(key) === 'profile';
 export const isDeviceSettingsKey = (key) => getSettingsScope(key) === 'device';
 
+/** Profile keys the owner chose to store per surface kind (a change on a phone stays on phones). */
+const isPerSurfaceSettingsKey = (key) => registry.fields[key]?.perSurface === true;
+
+const SETTINGS_SURFACES = Object.freeze(['web', 'desktop', 'vscode', 'mobile']);
+
+/** The header a client sends to say which surface kind it is; absent means "base". */
+export const SETTINGS_SURFACE_HEADER = 'x-openchamber-surface';
+
+export const normalizeSettingsSurface = (value) => (
+  typeof value === 'string' && SETTINGS_SURFACES.includes(value.trim()) ? value.trim() : null
+);
+
 export const preferencesFilePathFor = (settingsFilePath, path) => path.join(path.dirname(settingsFilePath), PREFERENCES_FILE_NAME);
 
 const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -30,10 +42,16 @@ const sameValue = (left, right) => {
   return JSON.stringify(left) === JSON.stringify(right);
 };
 
+const parseStamp = (value) => (Number.isFinite(value) ? value : 0);
+
 /**
  * Parse the text of a preferences file. A missing file is the caller's case
  * (ENOENT); anything that is not a version-1 document with a `fields` object
  * is a failure, never an empty profile.
+ *
+ * An entry is `{ value, updatedAt }` for the base value, optionally with
+ * `surfaces: { [surface]: { value, updatedAt } }` for per-surface keys; a
+ * per-surface key that was only ever set from one surface kind has no base.
  */
 export const parsePreferencesDocument = (raw) => {
   let parsed;
@@ -47,22 +65,41 @@ export const parsePreferencesDocument = (raw) => {
   }
   const fields = {};
   for (const [key, entry] of Object.entries(parsed.fields)) {
-    if (!isPlainObject(entry) || !('value' in entry)) {
+    if (!isPlainObject(entry) || (!('value' in entry) && !isPlainObject(entry.surfaces))) {
       return { ok: false, reason: `field "${key}" is not a { value, updatedAt } entry` };
     }
-    const updatedAt = Number.isFinite(entry.updatedAt) ? entry.updatedAt : 0;
-    fields[key] = { value: entry.value, updatedAt };
+    const next = { updatedAt: parseStamp(entry.updatedAt) };
+    if ('value' in entry) next.value = entry.value;
+    if (isPlainObject(entry.surfaces)) {
+      next.surfaces = {};
+      for (const [surface, surfaceEntry] of Object.entries(entry.surfaces)) {
+        if (!SETTINGS_SURFACES.includes(surface) || !isPlainObject(surfaceEntry) || !('value' in surfaceEntry)) {
+          return { ok: false, reason: `field "${key}" has an invalid surface entry "${surface}"` };
+        }
+        next.surfaces[surface] = { value: surfaceEntry.value, updatedAt: parseStamp(surfaceEntry.updatedAt) };
+      }
+    }
+    fields[key] = next;
   }
   return { ok: true, fields };
 };
 
 export const serializePreferencesDocument = (fields) => JSON.stringify({ version: PREFERENCES_DOCUMENT_VERSION, fields }, null, 2);
 
-/** The plain key → value view of preference fields. */
-export const flattenPreferences = (fields) => {
+/**
+ * The plain key → value view of preference fields as one surface kind sees it:
+ * that surface's own value first, the base value otherwise; a key with neither
+ * is absent (the client keeps what it holds, or its default).
+ */
+export const flattenPreferences = (fields, surface = null) => {
   const values = {};
   for (const [key, entry] of Object.entries(fields)) {
-    values[key] = entry.value;
+    const own = surface && entry.surfaces ? entry.surfaces[surface] : undefined;
+    if (own) {
+      values[key] = own.value;
+    } else if ('value' in entry) {
+      values[key] = entry.value;
+    }
   }
   return values;
 };
@@ -72,15 +109,38 @@ export const flattenPreferences = (fields) => {
  * carries, stamped `now` when its value differs from what the file held and
  * keeping the earlier stamp otherwise. Profile keys the document no longer
  * carries are dropped (that is how a cleared key leaves the file).
+ *
+ * Per-surface keys: when the write comes from a surface kind (`surface`) and
+ * the key is among the keys that write changed (`changedKeys`), the value goes
+ * under `surfaces[surface]` and the base is left as it was; a per-surface key
+ * the write did not change keeps its whole entry (the document only carries
+ * that surface's resolved view of it). Without a surface (migrations, the
+ * one-time seed) the base is written.
  */
-export const buildPreferencesFields = (previousFields, document, now) => {
+export const buildPreferencesFields = (previousFields, document, now, { surface = null, changedKeys = null } = {}) => {
   const fields = {};
+  const changed = changedKeys ? new Set(changedKeys) : null;
   for (const [key, value] of Object.entries(document)) {
     if (value === undefined || !isProfileSettingsKey(key)) continue;
     const previous = previousFields[key];
-    fields[key] = previous && sameValue(previous.value, value)
-      ? previous
-      : { value, updatedAt: now };
+    if (isPerSurfaceSettingsKey(key) && surface) {
+      if (changed && !changed.has(key)) {
+        if (previous) fields[key] = previous;
+        continue;
+      }
+      const previousOwn = previous?.surfaces?.[surface];
+      const own = previousOwn && sameValue(previousOwn.value, value) ? previousOwn : { value, updatedAt: now };
+      fields[key] = {
+        ...(previous ?? { updatedAt: 0 }),
+        surfaces: { ...(previous?.surfaces ?? {}), [surface]: own },
+      };
+      continue;
+    }
+    if (previous && 'value' in previous && sameValue(previous.value, value)) {
+      fields[key] = previous;
+    } else {
+      fields[key] = { ...(previous ?? {}), value, updatedAt: now };
+    }
   }
   return fields;
 };
