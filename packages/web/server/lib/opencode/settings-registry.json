@@ -21,38 +21,6 @@
       "scope": "profile",
       "perSurface": true
     },
-    "splashBgLight": {
-      "scope": "device",
-      "surfaces": [
-        "desktop",
-        "mobile"
-      ],
-      "derived": true
-    },
-    "splashFgLight": {
-      "scope": "device",
-      "surfaces": [
-        "desktop",
-        "mobile"
-      ],
-      "derived": true
-    },
-    "splashBgDark": {
-      "scope": "device",
-      "surfaces": [
-        "desktop",
-        "mobile"
-      ],
-      "derived": true
-    },
-    "splashFgDark": {
-      "scope": "device",
-      "surfaces": [
-        "desktop",
-        "mobile"
-      ],
-      "derived": true
-    },
     "lastDirectory": {
       "scope": "instance",
       "adopt": "bootstrap-only"
@@ -561,13 +529,13 @@
       "scope": "profile"
     },
     "pwaAppName": {
-      "scope": "device",
+      "scope": "instance",
       "surfaces": [
         "web"
       ]
     },
     "pwaOrientation": {
-      "scope": "device",
+      "scope": "instance",
       "surfaces": [
         "web"
       ]
@@ -712,6 +680,13 @@
     "projectContextSidebarWidth": {
       "scope": "device",
       "local": true
+    },
+    "desktopSplashColors": {
+      "scope": "instance",
+      "owner": "desktop-shell",
+      "surfaces": [
+        "desktop"
+      ]
     },
     "desktopHosts": {
       "scope": "instance",

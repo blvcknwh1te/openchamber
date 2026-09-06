@@ -213,10 +213,6 @@ export const SETTINGS_REGISTRY = {
   themeVariant: field({ scope: 'profile', derived: true, parse: parseOneOf(['light', 'dark']) }),
   lightThemeId: field({ scope: 'profile', perSurface: true, parse: parseNonEmptyString }),
   darkThemeId: field({ scope: 'profile', perSurface: true, parse: parseNonEmptyString }),
-  splashBgLight: field({ scope: 'device', derived: true, surfaces: ['desktop', 'mobile'], parse: parseNonEmptyTrimmedString }),
-  splashFgLight: field({ scope: 'device', derived: true, surfaces: ['desktop', 'mobile'], parse: parseNonEmptyTrimmedString }),
-  splashBgDark: field({ scope: 'device', derived: true, surfaces: ['desktop', 'mobile'], parse: parseNonEmptyTrimmedString }),
-  splashFgDark: field({ scope: 'device', derived: true, surfaces: ['desktop', 'mobile'], parse: parseNonEmptyTrimmedString }),
 
   // ── Workspace pointers and instance facts ──
   lastDirectory: field({ scope: 'instance', adopt: 'bootstrap-only', parse: parseNonEmptyString }),
@@ -478,9 +474,13 @@ export const SETTINGS_REGISTRY = {
   responseStyleCustomInstructions: field({ scope: 'profile', parse: parseTextUpTo(50_000) }),
   optimizeSystemPrompt: field({ scope: 'profile', parse: parseBoolean }),
 
-  // ── Device fields that still cross the wire (Phase 2 stops them) ──
-  pwaAppName: field({ scope: 'device', surfaces: ['web'], parse: parsePwaAppName }),
-  pwaOrientation: field({ scope: 'device', surfaces: ['web'], parse: parseOneOf(['system', 'portrait', 'landscape']) }),
+  // The server serves the PWA manifest from these, so they are facts about
+  // the instance even though only the installed web app shows them.
+  pwaAppName: field({ scope: 'instance', surfaces: ['web'], parse: parsePwaAppName }),
+  pwaOrientation: field({ scope: 'instance', surfaces: ['web'], parse: parseOneOf(['system', 'portrait', 'landscape']) }),
+
+  // ── Device fields: never written to the server; an old settings.json that
+  // still carries one is read once as a seed for the local store. ──
   mobileKeyboardMode: field({
     scope: 'device',
     surfaces: ['mobile'],
@@ -551,8 +551,11 @@ export const LOCAL_DEVICE_KEYS = [
  * Instance facts the Electron main process writes straight into
  * `settings.json` (`mutateSettingsRoot`). The server keeps them when merging
  * and never accepts them from a client; no client reads them.
+ * `desktopSplashColors` arrives over the window-theme IPC and replaces the
+ * flat `splash*` keys older builds wrote through the settings document.
  */
 export const DESKTOP_SHELL_KEYS = [
+  'desktopSplashColors',
   'desktopHosts',
   'desktopDefaultHostId',
   'desktopInstallId',
@@ -565,13 +568,16 @@ const isSettingsKey = (key: string): key is SettingsKey => Object.prototype.hasO
 
 export const SETTINGS_KEYS: SettingsKey[] = Object.keys(SETTINGS_REGISTRY).filter(isSettingsKey);
 
+/** Keys whose value belongs to this install and therefore never goes to the server. */
+export const isDeviceSettingsKey = (key: SettingsKey): boolean => SETTINGS_REGISTRY[key].scope === 'device';
+
 type SettingsValue = DesktopSettings[SettingsKey];
 
 /** The erased view the generic loops iterate; assignable because the bindings use method syntax. */
 const specOf = (key: SettingsKey): SettingsFieldSpec<SettingsValue> => SETTINGS_REGISTRY[key];
 
-/** Keys the client may send to the server: not computed, not derived-only splash cosmetics. */
-export const isWritableSettingsKey = (key: SettingsKey): boolean => !SETTINGS_REGISTRY[key].computed;
+/** Keys the client may send to the server: not computed, not this install's device state. */
+export const isWritableSettingsKey = (key: SettingsKey): boolean => !SETTINGS_REGISTRY[key].computed && !isDeviceSettingsKey(key);
 
 /**
  * Parse an untrusted document (server response, bridge payload) into the

@@ -9,9 +9,11 @@ import { getRuntimeKey, subscribeRuntimeEndpointChanged, subscribeRuntimeEndpoin
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
 import {
   applySettingsToStores,
+  isDeviceSettingsKey,
   isWritableSettingsKey,
   MIRRORED_KEYS,
   parseSettingsDocument,
+  SETTINGS_KEYS,
 } from '@/lib/settings/registry';
 
 export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void => {
@@ -30,6 +32,33 @@ export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void
 };
 
 const SETTINGS_MIRROR_INDEX_KEY = 'openchamber.settingsMirror.v2.index';
+// Set once a runtime's device fields have been read from the server document
+// (installs that predate the settings split still carry them there). After
+// that the local store is the only owner and the server copy is ignored.
+const DEVICE_SEED_KEY_PREFIX = 'openchamber.deviceSeeded.v1:';
+const getDeviceSeedStorageKey = (runtimeKey: string): string => `${DEVICE_SEED_KEY_PREFIX}${encodeURIComponent(runtimeKey)}`;
+
+/**
+ * The part of a server document this window may apply: everything but device
+ * fields, plus the device fields exactly once per runtime as a migration seed.
+ */
+const withoutStaleDeviceFields = (settings: DesktopSettings, runtimeKey: string): DesktopSettings => {
+  const seedKey = getDeviceSeedStorageKey(runtimeKey);
+  let seedDevice = false;
+  try {
+    seedDevice = localStorage.getItem(seedKey) === null;
+    if (seedDevice) localStorage.setItem(seedKey, String(Date.now()));
+  } catch {
+    seedDevice = false;
+  }
+  if (seedDevice) return settings;
+  const next: DesktopSettings = {};
+  for (const key of SETTINGS_KEYS) {
+    if (settings[key] === undefined || isDeviceSettingsKey(key)) continue;
+    Object.assign(next, { [key]: settings[key] });
+  }
+  return next;
+};
 const SETTINGS_MIRROR_KEY_PREFIX = 'openchamber.settingsMirror.v2:';
 const MAX_SETTINGS_MIRROR_RUNTIMES = 5;
 
@@ -592,7 +621,10 @@ export const syncDesktopSettings = async (options?: { bootstrap?: boolean; adopt
     let settings = overlayPendingChanges(_settingsMutationTracker.reconcile(loadedSettings, operation));
     await waitForHydration();
     if (!isSettingsRuntimeContextCurrent(context)) return;
-    settings = overlayPendingChanges(_settingsMutationTracker.reconcile(loadedSettings, operation));
+    settings = withoutStaleDeviceFields(
+      overlayPendingChanges(_settingsMutationTracker.reconcile(loadedSettings, operation)),
+      context.runtimeKey,
+    );
     // Keys the server omits are "unset", not "reset": this window keeps
     // whatever it already holds for them and nothing is written back. A
     // bootstrap therefore never seeds the server from local state — a write

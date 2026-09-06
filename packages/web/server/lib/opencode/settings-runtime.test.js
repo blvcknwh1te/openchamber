@@ -68,8 +68,8 @@ describe('settings runtime', () => {
     }
   });
 
-  it('round-trips shared sidebar preferences through settings.json', async () => {
-    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+  it('round-trips shared sidebar preferences through preferences.json', async () => {
+    const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
     const preferences = {
       sidebarProjectDisplayMode: 'single',
       sidebarSessionGroupingMode: 'flat',
@@ -80,7 +80,10 @@ describe('settings runtime', () => {
       await runtime.persistSettings(preferences);
 
       await expect(runtime.readSettingsFromDisk()).resolves.toEqual(preferences);
-      await expect(fsPromises.readFile(settingsFilePath, 'utf8')).resolves.toBe(JSON.stringify(preferences, null, 2));
+      // Profile keys live in preferences.json; settings.json keeps only instance facts.
+      await expect(fsPromises.readFile(settingsFilePath, 'utf8')).resolves.toBe('{}');
+      const stored = JSON.parse(await fsPromises.readFile(path.join(tempRoot, 'preferences.json'), 'utf8'));
+      expect(Object.fromEntries(Object.entries(stored.fields).map(([key, entry]) => [key, entry.value]))).toEqual(preferences);
     } finally {
       await cleanup();
     }
@@ -245,6 +248,89 @@ describe('settings runtime', () => {
       expect(files.some((f) => f.startsWith('settings.json.tmp-'))).toBe(false);
     } finally {
       await fsPromises.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('settings runtime: preferences.json split', () => {
+  const readJson = async (filePath) => JSON.parse(await fsPromises.readFile(filePath, 'utf8'));
+
+  it('seeds preferences.json from the profile keys of an existing settings.json and leaves that file intact', async () => {
+    const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
+    try {
+      const legacy = { projects: [], fontSize: 110, themeId: 'openchamber-dark', desktopLanAccessEnabled: true };
+      await fsPromises.writeFile(settingsFilePath, JSON.stringify(legacy));
+
+      const merged = await runtime.readSettingsFromDisk();
+      expect(merged).toMatchObject(legacy);
+
+      const preferences = await readJson(path.join(tempRoot, 'preferences.json'));
+      expect(preferences.version).toBe(1);
+      expect(Object.keys(preferences.fields).sort()).toEqual(['fontSize', 'themeId']);
+      expect(preferences.fields.fontSize.value).toBe(110);
+      expect(typeof preferences.fields.fontSize.updatedAt).toBe('number');
+      expect(await readJson(settingsFilePath)).toEqual(legacy);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('routes profile keys to preferences.json, instance keys to settings.json, and drops device keys', async () => {
+    const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
+    try {
+      await runtime.persistSettings({ fontSize: 120, desktopLanAccessEnabled: true, mobileKeyboardMode: 'native' });
+
+      const settings = await readJson(settingsFilePath);
+      expect(settings.desktopLanAccessEnabled).toBe(true);
+      expect(settings).not.toHaveProperty('fontSize');
+      expect(settings).not.toHaveProperty('mobileKeyboardMode');
+
+      const preferences = await readJson(path.join(tempRoot, 'preferences.json'));
+      expect(preferences.fields.fontSize.value).toBe(120);
+      expect(preferences.fields).not.toHaveProperty('mobileKeyboardMode');
+      expect(preferences.fields).not.toHaveProperty('desktopLanAccessEnabled');
+
+      expect(await runtime.readSettingsFromDisk()).toMatchObject({ fontSize: 120, desktopLanAccessEnabled: true });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('keeps the timestamp of an unchanged profile key and restamps a changed one', async () => {
+    const { runtime, tempRoot, cleanup } = await createRuntime();
+    try {
+      const preferencesPath = path.join(tempRoot, 'preferences.json');
+      await runtime.persistSettings({ fontSize: 100, padding: 100 });
+      const first = await readJson(preferencesPath);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await runtime.persistSettings({ fontSize: 100, padding: 120 });
+      const second = await readJson(preferencesPath);
+
+      expect(second.fields.fontSize.updatedAt).toBe(first.fields.fontSize.updatedAt);
+      expect(second.fields.padding.updatedAt).toBeGreaterThan(first.fields.padding.updatedAt);
+      expect(second.fields.padding.value).toBe(120);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('treats an unreadable preferences.json as failure: no seed, no overwrite, profile writes refused, instance still served', async () => {
+    const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
+    try {
+      const preferencesPath = path.join(tempRoot, 'preferences.json');
+      await fsPromises.writeFile(settingsFilePath, JSON.stringify({ desktopLanAccessEnabled: true }));
+      await fsPromises.writeFile(preferencesPath, '{ not json');
+
+      expect(await runtime.readSettingsFromDisk()).toEqual({ desktopLanAccessEnabled: true });
+
+      await runtime.persistSettings({ fontSize: 130, desktopKeepAwakeEnabled: true });
+
+      expect(await fsPromises.readFile(preferencesPath, 'utf8')).toBe('{ not json');
+      const settings = await readJson(settingsFilePath);
+      expect(settings.desktopKeepAwakeEnabled).toBe(true);
+      expect(settings).not.toHaveProperty('fontSize');
+    } finally {
+      await cleanup();
     }
   });
 });

@@ -567,31 +567,33 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
     themeWriteIntentRef.current = false;
 
-    const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
-    const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
-
     void updateDesktopSettings({
       themeId: currentTheme.metadata.id,
       themeVariant: currentTheme.metadata.variant === 'light' ? 'light' : 'dark',
       useSystemTheme: preferences.themeMode === 'system',
       lightThemeId: preferences.lightThemeId,
       darkThemeId: preferences.darkThemeId,
-      splashBgLight: lightTheme.colors.surface.background,
-      splashFgLight: lightTheme.colors.surface.foreground,
-      splashBgDark: darkTheme.colors.surface.background,
-      splashFgDark: darkTheme.colors.surface.foreground,
     });
-  }, [currentTheme.metadata.id, currentTheme.metadata.variant, ensureThemeById, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId, receivesParentThemeSync]);
+  }, [currentTheme.metadata.id, currentTheme.metadata.variant, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId, receivesParentThemeSync]);
 
   useEffect(() => {
     if (receivesParentThemeSync || !isDesktopShell) {
       return;
     }
 
+    // The shell paints the next startup splash from these; they are this
+    // install's cosmetics, so they go to main directly, not to the server.
+    const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
+    const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
     void (async () => {
-      await setDesktopWindowTheme(preferences.themeMode, currentTheme.metadata.variant);
+      await setDesktopWindowTheme(preferences.themeMode, currentTheme.metadata.variant, {
+        bgLight: lightTheme.colors.surface.background,
+        fgLight: lightTheme.colors.surface.foreground,
+        bgDark: darkTheme.colors.surface.background,
+        fgDark: darkTheme.colors.surface.foreground,
+      });
     })();
-  }, [currentTheme.metadata.variant, isDesktopShell, preferences.themeMode, receivesParentThemeSync]);
+  }, [currentTheme.metadata.variant, ensureThemeById, isDesktopShell, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId, receivesParentThemeSync]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || receivesParentThemeSync) {
