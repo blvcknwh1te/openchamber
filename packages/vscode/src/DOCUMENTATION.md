@@ -17,6 +17,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-git-special-runtime.ts`
   - Specialized Git flows (`pr-description`, `conflict-details`) and generation helpers.
+  - Generation model choice lives in `bridge-git-generation-model.ts`: request model first, then the user's small-model override (`smallModelUseDefault === false` plus `smallModelOverride` as `provider/model`) when the catalog has it, then the zen fallback. The old `gitProviderId`/`gitModelId` pair is no longer read.
 
 - `bridge-git-process-runtime.ts`
   - Git process execution and environment setup (`execGit`), including SSH agent socket resolution.
@@ -67,6 +68,7 @@ The webview build emits each worker as one self-contained file. VS Code webviews
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
+  - Writes are gated by the generated registry snapshot (`settings-registry.json`, via `settings-registry-gate.ts`): keys the registry does not list, or marks `computed`, `local`, or `owner: desktop-shell`, never reach the shared settings file. Regenerate the snapshot with `bun run settings-registry:generate` when the UI registry changes.
 
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.

@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import type { BridgeContext } from './bridge';
+import { filterPersistableSettingsChanges } from './settings-registry-gate';
 
 const SETTINGS_KEY = 'openchamber.settings';
 const OPENCHAMBER_SHARED_SETTINGS_PATH = path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
@@ -160,6 +161,10 @@ export const fetchOpenCodeSkillsFromApi = async (
   }
 };
 
+// A parse failure (corrupt or non-object file) is currently coerced to `{}`,
+// which makes a broken file indistinguishable from an empty one and lets the
+// next write replace it. The Phase 2 settings split must surface this as a
+// failure instead; tracked in the settings-scopes plan, no code change here.
 const readSharedSettingsFromDisk = (): Record<string, unknown> => {
   try {
     const raw = fs.readFileSync(OPENCHAMBER_SHARED_SETTINGS_PATH, 'utf8');
@@ -291,7 +296,8 @@ export const readSettings = (ctx?: BridgeContext): Record<string, unknown> => {
 
 export const persistSettings = async (changes: Record<string, unknown>, ctx?: BridgeContext): Promise<Record<string, unknown>> => {
   const current = readSettings(ctx);
-  const restChanges = stripDerived({ ...(changes || {}) });
+  // Only keys the settings registry knows as stored shared fields reach disk.
+  const restChanges = filterPersistableSettingsChanges(stripDerived({ ...(changes || {}) }));
 
   const keysToClear = new Set<string>();
 
