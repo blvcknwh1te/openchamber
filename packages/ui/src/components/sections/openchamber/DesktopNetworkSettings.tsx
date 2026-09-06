@@ -16,7 +16,7 @@ import {
   setDesktopMinimizeToTray,
 } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
-import { runtimeFetch } from '@/lib/runtime-fetch';
+import { loadDesktopSettings, updateDesktopSettings } from '@/lib/persistence';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import {
   SettingsSection,
@@ -64,36 +64,23 @@ export const DesktopNetworkSettings: React.FC = () => {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await runtimeFetch('/api/config/settings', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) {
+        const data = await loadDesktopSettings();
+        if (!data) {
           throw new Error(t('settings.openchamber.desktopNetwork.error.loadFailed'));
         }
-
-        const data = (await response.json().catch(() => null)) as null | {
-          desktopLanAccessEnabled?: unknown;
-          desktopUiPassword?: unknown;
-          desktopLanAccessActive?: unknown;
-          desktopLanAccessBlockedReason?: unknown;
-          desktopMacMenuBarEnabled?: unknown;
-        };
         if (cancelled) {
           return;
         }
 
-        const enabled = data?.desktopLanAccessEnabled === true;
-        const password = typeof data?.desktopUiPassword === 'string' ? data.desktopUiPassword : '';
+        const enabled = data.desktopLanAccessEnabled === true;
+        const password = data.desktopUiPassword ?? '';
         setSavedValue(enabled);
         setDraftValue(enabled);
         setSavedPassword(password);
         setDraftPassword(password);
-        setLanAccessActive(data?.desktopLanAccessActive === true);
-        setLanAccessBlockedReason(
-          typeof data?.desktopLanAccessBlockedReason === 'string' ? data.desktopLanAccessBlockedReason : null
-        );
-        const macMenuBarEnabled = data?.desktopMacMenuBarEnabled !== false;
+        setLanAccessActive(data.desktopLanAccessActive === true);
+        setLanAccessBlockedReason(data.desktopLanAccessBlockedReason ?? null);
+        const macMenuBarEnabled = data.desktopMacMenuBarEnabled !== false;
         setSavedMacMenuBarEnabled(macMenuBarEnabled);
         setDraftMacMenuBarEnabled(macMenuBarEnabled);
         setError(null);
@@ -310,20 +297,13 @@ export const DesktopNetworkSettings: React.FC = () => {
     setError(null);
 
     try {
-      const response = await runtimeFetch('/api/config/settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          desktopLanAccessEnabled: draftValue,
-          desktopUiPassword: draftPassword,
-          desktopMacMenuBarEnabled: draftMacMenuBarEnabled,
-        }),
+      const result = await updateDesktopSettings({
+        desktopLanAccessEnabled: draftValue,
+        desktopUiPassword: draftPassword,
+        desktopMacMenuBarEnabled: draftMacMenuBarEnabled,
       });
 
-      if (!response.ok) {
+      if (!result.ok) {
         throw new Error(t('settings.openchamber.desktopNetwork.error.saveFailed'));
       }
 
