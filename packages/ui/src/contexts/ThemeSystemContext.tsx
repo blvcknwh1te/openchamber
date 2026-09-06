@@ -160,6 +160,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   const isVSCode = useMemo(() => isVSCodeRuntime(), []);
   const isDesktopShell = useMemo(() => detectDesktopShell(), []);
   const customThemesRequestRef = useRef(0);
+  // Set only by the handlers a person reaches through the UI. The persist
+  // effect below writes to the server only while this is raised, so a mount,
+  // a runtime switch, an OS light/dark flip, or a settings sync adopting
+  // another window's theme never produce a write (see the 2026-08-30 theme
+  // flip-flop: a fresh client used to PUT its default theme on load).
+  const themeWriteIntentRef = useRef(false);
   const receivesParentThemeSync = useMemo(() => {
     if (typeof window === 'undefined') {
       return false;
@@ -556,9 +562,10 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   }, [applyIncomingThemeSync]);
 
   useEffect(() => {
-    if (receivesParentThemeSync) {
+    if (receivesParentThemeSync || !themeWriteIntentRef.current) {
       return;
     }
+    themeWriteIntentRef.current = false;
 
     const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
     const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
@@ -617,6 +624,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
           if (prev.darkThemeId === theme.metadata.id && prev.themeMode === 'dark') {
             return prev;
           }
+          themeWriteIntentRef.current = true;
           return {
             ...prev,
             darkThemeId: theme.metadata.id,
@@ -628,6 +636,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
           return prev;
         }
 
+        themeWriteIntentRef.current = true;
         return {
           ...prev,
           lightThemeId: theme.metadata.id,
@@ -643,18 +652,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       return;
     }
 
+    themeWriteIntentRef.current = true;
     setPreferences((prev) => ({
       ...prev,
       themeMode: mode,
     }));
-
-    if (!receivesParentThemeSync) {
-      void updateDesktopSettings({
-        themeVariant: mode === 'system' ? currentTheme.metadata.variant : mode,
-        useSystemTheme: mode === 'system',
-      });
-    }
-  }, [currentTheme.metadata.variant, preferences.themeMode, receivesParentThemeSync]);
+  }, [preferences.themeMode]);
 
   const setSystemPreferenceHandler = useCallback(
     (use: boolean) => {
@@ -663,6 +666,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
           if (prev.themeMode === 'system') {
             return prev;
           }
+          themeWriteIntentRef.current = true;
           return {
             ...prev,
             themeMode: 'system',
@@ -677,6 +681,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         if (prev.themeMode === fallbackMode) {
           return prev;
         }
+        themeWriteIntentRef.current = true;
         return {
           ...prev,
           themeMode: fallbackMode,
@@ -700,6 +705,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         if (prev.lightThemeId === theme.metadata.id) {
           return prev;
         }
+        themeWriteIntentRef.current = true;
         return {
           ...prev,
           lightThemeId: theme.metadata.id,
@@ -723,6 +729,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         if (prev.darkThemeId === theme.metadata.id) {
           return prev;
         }
+        themeWriteIntentRef.current = true;
         return {
           ...prev,
           darkThemeId: theme.metadata.id,
