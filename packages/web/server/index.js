@@ -259,8 +259,6 @@ const normalizeManagedRemoteTunnelPresets = (...args) =>
 const normalizeManagedRemoteTunnelPresetTokens = (...args) =>
   settingsNormalizationRuntime.normalizeManagedRemoteTunnelPresetTokens(...args);
 const isUnsafeSkillRelativePath = (...args) => settingsNormalizationRuntime.isUnsafeSkillRelativePath(...args);
-const sanitizeTypographySizesPartial = (...args) =>
-  settingsNormalizationRuntime.sanitizeTypographySizesPartial(...args);
 const normalizeStringArray = (...args) => settingsNormalizationRuntime.normalizeStringArray(...args);
 const sanitizeModelRefs = (...args) => settingsNormalizationRuntime.sanitizeModelRefs(...args);
 const sanitizeSkillCatalogs = (...args) => settingsNormalizationRuntime.sanitizeSkillCatalogs(...args);
@@ -345,7 +343,6 @@ const settingsHelpers = createSettingsHelpers({
   normalizeManagedRemoteTunnelHostname,
   normalizeManagedRemoteTunnelPresets,
   normalizeManagedRemoteTunnelPresetTokens,
-  sanitizeTypographySizesPartial,
   normalizeStringArray,
   sanitizeModelRefs,
   sanitizeSkillCatalogs,
