@@ -174,5 +174,28 @@ export const instancePartOf = (document: Record<string, unknown>): Record<string
 };
 
 /** The profile keys of a document, as they would seed a fresh preferences file. */
+/** The profile keys of a document (the part `instancePartOf` leaves out). */
+export const profilePartOf = (document: Record<string, unknown>): Record<string, unknown> => {
+  const profile: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(document)) {
+    if (value !== undefined && isProfileSettingsKey(key)) profile[key] = value;
+  }
+  return profile;
+};
+
+/**
+ * What `settings.json` holds after a write: the instance part plus a copy of
+ * the profile's base values, so a build from before the split (which reads
+ * only this file) still finds the user's preferences. Current builds ignore
+ * the copy: `preferences.json` wins in the merged read.
+ */
+export const legacySettingsDocumentOf = (
+  document: Record<string, unknown>,
+  preferenceFields: PreferenceFields,
+): Record<string, unknown> => ({
+  ...instancePartOf(document),
+  ...flattenPreferences(preferenceFields),
+});
+
 export const seedPreferencesFrom = (document: Record<string, unknown>, now: number): PreferenceFields =>
   buildPreferencesFields({}, document, now);

@@ -80,8 +80,8 @@ describe('settings runtime', () => {
       await runtime.persistSettings(preferences);
 
       await expect(runtime.readSettingsFromDisk()).resolves.toEqual(preferences);
-      // Profile keys live in preferences.json; settings.json keeps only instance facts.
-      await expect(fsPromises.readFile(settingsFilePath, 'utf8')).resolves.toBe('{}');
+      // Profile keys live in preferences.json; settings.json keeps a legacy copy for older builds.
+      expect(JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf8'))).toEqual(preferences);
       const stored = JSON.parse(await fsPromises.readFile(path.join(tempRoot, 'preferences.json'), 'utf8'));
       expect(Object.fromEntries(Object.entries(stored.fields).map(([key, entry]) => [key, entry.value]))).toEqual(preferences);
     } finally {
@@ -275,14 +275,15 @@ describe('settings runtime: preferences.json split', () => {
     }
   });
 
-  it('routes profile keys to preferences.json, instance keys to settings.json, and drops device keys', async () => {
+  it('routes profile keys to preferences.json, keeps a legacy copy of them in settings.json, and drops device keys', async () => {
     const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
     try {
       await runtime.persistSettings({ fontSize: 120, desktopLanAccessEnabled: true, mobileKeyboardMode: 'native' });
 
       const settings = await readJson(settingsFilePath);
       expect(settings.desktopLanAccessEnabled).toBe(true);
-      expect(settings).not.toHaveProperty('fontSize');
+      // Older builds read only settings.json: the profile's base values stay there as a copy.
+      expect(settings.fontSize).toBe(120);
       expect(settings).not.toHaveProperty('mobileKeyboardMode');
 
       const preferences = await readJson(path.join(tempRoot, 'preferences.json'));
@@ -328,6 +329,7 @@ describe('settings runtime: preferences.json split', () => {
       expect(await fsPromises.readFile(preferencesPath, 'utf8')).toBe('{ not json');
       const settings = await readJson(settingsFilePath);
       expect(settings.desktopKeepAwakeEnabled).toBe(true);
+      // The refused profile write must not land in the legacy copy either.
       expect(settings).not.toHaveProperty('fontSize');
     } finally {
       await cleanup();

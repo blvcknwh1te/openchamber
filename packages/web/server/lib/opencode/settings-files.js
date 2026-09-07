@@ -159,6 +159,26 @@ export const instancePartOf = (document) => {
   return instance;
 };
 
+/** The profile keys of a document (the part `instancePartOf` leaves out). */
+export const profilePartOf = (document) => {
+  const profile = {};
+  for (const [key, value] of Object.entries(document)) {
+    if (value !== undefined && isProfileSettingsKey(key)) profile[key] = value;
+  }
+  return profile;
+};
+
+/**
+ * What `settings.json` holds after a write: the instance part plus a copy of
+ * the profile's base values. The copy is for builds that predate the split —
+ * they read only this file, so a rollback still finds the user's preferences.
+ * Current builds ignore it: `preferences.json` wins in the merged read.
+ */
+export const legacySettingsDocumentOf = (document, preferenceFields) => ({
+  ...instancePartOf(document),
+  ...flattenPreferences(preferenceFields),
+});
+
 /** The profile keys of a document, as they would seed a fresh preferences file. */
 export const seedPreferencesFrom = (document, now) => buildPreferencesFields({}, document, now);
 

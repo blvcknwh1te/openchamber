@@ -10,6 +10,8 @@ import {
   buildPreferencesFields,
   flattenPreferences,
   instancePartOf,
+  legacySettingsDocumentOf,
+  profilePartOf,
   parsePreferencesDocument,
   preferencesFilePathFor,
   seedPreferencesFrom,
@@ -264,8 +266,8 @@ const writeJsonAtomicSync = (filePath: string, text: string): void => {
 };
 
 // Merged view of both files. A missing preferences.json is seeded once from the
-// profile keys settings.json still carries; settings.json itself stays
-// untouched until the next write, so an older build can still read it.
+// profile keys settings.json still carries; every write keeps a copy of the
+// profile's base values in settings.json, so an older build can still read it.
 const readSharedSettingsFromDisk = (): Record<string, unknown> => {
   const settings = readSettingsJsonFromDisk();
   let preferences = readPreferencesFromDisk();
@@ -294,17 +296,24 @@ const writeSharedSettingsToDisk = async (
   const preferences = readPreferencesFromDisk();
   if (preferencesUnavailable) {
     console.warn('[OpenChamber] preferences.json is unreadable; profile settings were not saved.');
-  } else {
-    const previousFields = preferences.status === 'ok' ? preferences.fields : {};
-    // This host is always the VS Code surface kind: per-surface profile keys it
-    // changed land under `surfaces.vscode`; keys it did not change keep their entry.
-    const nextFields = buildPreferencesFields(previousFields, document, Date.now(), {
-      surface: VSCODE_SETTINGS_SURFACE,
-      changedKeys,
-    });
-    await writeJsonAtomic(OPENCHAMBER_PREFERENCES_PATH, serializePreferencesDocument(nextFields));
+    // settings.json keeps whatever legacy profile copy it already holds.
+    const onDisk = readSettingsJsonFromDisk();
+    await writeJsonAtomic(OPENCHAMBER_SHARED_SETTINGS_PATH, JSON.stringify({
+      ...instancePartOf(document),
+      ...profilePartOf(onDisk),
+    }, null, 2));
+    return;
   }
-  await writeJsonAtomic(OPENCHAMBER_SHARED_SETTINGS_PATH, JSON.stringify(instancePartOf(document), null, 2));
+  const previousFields = preferences.status === 'ok' ? preferences.fields : {};
+  // This host is always the VS Code surface kind: per-surface profile keys it
+  // changed land under `surfaces.vscode`; keys it did not change keep their entry.
+  const nextFields = buildPreferencesFields(previousFields, document, Date.now(), {
+    surface: VSCODE_SETTINGS_SURFACE,
+    changedKeys,
+  });
+  await writeJsonAtomic(OPENCHAMBER_PREFERENCES_PATH, serializePreferencesDocument(nextFields));
+  // The legacy copy of the profile's base values rides along for older builds.
+  await writeJsonAtomic(OPENCHAMBER_SHARED_SETTINGS_PATH, JSON.stringify(legacySettingsDocumentOf(document, nextFields), null, 2));
 };
 
 // Fields derived from runtime context — never persisted, always recomputed.

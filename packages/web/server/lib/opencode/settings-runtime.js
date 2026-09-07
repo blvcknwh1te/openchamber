@@ -3,6 +3,8 @@ import {
   buildPreferencesFields,
   flattenPreferences,
   instancePartOf,
+  legacySettingsDocumentOf,
+  profilePartOf,
   isDeviceSettingsKey,
   isProfileSettingsKey,
   normalizeSettingsSurface,
@@ -546,8 +548,9 @@ export const createSettingsRuntime = (deps) => {
   // The merged document every consumer sees: instance facts from settings.json
   // plus the profile from preferences.json. On the first read of an install
   // that predates the split, the profile keys still sitting in settings.json
-  // seed preferences.json (settings.json itself is left intact, so an older
-  // build still finds everything where it used to be).
+  // seed preferences.json. settings.json keeps a copy of the profile's base
+  // values on every write too, so an older build (which reads only that file)
+  // still finds everything where it used to be.
   const readSettingsFromDisk = async ({ surface = null } = {}) => {
     const instance = await readInstanceSettingsFromDisk();
     const preferences = await readPreferenceFields();
@@ -672,20 +675,25 @@ export const createSettingsRuntime = (deps) => {
    * preferences.json is unreadable its part is skipped rather than replaced.
    */
   const writeSettingsToDisk = async (settings, { surface = null, changedKeys = null } = {}) => {
-    await writeJsonFileAtomic(SETTINGS_FILE_PATH, JSON.stringify(instancePartOf(settings), null, 2));
-    if (preferencesUnavailable) {
-      return;
-    }
-    const current = await readPreferenceFields();
+    const current = preferencesUnavailable ? { status: 'failed' } : await readPreferenceFields();
     if (current.status === 'failed') {
+      // The profile part is not saved; settings.json keeps whatever legacy
+      // profile copy it already holds rather than losing it too.
       preferencesUnavailable = true;
+      const onDisk = await readInstanceSettingsFromDisk();
+      await writeJsonFileAtomic(SETTINGS_FILE_PATH, JSON.stringify({
+        ...instancePartOf(settings),
+        ...profilePartOf(onDisk),
+      }, null, 2));
       return;
     }
     const previousFields = current.status === 'ok' ? current.fields : {};
-    await writePreferencesToDisk(buildPreferencesFields(previousFields, settings, Date.now(), {
+    const nextFields = buildPreferencesFields(previousFields, settings, Date.now(), {
       surface: normalizeSettingsSurface(surface),
       changedKeys,
-    }));
+    });
+    await writeJsonFileAtomic(SETTINGS_FILE_PATH, JSON.stringify(legacySettingsDocumentOf(settings, nextFields), null, 2));
+    await writePreferencesToDisk(nextFields);
   };
 
   const validateProjectEntries = async (projects) => {
