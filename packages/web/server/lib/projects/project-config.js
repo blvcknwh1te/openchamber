@@ -3,6 +3,7 @@ import parser from 'cron-parser';
 
 import { projectPathFromId } from './project-id.js';
 import {
+  DEFAULT_PLANS_DIR,
   EMPTY_SHARED_PROJECT_CONFIG,
   SHARED_CONFIG_RELATIVE_PATH,
   applySharedProjectSetupPatch,
@@ -1017,14 +1018,20 @@ export const createProjectConfigRuntime = (deps) => {
     })
   );
 
-  /** The absolute shared plans folder of a project (`plansDir` in the shared file), or null. */
+  /**
+   * The absolute repository plans folder of a project: `plansDir` from the
+   * shared file when set, else the default `.openchamber/plans`. Setting
+   * `plansDir` replaces the default outright (nothing is read from it any
+   * more); moving files between the two is the user's job. Null only when the
+   * checkout cannot be located.
+   */
   const resolveSharedPlansDir = async (projectID) => {
     const personalRaw = await readRawProjectConfigFromDisk(projectID);
     const projectPath = projectPathOf(projectID, personalRaw);
     if (!projectPath) return null;
     const shared = await readSharedProjectConfig(projectID, personalRaw);
-    if (shared.status !== 'ok' || !shared.config.plansDir) return null;
-    return path.join(projectPath, ...shared.config.plansDir.split('/'));
+    const relative = shared.status === 'ok' && shared.config.plansDir ? shared.config.plansDir : DEFAULT_PLANS_DIR;
+    return path.join(projectPath, ...relative.split('/'));
   };
 
   return {

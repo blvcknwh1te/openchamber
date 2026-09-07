@@ -1,7 +1,6 @@
 import React from 'react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ProjectSettingsSubsection } from '@/components/sections/projects/ProjectSettingsSubsection';
 import { SettingsFieldRow } from '@/components/sections/shared/SettingsSection';
@@ -12,7 +11,6 @@ import {
   type ProjectRef,
   type ProjectSetup,
 } from '@/lib/openchamberConfig';
-import { resetSharedSetupTrust } from '@/lib/sharedTrustConfirmation';
 
 type SharedProjectConfigSectionProps = {
   projectRef: ProjectRef;
@@ -20,8 +18,7 @@ type SharedProjectConfigSectionProps = {
 
 /**
  * The team's shared file for this project: where it is, whether it could be
- * read, the shared plans folder, and the trust answer recorded on this
- * instance. Sharing individual items happens next to the items themselves
+ * read, and the shared plans folder. Sharing individual items happens next to the items themselves
  * (actions, setup commands, starters); this block never creates the file on
  * its own except when a plans folder is set.
  */
@@ -30,12 +27,6 @@ export const SharedProjectConfigSection: React.FC<SharedProjectConfigSectionProp
   const [setup, setSetup] = React.useState<ProjectSetup | null>(null);
   const [plansDirDraft, setPlansDirDraft] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    const next = await getProjectSetup(projectRef);
-    setSetup(next);
-    setPlansDirDraft(next.shared.plansDir ?? '');
-  }, [projectRef]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -68,22 +59,10 @@ export const SharedProjectConfigSection: React.FC<SharedProjectConfigSectionProp
     }
   }, [plansDirDraft, projectRef, setup, t]);
 
-  const handleResetTrust = React.useCallback(async () => {
-    setIsSaving(true);
-    try {
-      if (await resetSharedSetupTrust(projectRef)) {
-        await load();
-      }
-    } finally {
-      setIsSaving(false);
-    }
-  }, [load, projectRef]);
-
   if (!setup) {
     return null;
   }
 
-  const trusted = setup.trust.hash !== null && setup.trust.trusted;
   const status = setup.shared.status === 'invalid'
     ? t('settings.projects.shared.invalid', { path: setup.shared.path, reason: setup.shared.reason ?? '' })
     : setup.shared.status === 'ok'
@@ -126,13 +105,6 @@ export const SharedProjectConfigSection: React.FC<SharedProjectConfigSectionProp
         />
       </SettingsFieldRow>
 
-      {trusted ? (
-        <SettingsFieldRow label={t('settings.projects.shared.trusted')}>
-          <Button type="button" variant="ghost" size="xs" className="!font-normal" disabled={isSaving} onClick={() => void handleResetTrust()}>
-            {t('settings.projects.shared.resetTrust')}
-          </Button>
-        </SettingsFieldRow>
-      ) : null}
     </ProjectSettingsSubsection>
   );
 };

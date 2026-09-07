@@ -205,6 +205,8 @@ export const projectSetupPatchToStored = (patch) => {
 // ── Shared file ──
 
 export const SHARED_CONFIG_RELATIVE_PATH = '.openchamber/project.json';
+/** Where repository plans live unless the shared file's `plansDir` says otherwise. */
+export const DEFAULT_PLANS_DIR = '.openchamber/plans';
 const SHARED_CONFIG_VERSION = 1;
 
 /**

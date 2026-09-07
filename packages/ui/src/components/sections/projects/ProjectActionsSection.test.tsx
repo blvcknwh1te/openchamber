@@ -115,7 +115,7 @@ describe('ProjectActionsSection', () => {
 
     const text = host.textContent ?? '';
     expect(text).toContain('Team dev');
-    expect(text).toContain('Shared by the team in .openchamber/project.json');
+    expect(text).toContain('Stored in the repository (.openchamber/project.json)');
     // The shared row is not a collapsible editor: no button carries its name.
     const sharedTrigger = Array.from(host.querySelectorAll('button'))
       .find((button) => button.textContent?.includes('Team dev'));

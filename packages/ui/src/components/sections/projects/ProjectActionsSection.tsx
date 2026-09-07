@@ -355,10 +355,10 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                   {hidden ? t('settings.projects.shared.hiddenBadge') : t('settings.projects.shared.badge')}
                 </span>
                 <span className="min-w-0 flex-1 typography-meta font-mono text-muted-foreground truncate">{action.command}</span>
-                <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} onClick={() => void setSharedActionHidden(action.id, !hidden)}>
+                <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} title={hidden ? t('settings.projects.shared.actions.showTitle') : t('settings.projects.shared.actions.hideTitle')} onClick={() => void setSharedActionHidden(action.id, !hidden)}>
                   {hidden ? t('settings.projects.shared.actions.show') : t('settings.projects.shared.actions.hide')}
                 </Button>
-                <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} onClick={() => void makeActionPersonal(action)}>
+                <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} title={t('settings.projects.shared.actions.makePersonalTitle')} onClick={() => void makeActionPersonal(action)}>
                   {t('settings.projects.shared.actions.makePersonal')}
                 </Button>
               </div>
@@ -410,6 +410,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
                       size="xs"
                       className="!font-normal shrink-0"
                       disabled={isSharing || hasChanges}
+                      title={hasChanges ? t('settings.projects.shared.actions.shareAfterSave') : t('settings.projects.shared.actions.shareTitle', { path: sharedState?.path ?? '.openchamber/project.json' })}
                       onClick={() => void shareAction(action)}
                     >
                       {t('settings.projects.shared.actions.share')}

@@ -20,6 +20,7 @@ import {
   updateProjectSetup,
   updateSharedProjectSetup,
 } from '@/lib/openchamberConfig';
+import { resetSharedSetupTrust } from '@/lib/sharedTrustConfirmation';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import { sessionEvents } from '@/lib/sessionEvents';
 import type { WorktreeMetadata } from '@/types/worktree';
@@ -58,6 +59,10 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
   const [sharedSetupCommands, setSharedSetupCommands] = React.useState<string[]>([]);
   const [sharedConfigPath, setSharedConfigPath] = React.useState('');
   const [replaceSharedCommands, setReplaceSharedCommands] = React.useState(false);
+  // The trust answer covers the repository's setup commands and actions; it is
+  // shown here, next to the commands it is mostly about.
+  const [sharedTrusted, setSharedTrusted] = React.useState(false);
+  const [isResettingTrust, setIsResettingTrust] = React.useState(false);
   const [isSharing, setIsSharing] = React.useState(false);
   const [reloadCounter, setReloadCounter] = React.useState(0);
   const [waitForSetupCommands, setWaitForSetupCommands] = React.useState(false);
@@ -164,6 +169,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
           setSharedSetupCommands(setup.shared.setupWorktree);
           setSharedConfigPath(setup.shared.path);
           setReplaceSharedCommands(setup.personal.setupWorktreeMode === 'replace');
+          setSharedTrusted(setup.trust.hash !== null && setup.trust.trusted);
           setCommandsSnapshot(JSON.stringify(nextCommands));
           setWaitForSetupCommands(setup.setupWorktreeWait);
         }
@@ -227,6 +233,18 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
       setIsSharing(false);
     }
   }, [isSharing, projectRef, reload, setupCommands, sharedSetupCommands, t]);
+
+  const handleResetTrust = React.useCallback(async () => {
+    if (!projectRef) return;
+    setIsResettingTrust(true);
+    try {
+      if (await resetSharedSetupTrust(projectRef)) {
+        setSharedTrusted(false);
+      }
+    } finally {
+      setIsResettingTrust(false);
+    }
+  }, [projectRef]);
 
   const handleReplaceSharedCommandsChange = React.useCallback(async (next: boolean) => {
     if (!projectRef) return;
@@ -457,11 +475,19 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                     <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
                       {t('settings.projects.shared.badge')}
                     </span>
-                    <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} onClick={() => void makeCommandPersonal(command)}>
+                    <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} title={t('settings.projects.shared.actions.makePersonalTitle')} onClick={() => void makeCommandPersonal(command)}>
                       {t('settings.projects.shared.actions.makePersonal')}
                     </Button>
                   </div>
                 ))}
+                {sharedTrusted ? (
+                  <div className="flex items-center gap-2">
+                    <span className="typography-meta text-muted-foreground">{t('settings.projects.shared.trusted')}</span>
+                    <Button type="button" variant="ghost" size="xs" className="!font-normal" disabled={isResettingTrust} onClick={() => void handleResetTrust()}>
+                      {t('settings.projects.shared.resetTrust')}
+                    </Button>
+                  </div>
+                ) : null}
                 <label
                   data-settings-item="projects.worktree.setup.replace"
                   className="flex cursor-pointer items-center gap-2 py-1"
@@ -486,13 +512,14 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                   placeholder={t('settings.openchamber.worktrees.setup.commandPlaceholder')}
                   className="h-7 min-w-0 flex-1 font-mono text-xs"
                 />
-                {command.trim() && !commandsHaveChanges ? (
+                {command.trim() ? (
                   <Button
                     type="button"
                     variant="ghost"
                     size="xs"
                     className="!font-normal h-7 shrink-0"
-                    disabled={isSharing}
+                    disabled={isSharing || commandsHaveChanges}
+                    title={commandsHaveChanges ? t('settings.projects.shared.actions.shareAfterSave') : t('settings.projects.shared.actions.shareTitle', { path: sharedConfigPath || '.openchamber/project.json' })}
                     onClick={() => void shareCommand(index)}
                   >
                     {t('settings.projects.shared.actions.share')}

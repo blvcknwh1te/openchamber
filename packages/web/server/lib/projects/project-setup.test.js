@@ -523,6 +523,21 @@ describe('project setup runtime', () => {
     }
   });
 
+  it('resolves the repository plans folder: the default without plansDir, the configured one instead of it', async () => {
+    const { runtime, tempRoot, cleanup } = await createRuntime();
+    try {
+      const repo = path.join(tempRoot, 'repo');
+      await mkdir(repo, { recursive: true });
+      const projectId = createProjectIdFromPath(repo);
+      expect(await runtime.resolveSharedPlansDir(projectId)).toBe(path.join(repo, '.openchamber', 'plans'));
+      await runtime.updateSharedProjectSetup(projectId, { plansDir: 'docs/plans' });
+      expect(await runtime.resolveSharedPlansDir(projectId)).toBe(path.join(repo, 'docs', 'plans'));
+      expect(await runtime.resolveSharedPlansDir('project-test')).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('reports a broken shared file as invalid and still serves the personal setup', async () => {
     const { runtime, tempRoot, cleanup } = await createRuntime();
     try {
