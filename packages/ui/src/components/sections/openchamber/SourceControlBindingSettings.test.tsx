@@ -57,7 +57,13 @@ describe('committed repository context', () => {
     expect(html).toContain('github.com');
     expect(html).toContain('same-user');
     expect(html).toContain('OAuth');
-    expect(html).toContain('github.com#42');
+    // The provider is a mark and readiness is an icon with the reason on hover.
+    expect(html).toContain('#oc-github-fill');
+    expect(html).toContain('#oc-checkbox-circle');
+    expect(html).toContain('aria-label="Ready"');
+    // The provider user ID is an internal handle; the summary names the
+    // account instead, and the provider row already carries the instance.
+    expect(html).not.toContain('github.com#42');
     expect(html).not.toContain('oauth-one');
     expect(html).not.toContain('cli-one');
     expect(html).not.toContain('actual-transport-grant');

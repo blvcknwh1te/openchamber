@@ -1,5 +1,5 @@
 import React from 'react';
-import { getManagedCredentialSourceLabelKey, getSourceControlProviderLabel } from '@/lib/source-control/identity';
+import { getManagedCredentialSourceLabelKey } from '@/lib/source-control/identity';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,10 +7,12 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { GitIdentityProfile, GitIdentitySummary, SourceControlRepositoryBindingResetIntent } from '@/lib/api/types';
+import type { GitIdentityProfile, GitIdentitySummary, SourceControlProvider, SourceControlRepositoryBindingResetIntent } from '@/lib/api/types';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { repositoryBindingOwner, useRepositoryBinding } from '@/lib/source-control/repository-binding';
 import { useUIStore } from '@/stores/useUIStore';
+import { Icon } from '@/components/icon/Icon';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getSourceControlAuthKey, useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import { useGitStore } from '@/stores/useGitStore';
 import {
@@ -106,12 +108,49 @@ const RepositoryAuthorEditor = ({ directory, className }: { directory: string; c
   </SettingsControlGroup>;
 };
 
-const Readiness = ({ ready }: { ready: boolean }) => {
+type BindingReadiness = 'ready' | 'confirmation-required' | 'account-unavailable' | 'config-changed';
+
+const READINESS_REASON_KEYS = {
+  'confirmation-required': 'gitView.context.readiness.confirmationRequired',
+  'account-unavailable': 'gitView.context.readiness.accountUnavailable',
+  'config-changed': 'gitView.context.readiness.configChanged',
+} as const;
+
+/**
+ * Readiness as an icon: the row is scanned, not read, and every entry repeating
+ * the word "Ready" buried the one that was not. The reason the binding reports
+ * is the tooltip, so a problem explains itself on hover instead of sending the
+ * reader into the configure dialog to guess.
+ */
+const Readiness = ({ ready, reason }: { ready: boolean; reason?: BindingReadiness }) => {
   const { t } = useI18n();
-  return ready
-    ? <>{t('gitView.context.ready')}</>
-    : <span className="text-[var(--status-warning)]">{t('gitView.context.needsAttention')}</span>;
+  const label = ready
+    ? t('gitView.context.ready')
+    : reason && reason !== 'ready'
+      ? t(READINESS_REASON_KEYS[reason])
+      : t('gitView.context.needsAttention');
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex align-[-0.15em]" aria-label={label}>
+          <Icon
+            name={ready ? 'checkbox-circle' : 'close-circle'}
+            className={cn('size-3.5', ready ? 'text-[var(--status-success)]' : 'text-[var(--status-error)]')}
+          />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
 };
+
+/** The provider reads faster as its mark than as its name. */
+const ProviderMark = ({ provider }: { provider: SourceControlProvider }) => (
+  <Icon
+    name={provider === 'gitlab' ? 'gitlab-fill' : 'github-fill'}
+    className="size-3.5 shrink-0 align-[-0.15em] text-foreground/70"
+  />
+);
 
 export const SourceControlBindingSettings: React.FC<SourceControlBindingSettingsProps> = ({ className, directory, author, allowAuthorApply = false }) => {
   const { t } = useI18n();
@@ -201,25 +240,27 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
         {providers.length ? providers.map((provider) => summaryRow(
           t('gitView.context.provider'),
           <>
-            {getSourceControlProviderLabel(provider.provider)} · {provider.instance}
+            <ProviderMark provider={provider.provider} />{' '}{provider.instance}
             {boundAccountName(provider) ? <> · @{boundAccountName(provider)}</> : null}
             {' · '}{provider.primaryRemote}
-            {' · '}<Readiness ready={ready && provider.readiness === 'ready'} />
+            {' '}<Readiness ready={ready && provider.readiness === 'ready'} reason={provider.readiness} />
           </>,
           JSON.stringify([provider.provider, provider.instance, provider.accountId, provider.primaryRemote]),
         )) : summaryRow(t('gitView.context.provider'), emptyContext, 'provider-empty')}
         {remotes.length ? remotes.map((remote) => {
           const grant = grants.get(remote.name);
+          // The provider row already names the provider and instance, and the
+          // provider user ID is an internal handle. The row answers "which
+          // credential" — the mark, the account and how it was obtained.
           return summaryRow(t('gitView.context.transport'), <>{remote.name} · {grant ? <>
             {grant.mode === 'managed' ? grant.presentation?.status === 'available'
               ? grant.presentation.transport === 'ssh'
                 ? `SSH · ${grant.presentation.fingerprint}`
-                : <>{getSourceControlProviderLabel(grant.presentation.provider)} · {grant.presentation.instance}
-                  {' · '}@{grant.presentation.username}{' · '}{t(getManagedCredentialSourceLabelKey(grant.presentation.source))}
-                  {' · '}{grant.presentation.providerUserId}</>
+                : <><ProviderMark provider={grant.presentation.provider} />{' '}@{grant.presentation.username}
+                  {' · '}{t(getManagedCredentialSourceLabelKey(grant.presentation.source))}</>
               : t('gitView.context.managedCredentialUnavailable')
               : t(grant.mode === 'anonymous' ? 'settings.sourceControl.transport.anonymous' : 'gitView.context.systemUnverified')}
-            {' · '}<Readiness ready={ready && grant.readiness === 'ready'} />
+            {' '}<Readiness ready={ready && grant.readiness === 'ready'} reason={grant.readiness} />
           </> : t('gitView.context.notConfigured')}</>, `remote:${remote.name}`);
         }) : summaryRow(t('gitView.context.transport'), emptyContext, 'transport-empty')}
         {author !== undefined ? summaryRow(t('gitView.context.author'), author?.userName && author.userEmail
