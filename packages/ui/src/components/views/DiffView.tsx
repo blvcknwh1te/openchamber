@@ -50,6 +50,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionMessages } from '@/sync/sync-context';
 import { getFirstChangedModifiedLineFromPatch } from './diffPatchUtils';
 import type { FileDiffMetadata } from '@pierre/diffs';
+import { useRepositoryBinding } from '@/lib/source-control/repository-binding';
 
 // Minimum width for side-by-side diff view (px)
 const SIDE_BY_SIDE_MIN_WIDTH = 1100;
@@ -996,10 +997,11 @@ export const DiffView: React.FC<DiffViewProps> = ({
     flushContent = false,
 }) => {
     const { t } = useI18n();
-    const { git, files } = useRuntimeAPIs();
+    const { git, files, sourceControl } = useRuntimeAPIs();
     const effectiveDirectory = useEffectiveDirectory();
+    const binding = useRepositoryBinding(effectiveDirectory, sourceControl);
     const openContextSurface = useUIStore((state) => state.openContextSurface);
-    const requestWalkthroughSource = useWalkthroughStore((state) => state.requestSource);
+    const requestWalkthroughTarget = useWalkthroughStore((state) => state.requestTarget);
     const { screenWidth, isMobile } = useDeviceInfo();
 
     const isGitRepo = useIsGitRepo(effectiveDirectory ?? null);
@@ -1157,11 +1159,9 @@ export const DiffView: React.FC<DiffViewProps> = ({
     );
 
     const repositoryDefaultBranch = React.useMemo(() => {
-        const trackingRemote = status?.tracking?.trim().split('/')[0];
-        return (trackingRemote && branches?.defaultBranches?.[trackingRemote])
-            ?? branches?.defaultBranches?.origin
-            ?? null;
-    }, [branches, status?.tracking]);
+        const primaryRemote = binding.contexts[0]?.primaryRemote;
+        return primaryRemote ? branches?.defaultBranches?.[primaryRemote] ?? null : null;
+    }, [binding.contexts, branches]);
     // Offered only while the default branch is known and the current branch is
     // not it (an unknown default must not flash the option on a guess), and
     // only outside VS Code (the extension has no context diff panel).
@@ -1181,7 +1181,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             currentBranch,
             repositoryDefaultBranch,
             isBranchStatusResolved,
-            branches !== null
+            branches !== null && binding.status === 'ready'
         );
 
     const setBaseOverride = useGitBaseBranchStore((state) => state.setOverride);
@@ -1232,7 +1232,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         setIsBranchBaseResolved(false);
         getBranchBase(effectiveDirectory, currentBranch)
             .then((result) => {
-                if (!cancelled) setDetectedBranchBase(result.base);
+                if (!cancelled) setDetectedBranchBase(result.base ?? repositoryDefaultBranch);
             })
             .catch(() => {
                 if (!cancelled) setDetectedBranchBase(null);
@@ -1243,11 +1243,29 @@ export const DiffView: React.FC<DiffViewProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [currentBranch, effectiveDirectory, showBranchOption]);
+    }, [currentBranch, effectiveDirectory, repositoryDefaultBranch, showBranchOption]);
 
     // Explicit user choice outranks the detected source; both are real answers
     // from git or the user — never a main/master guess.
-    const branchBase = baseOverride ?? detectedBranchBase;
+    const branchBase = React.useMemo(() => {
+        const candidate = (baseOverride ?? detectedBranchBase)?.trim();
+        const primaryRemote = binding.contexts[0]?.primaryRemote;
+        if (!candidate || !primaryRemote) return null;
+        const remoteBranches = (branches?.all ?? [])
+            .filter((name) => name.startsWith('remotes/'))
+            .map((name) => name.slice('remotes/'.length));
+        const remoteNames = new Set(binding.read?.repository.remotes.map((remote) => remote.name) ?? []);
+        let branchName = candidate.replace(/^refs\/heads\//, '').replace(/^refs\/remotes\//, '').replace(/^remotes\//, '');
+        const localBranches = (branches?.all ?? []).filter((name) => !name.startsWith('remotes/'));
+        if (localBranches.includes(branchName)) return `refs/heads/${branchName}`;
+        const slashIndex = branchName.indexOf('/');
+        if (slashIndex > 0 && remoteNames.has(branchName.slice(0, slashIndex))) {
+            if (branchName.slice(0, slashIndex) !== primaryRemote) return null;
+            branchName = branchName.slice(slashIndex + 1);
+        }
+        if (remoteBranches.includes(`${primaryRemote}/${branchName}`)) return `${primaryRemote}/${branchName}`;
+        return null;
+    }, [baseOverride, binding.contexts, binding.read, branches, detectedBranchBase]);
 
     const [branchFiles, setBranchFiles] = React.useState<GitRangeFileEntry[] | null>(null);
     const [branchFilesError, setBranchFilesError] = React.useState<string | null>(null);
@@ -2113,11 +2131,13 @@ export const DiffView: React.FC<DiffViewProps> = ({
                             // while looking at staged changes should review
                             // staged changes, not whatever the panel showed last.
                             const directory = effectiveDirectory ?? '';
-                            requestWalkthroughSource(directory, {
-                                kind: 'working-tree',
-                                scope: activeDiffScope === 'staged' || activeDiffScope === 'working'
-                                    ? activeDiffScope
-                                    : 'all',
+                            requestWalkthroughTarget(directory, {
+                                source: {
+                                    kind: 'working-tree',
+                                    scope: activeDiffScope === 'staged' || activeDiffScope === 'working'
+                                        ? activeDiffScope
+                                        : 'all',
+                                },
                             });
                             openContextSurface(directory, 'walkthrough');
                         }}

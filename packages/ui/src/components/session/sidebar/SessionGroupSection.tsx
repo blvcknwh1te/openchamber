@@ -30,7 +30,7 @@ import {
 } from './sessionNodeItemUtils';
 import type { SessionNodeRenderExtras } from './sessionNodeItemUtils';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
-import { getGitHubPrStatusKey, usePrVisualSummary } from '@/stores/useGitHubPrStatusStore';
+import { useFreshestSourceControlVisualSummaryForBranch } from '@/stores/useGitHubPrStatusStore';
 import { useI18n } from '@/lib/i18n';
 import { useChildStoreManager } from '@/sync/sync-context';
 import { canRequestNativeDirectoryAccess, requestDirectoryAccess } from '@/lib/desktop';
@@ -341,13 +341,13 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
   const foldersMap = useSessionFoldersStore((state) => state.foldersMap);
   const isCollapsed = hasSessionSearchQuery ? false : collapsedGroups.has(groupKey);
   // PR state for the worktree sub-header (grouped display mode).
-  const groupPrKey = React.useMemo(() => {
-    if (group.isMain || group.isArchivedBucket || hideGroupLabel) return null;
-    const directory = normalizePath(group.directory ?? null);
-    const branch = group.branch?.trim();
-    return directory && branch ? getGitHubPrStatusKey(directory, branch) : null;
-  }, [group.branch, group.directory, group.isArchivedBucket, group.isMain, hideGroupLabel]);
-  const groupPrSummary = usePrVisualSummary(groupPrKey);
+  const groupPrDirectory = group.isMain || group.isArchivedBucket || hideGroupLabel
+    ? null
+    : normalizePath(group.directory ?? null);
+  const groupPrBranch = group.isMain || group.isArchivedBucket || hideGroupLabel
+    ? null
+    : group.branch?.trim() || null;
+  const groupPrSummary = useFreshestSourceControlVisualSummaryForBranch(groupPrDirectory, groupPrBranch);
   const groupPrColor = groupPrSummary ? `var(--pr-${groupPrSummary.visualState})` : undefined;
   const childStores = useChildStoreManager();
   const bootstrapDirectories = React.useMemo(() => {

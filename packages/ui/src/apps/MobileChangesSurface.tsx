@@ -7,6 +7,9 @@ import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { ChangesPanel, type ChangesGroupConfig } from '@/components/views/git/ChangesPanel';
 import { CommitSection } from '@/components/views/git/CommitSection';
 import { SyncActions } from '@/components/views/git/SyncActions';
+import { ContributorDestinationDialog } from '@/components/views/git/ContributorDestinationDialog';
+import { useContributorDestinationChooser } from '@/components/views/git/contributorDestination';
+import { SourceControlBindingSettings } from '@/components/sections/openchamber/SourceControlBindingSettings';
 import { PierreDiffViewer } from '@/components/views/PierreDiffViewer';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -17,13 +20,21 @@ import type { GitRemote } from '@/lib/gitApi';
 import { getLanguageFromExtension, isImageFile } from '@/lib/toolHelpers';
 import {
   useGitStore,
+  useGitIdentity,
   useGitStatus,
   useIsGitRepo,
   useGitLoadingStatus,
 } from '@/stores/useGitStore';
 import { getRuntimeKey } from '@/lib/runtime-switch';
+import { BoundGitNetworkOperationError, GitOperationResultError, runBoundGitNetworkOperation } from '@/lib/boundGitNetworkOperation';
+import { useGitOperationRecovery } from '@/components/views/git/useGitOperationRecovery';
+import { GitOperationStatus } from '@/components/views/git/GitOperationStatus';
+import { PendingGitOperationError } from '@/lib/source-control/git-operation-recovery';
+import { useGitPublishChooser } from '@/components/views/git/useGitPublishChooser';
+import { PublishDialog } from '@/components/views/git/PublishDialog';
+import { settleGitFileReverts } from './mobileChangesOperations';
 
-type SyncAction = 'fetch' | 'pull' | 'push' | 'sync' | null;
+type SyncAction = 'fetch' | 'sync' | 'publish' | null;
 type CommitAction = 'commit' | 'commitAndPush' | null;
 
 const normalizePath = (value?: string | null): string => (value || '').replace(/\\/g, '/').replace(/\/+$/g, '');
@@ -55,9 +66,10 @@ type MobileChangesSurfaceProps = {
 
 export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onClose, initialDiffPath, initialDiffStaged = false }) => {
   const { t } = useI18n();
-  const { git } = useRuntimeAPIs();
+  const { git, sourceControl } = useRuntimeAPIs();
   const currentDirectory = normalizePath(useEffectiveDirectory() ?? null);
   const status = useGitStatus(currentDirectory || null);
+  const currentIdentity = useGitIdentity(currentDirectory || null);
   const isGitRepo = useIsGitRepo(currentDirectory || null);
   const isLoadingStatus = useGitLoadingStatus(currentDirectory || null);
   const setActiveDirectory = useGitStore((state) => state.setActiveDirectory);
@@ -92,10 +104,11 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
   const [generatedHighlights, setGeneratedHighlights] = React.useState<string[]>([]);
   const [visibleChangePaths, setVisibleChangePaths] = React.useState<string[]>([]);
   const [remotes, setRemotes] = React.useState<GitRemote[]>([]);
-  const [remoteUrl, setRemoteUrl] = React.useState<string | null>(null);
   const [diffLoadError, setDiffLoadError] = React.useState<string | null>(null);
   const [diffRetryNonce, setDiffRetryNonce] = React.useState(0);
-
+  const contributorDestination = useContributorDestinationChooser();
+  const publishChooser = useGitPublishChooser({ directory: currentDirectory, branch: status?.current, chooseContributor: contributorDestination.choose });
+  const operationRecovery = useGitOperationRecovery(currentDirectory, git, sourceControl);
   const changeEntries = React.useMemo(() => {
     const files = status?.files ?? [];
     const unique = new Map<string, (typeof files)[number]>();
@@ -115,14 +128,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     [changeEntries],
   );
 
-  const effectiveRemotes = React.useMemo<GitRemote[]>(() => {
-    if (remotes.length > 0) return remotes;
-    const trackingRemote = status?.tracking?.includes('/') ? status.tracking.split('/')[0] : null;
-    if (trackingRemote || remoteUrl) {
-      return [{ name: trackingRemote || 'origin', fetchUrl: remoteUrl ?? '', pushUrl: remoteUrl ?? '' }];
-    }
-    return [];
-  }, [remoteUrl, remotes, status?.tracking]);
+  const effectiveRemotes = remotes;
 
   const selectedDiff = useGitStore(React.useCallback((state) => {
     if (!currentDirectory || route.type !== 'diff') return null;
@@ -151,19 +157,13 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
   const refreshRemotes = React.useCallback(async () => {
     if (!currentDirectory) {
       setRemotes([]);
-      setRemoteUrl(null);
       return;
     }
     try {
-      const [remoteList, url] = await Promise.all([
-        git.getRemotes(currentDirectory).catch(() => []),
-        git.getRemoteUrl ? git.getRemoteUrl(currentDirectory).catch(() => null) : Promise.resolve(null),
-      ]);
+      const remoteList = await git.getRemotes(currentDirectory);
       setRemotes(remoteList);
-      setRemoteUrl(url);
     } catch {
       setRemotes([]);
-      setRemoteUrl(null);
     }
   }, [currentDirectory, git]);
 
@@ -224,45 +224,58 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     };
   }, [currentDirectory, diffRetryNonce, getDiff, git, route, setDiff]);
 
-  const handleSyncAction = async (action: Exclude<SyncAction, null>, remote?: GitRemote) => {
+  const handleSyncAction = async (action: Exclude<SyncAction, null>, remote?: GitRemote, forceChoose = false) => {
     if (!currentDirectory) return;
+    const recovery = operationRecovery.start();
+    if (!recovery) return;
     setSyncAction(action);
+    const actionLabel = t(action === 'fetch' ? 'gitView.sync.fetch' : action === 'publish' ? 'gitView.publish.title' : 'gitView.sync.syncChanges');
     try {
-      const getPullOptions = (pullRemote: GitRemote) => {
-        const trackingPrefix = `${pullRemote.name}/`;
-        const trackedBranch = status?.tracking?.startsWith(trackingPrefix)
-          ? status.tracking.slice(trackingPrefix.length)
-          : undefined;
-        return { remote: pullRemote.name, branch: trackedBranch, rebase: true };
-      };
+      if (action === 'sync' || action === 'publish') {
+        const execute = await publishChooser.prepare(action === 'publish' ? 'push' : 'sync', { forceChoose: forceChoose || action === 'publish', onOperation: recovery.onOperation });
+        await execute();
+      } else if (remote && status) {
+        await runBoundGitNetworkOperation({
+          action, directory: currentDirectory, remoteName: remote.name, status, sourceControl, git, onOperation: recovery.onOperation,
+        });
+      } else {
+        throw new BoundGitNetworkOperationError('tracking-required');
+      }
 
-      if (action === 'fetch') {
-        if (!remote) throw new Error(t('mobile.changes.noRemote'));
-        await git.gitFetch(currentDirectory, { remote: remote.name });
+      if (!recovery.isCurrent()) return;
+      if (action === 'fetch' && remote) {
         toast.success(t('gitView.toast.fetchedFromRemote', { name: remote.name }));
       } else if (action === 'sync') {
-        if (!remote) throw new Error(t('mobile.changes.noRemote'));
-        await git.gitFetch(currentDirectory, { remote: remote.name });
-        const afterFetch = await git.getGitStatus(currentDirectory);
-        if ((afterFetch.behind ?? 0) > 0) {
-          if ((afterFetch.files?.length ?? 0) > 0) {
-            toast.error(t('gitView.toast.commitOrStashBeforeSync'));
-            return;
-          }
-          await git.gitPull(currentDirectory, getPullOptions(remote));
-        }
-        const afterPull = await git.getGitStatus(currentDirectory);
-        if ((afterPull.ahead ?? 0) > 0) {
-          await git.gitPush(currentDirectory);
-        }
-        toast.success(t('gitView.toast.alreadyUpToDate'));
+        toast.success(t('gitView.toast.syncedChanges'));
+      } else if (action === 'publish') {
+        toast.success(t('gitView.publish.succeeded'));
       }
       await refreshStatusAndBranches(false);
       await refreshRemotes();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('gitView.toast.syncActionFailed', { action: t('gitView.sync.syncChanges') }));
+      if (error instanceof GitOperationResultError || error instanceof PendingGitOperationError) {
+        if (recovery.isCurrent()) await Promise.allSettled([refreshStatusAndBranches(false), refreshRemotes()]);
+        return;
+      }
+      if (error instanceof BoundGitNetworkOperationError && error.code === 'stale-runtime') return;
+      if (error instanceof BoundGitNetworkOperationError && publishChooser.errorMessage(error)) {
+        toast.info(publishChooser.errorMessage(error));
+        return;
+      }
+      await Promise.allSettled([
+        refreshStatusAndBranches(false),
+        refreshRemotes(),
+      ]);
+      toast.error(error instanceof BoundGitNetworkOperationError
+        ? error.code === 'contributor-publish-cancelled-after-update'
+          ? t('gitView.toast.contributorPublishCancelledAfterUpdate')
+          : error.code === 'contributor-publish-cancelled'
+            ? t('gitView.toast.contributorPublishCancelled')
+            : t('gitView.toast.syncActionFailed', { action: actionLabel })
+        : error instanceof Error ? error.message : t('gitView.toast.syncActionFailed', { action: actionLabel }));
     } finally {
-      setSyncAction(null);
+      recovery.finish();
+      if (recovery.isCurrent()) setSyncAction(null);
     }
   };
 
@@ -312,11 +325,23 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     setIsRevertingAll(true);
     setRevertingPaths(new Set(uniquePaths));
     try {
-      await Promise.all(uniquePaths.map((filePath) => git.revertGitFile(currentDirectory, filePath)));
+      const result = await settleGitFileReverts(
+        uniquePaths,
+        (filePath) => git.revertGitFile(currentDirectory, filePath),
+      );
       await refreshStatusAndBranches(false);
-      toast.success(uniquePaths.length === 1
-        ? t('gitView.toast.revertedFilesSingle', { count: uniquePaths.length })
-        : t('gitView.toast.revertedFilesPlural', { count: uniquePaths.length }));
+      if (result.failures.length === 0) {
+        toast.success(uniquePaths.length === 1
+          ? t('gitView.toast.revertedFilesSingle', { count: uniquePaths.length })
+          : t('gitView.toast.revertedFilesPlural', { count: uniquePaths.length }));
+      } else if (result.failures.length === uniquePaths.length) {
+        toast.error(result.failures[0]?.error?.message ?? t('gitView.toast.revertFailed'));
+      } else {
+        const successCount = uniquePaths.length - result.failures.length;
+        toast.warning(successCount === 1
+          ? t('gitView.toast.revertedSomeSingle', { success: successCount, failed: result.failures.length })
+          : t('gitView.toast.revertedSomePlural', { success: successCount, failed: result.failures.length }));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('gitView.toast.revertFailed'));
     } finally {
@@ -367,32 +392,28 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     }
 
     setCommitAction(options.pushAfter ? 'commitAndPush' : 'commit');
+    let recovery: ReturnType<typeof operationRecovery.start> = null;
+    let commitOutcome: 'pending' | 'local' | 'published' = 'pending';
     try {
       await git.createGitCommit(currentDirectory, commitMessage.trim(), { files: filesToCommit });
+      commitOutcome = 'local';
       toast.success(t('gitView.toast.commitCreated'));
       setCommitMessage('');
       setGeneratedHighlights([]);
 
       if (options.pushAfter) {
-        const trackingRemoteName = status?.tracking?.split('/')[0];
-        const remote = effectiveRemotes.find((entry) => entry.name === trackingRemoteName) ?? effectiveRemotes[0];
-        if (!remote) throw new Error(t('mobile.changes.noRemote'));
-        setSyncAction('sync');
-        const trackingPrefix = `${remote.name}/`;
-        const trackedBranch = status?.tracking?.startsWith(trackingPrefix)
-          ? status.tracking.slice(trackingPrefix.length)
-          : undefined;
-
-        await git.gitFetch(currentDirectory, { remote: remote.name });
-        const afterFetch = await git.getGitStatus(currentDirectory);
-        if ((afterFetch.behind ?? 0) > 0) {
-          await git.gitPull(currentDirectory, { remote: remote.name, branch: trackedBranch, rebase: true });
+        recovery = operationRecovery.start();
+        if (!recovery) {
+          toast.warning(t('gitView.publish.commitKept'));
+          await Promise.allSettled([refreshStatusAndBranches(false), refreshRemotes()]);
+          return;
         }
-
-        const afterPull = await git.getGitStatus(currentDirectory);
-        if ((afterPull.ahead ?? 0) > 0) {
-          await git.gitPush(currentDirectory);
-        }
+        recovery.commitCreated();
+        const executePush = await publishChooser.prepare('push', { onOperation: recovery.onOperation });
+        setSyncAction('publish');
+        await executePush();
+        commitOutcome = 'published';
+        toast.success(t('gitView.publish.succeeded'));
 
         await refreshStatusAndBranches(false);
         await refreshRemotes();
@@ -400,8 +421,31 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
         await refreshStatusAndBranches(false);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('gitView.toast.createCommitFailed'));
+      if (options.pushAfter && commitOutcome === 'local') toast.warning(t('gitView.publish.commitKept'));
+      if (error instanceof GitOperationResultError || error instanceof PendingGitOperationError) {
+        await Promise.allSettled([refreshStatusAndBranches(false), refreshRemotes()]);
+        return;
+      }
+      if (error instanceof BoundGitNetworkOperationError && error.code === 'stale-runtime') return;
+      if (error instanceof BoundGitNetworkOperationError && publishChooser.errorMessage(error)) {
+        toast.info(publishChooser.errorMessage(error));
+        return;
+      }
+      if (options.pushAfter) {
+        await Promise.allSettled([
+          refreshStatusAndBranches(false),
+          refreshRemotes(),
+        ]);
+      }
+      toast.error(error instanceof BoundGitNetworkOperationError
+        ? error.code === 'contributor-publish-cancelled-after-update'
+          ? t('gitView.toast.contributorPublishCancelledAfterUpdate')
+          : error.code === 'contributor-publish-cancelled'
+            ? t('gitView.toast.contributorPublishCancelled')
+            : t('gitView.toast.syncActionFailed', { action: t('gitView.sync.syncChanges') })
+        : error instanceof Error ? error.message : t('gitView.toast.createCommitFailed'));
     } finally {
+      recovery?.finish();
       setCommitAction(null);
       if (options.pushAfter) setSyncAction(null);
     }
@@ -445,8 +489,16 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
     return groups;
   }, [handleRevertFile, handleViewChangeDiff, moveChangePaths, stagedChangeEntries, t, unstagedChangeEntries]);
 
+  const networkDialogs = (
+    <>
+      {publishChooser.context ? <PublishDialog context={publishChooser.context} onSelect={publishChooser.settle} /> : null}
+      <ContributorDestinationDialog candidates={contributorDestination.candidates} onSelect={contributorDestination.settle} />
+    </>
+  );
+
   const renderListState = (state: React.ReactNode) => (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+      {networkDialogs}
       <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
         {onClose ? (
           <button
@@ -497,6 +549,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
+      {networkDialogs}
       <header className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3 text-foreground">
         {onClose ? (
           <button
@@ -516,17 +569,23 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
           </p>
         </div>
         <SyncActions
-          syncAction={syncAction}
+          syncAction={operationRecovery.entry?.executing ? syncAction : null}
           remotes={effectiveRemotes}
           onFetch={(remote) => void handleSyncAction('fetch', remote)}
           onSync={(remote) => void handleSyncAction('sync', remote)}
-          disabled={commitAction !== null || isLoadingStatus}
+          onPublish={() => void handleSyncAction('publish')}
+          onChooseSyncTargets={() => void handleSyncAction('sync', undefined, true)}
+          currentBranch={status?.current}
+          hasTracking={Boolean(status?.tracking)}
+          disabled={isLoadingStatus || operationRecovery.blocked}
           aheadCount={status?.ahead ?? 0}
           behindCount={status?.behind ?? 0}
           trackingRemoteName={status?.tracking?.split('/')[0]}
           hasUncommittedChanges={changeEntries.length > 0}
         />
       </header>
+      <SourceControlBindingSettings className="px-3" directory={currentDirectory} author={currentIdentity} allowAuthorApply />
+      <GitOperationStatus entry={operationRecovery.entry} onRefresh={() => void operationRecovery.refresh()} onCancel={() => void operationRecovery.cancel()} />
       {changeEntries.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* File list scrolls inside ChangesPanel; the commit footer stays pinned. */}
@@ -553,6 +612,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
               onCommit={() => void handleCommit({ pushAfter: false })}
               onCommitAndPush={() => void handleCommit({ pushAfter: true })}
               commitAction={commitAction}
+              networkOperationBlocked={operationRecovery.blocked}
               gitmojiEnabled={false}
               onOpenGitmojiPicker={() => {}}
             />

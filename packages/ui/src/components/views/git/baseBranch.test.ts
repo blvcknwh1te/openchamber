@@ -45,6 +45,37 @@ describe('deriveBaseBranch', () => {
       localBranches: ['master', 'next'],
     })).toBe('master');
   });
+
+  test('does not guess a conventional base when authoritative selection is required', () => {
+    expect(deriveBaseBranch({
+      remoteNames: new Set(['upstream']),
+      localBranches: ['main', 'next'],
+      headBranch: 'next',
+      fallbackToConventional: false,
+    })).toBe('');
+  });
+
+  test('rejects an unbound remote from an authoritative branch hint', () => {
+    expect(deriveBaseBranch({
+      remoteNames: new Set(['upstream']),
+      knownRemoteNames: new Set(['origin', 'upstream']),
+      localBranches: ['feature'],
+      rootBranchHint: 'origin/main',
+      headBranch: 'feature',
+      fallbackToConventional: false,
+    })).toBe('');
+  });
+
+  test('keeps a slash-containing local branch that is not a remote ref', () => {
+    expect(deriveBaseBranch({
+      remoteNames: new Set(['upstream']),
+      knownRemoteNames: new Set(['origin', 'upstream']),
+      localBranches: ['feature', 'release/2.0'],
+      rootBranchHint: 'release/2.0',
+      headBranch: 'feature',
+      fallbackToConventional: false,
+    })).toBe('release/2.0');
+  });
 });
 
 describe('hasResolvableBaseBranch', () => {

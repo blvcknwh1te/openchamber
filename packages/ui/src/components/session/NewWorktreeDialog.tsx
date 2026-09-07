@@ -26,7 +26,8 @@ import {
 import { cn } from '@/lib/utils';
 import { dropdownTriggerVariants } from '@/components/ui/dropdown-trigger';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import { useSourceControlAuthEntry } from '@/stores/useSourceControlAuthStore';
+import { GITHUB_SOURCE_CONTROL_IDENTITY } from '@/lib/source-control/identity';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
@@ -50,17 +51,18 @@ import {
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitBranches, useGitStore, useGitLoadingBranches } from '@/stores/useGitStore';
 import { GitHubIntegrationDialog } from './GitHubIntegrationDialog';
+import { resolvePrWorktreeConfig } from './prWorktreeConfig';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Icon } from "@/components/icon/Icon";
 import type {
-  GitHubIssue,
-  GitHubIssueComment,
-  GitHubIssuesListResult,
-  GitHubPullRequestContextResult,
-  GitHubPullRequestSummary,
+  ChangeRequest,
+  ChangeRequestContext,
+  Issue,
+  IssueComment,
+  SourceControlReadContext,
 } from '@/lib/api/types';
-import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
+import type { CreateWorktreeArgs, ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
 
 type Mode = 'new-branch' | 'existing-branch';
@@ -78,8 +80,10 @@ interface NewBranchState {
   worktreeName: string;
   isSyncingWorktreeName: boolean;
   sourceBranch: string;
-  linkedIssue: GitHubIssue | null;
-  linkedPr: GitHubPullRequestSummary | null;
+  linkedIssue: Issue | null;
+  linkedIssueContext: SourceControlReadContext | null;
+  linkedPr: ChangeRequest | null;
+  linkedPrContext: SourceControlReadContext | null;
   includePrDiff: boolean;
 }
 
@@ -96,80 +100,6 @@ const normalizeBranchName = (value: string): string => {
     .replace(/^heads\//, '')
     .replace(/\s+/g, '-')
     .replace(/^\/+|\/+$/g, '');
-};
-
-const sanitizeRemoteName = (value: string): string => {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return normalized || 'pr-head';
-};
-
-const resolvePrWorktreeConfig = (pr: GitHubPullRequestSummary, localBranches: string[], remoteBranches: string[]) => {
-  const headBranch = normalizeBranchName(pr.head || '');
-  if (!headBranch) {
-    throw new Error('PR head branch is missing');
-  }
-
-  if (localBranches.includes(headBranch)) {
-    return {
-      existingBranch: headBranch,
-      setUpstream: undefined,
-      upstreamRemote: undefined,
-      upstreamBranch: undefined,
-      ensureRemoteName: undefined,
-      ensureRemoteUrl: undefined,
-      sourceLabel: headBranch,
-    };
-  }
-
-  const availableRemoteBranch = remoteBranches.find((remoteBranch) => {
-    const slashIndex = remoteBranch.indexOf('/');
-    if (slashIndex <= 0 || slashIndex >= remoteBranch.length - 1) {
-      return false;
-    }
-    return remoteBranch.slice(slashIndex + 1) === headBranch;
-  });
-
-  if (availableRemoteBranch) {
-    const slashIndex = availableRemoteBranch.indexOf('/');
-    const remoteName = availableRemoteBranch.slice(0, slashIndex);
-    return {
-      existingBranch: `remotes/${availableRemoteBranch}`,
-      setUpstream: true as const,
-      upstreamRemote: remoteName,
-      upstreamBranch: headBranch,
-      ensureRemoteName: undefined,
-      ensureRemoteUrl: undefined,
-      sourceLabel: `${remoteName}/${headBranch}`,
-    };
-  }
-
-  const ownerFromLabel = String(pr.headLabel || '').split(':')[0]?.trim();
-  const remoteSeed = pr.headRepo?.owner || ownerFromLabel || 'pr-head';
-  const remoteName = `pr-${sanitizeRemoteName(remoteSeed)}`;
-  // Prefer HTTPS so anonymous public fetches do not require SSH agent setup.
-  const remoteUrl = pr.headRepo?.cloneUrl || pr.headRepo?.sshUrl || '';
-
-  if (!remoteUrl) {
-    throw new Error(
-      'PR head repository URL is unavailable. The fork may have been deleted; '
-      + 'push the branch to a reachable repository and try again.'
-    );
-  }
-
-  return {
-    existingBranch: `remotes/${remoteName}/${headBranch}`,
-    setUpstream: true as const,
-    upstreamRemote: remoteName,
-    upstreamBranch: headBranch,
-    ensureRemoteName: remoteName,
-    ensureRemoteUrl: remoteUrl,
-    sourceLabel: `${remoteName}/${headBranch}`,
-  };
 };
 
 const slugifyWorktreeName = (value: string): string => {
@@ -193,20 +123,19 @@ interface NewWorktreeDialogProps {
 }
 
 const buildIssueContextText = (args: {
-  repo: GitHubIssuesListResult['repo'] | undefined;
-  issue: GitHubIssue;
-  comments: GitHubIssueComment[];
+  issue: Issue;
+  comments: IssueComment[];
 }) => {
   const payload = {
-    repo: args.repo ?? null,
+    project: args.issue.project,
     issue: args.issue,
     comments: args.comments,
   };
-  return `GitHub issue context (JSON)\n${JSON.stringify(payload, null, 2)}`;
+  return `Source control issue context (JSON)\n${JSON.stringify(payload, null, 2)}`;
 };
 
-const buildPullRequestContextText = (payload: GitHubPullRequestContextResult) => {
-  return `GitHub pull request context (JSON)\n${JSON.stringify(payload, null, 2)}`;
+const buildPullRequestContextText = (payload: ChangeRequestContext) => {
+  return `Source control change request context (JSON)\n${JSON.stringify(payload, null, 2)}`;
 };
 
 export function NewWorktreeDialog({
@@ -215,10 +144,11 @@ export function NewWorktreeDialog({
   onWorktreeCreated,
 }: NewWorktreeDialogProps) {
   const { t } = useI18n();
-  const { github, git } = useRuntimeAPIs();
+  const { git, sourceControl } = useRuntimeAPIs();
   const isMobile = useUIStore((state) => state.isMobile);
-  const githubAuthStatus = useGitHubAuthStore((state) => state.status);
-  const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
+  const githubAuthEntry = useSourceControlAuthEntry(GITHUB_SOURCE_CONTROL_IDENTITY);
+  const githubAuthStatus = githubAuthEntry?.status ?? null;
+  const githubAuthChecked = githubAuthEntry?.hasChecked ?? false;
   const activeProject = useProjectsStore((state) => state.getActiveProject());
   
   const projectDirectory = activeProject?.path ?? null;
@@ -239,7 +169,9 @@ export function NewWorktreeDialog({
     isSyncingWorktreeName: true,
     sourceBranch: '',
     linkedIssue: null,
+    linkedIssueContext: null,
     linkedPr: null,
+    linkedPrContext: null,
     includePrDiff: false,
   });
   
@@ -478,14 +410,12 @@ export function NewWorktreeDialog({
   const sendLinkedContextMessage = React.useCallback(async (args: {
     sessionId: string;
     directory: string;
-    issue: GitHubIssue | null;
-    pr: GitHubPullRequestSummary | null;
+    issue: Issue | null;
+    issueContext: SourceControlReadContext | null;
+    pr: ChangeRequest | null;
+    prContext: SourceControlReadContext | null;
     includeDiff: boolean;
   }) => {
-    if (!projectDirectory || !github) {
-      return;
-    }
-
     const configState = useConfigStore.getState();
     const lastUsedProvider = useSelectionStore.getState().lastUsedProvider;
     const defaultModel = resolveDefaultModelSelection();
@@ -501,28 +431,25 @@ export function NewWorktreeDialog({
     const variant = resolveDefaultVariant(providerID, modelID);
 
     if (args.issue) {
-      if (!github.issueGet || !github.issueComments) {
+      if (!args.issueContext) {
         return;
       }
 
-      const issueRes = await github.issueGet(projectDirectory, args.issue.number, { sourceRepo: args.issue.sourceRepo ?? null });
-      if (issueRes.connected === false || !issueRes.repo || !issueRes.issue) {
+      const project = { owner: args.issue.project.owner, name: args.issue.project.name };
+      const issue = await sourceControl.issueGet(args.issueContext, args.issue.number, project);
+      if (!issue) {
         throw new Error('Failed to load issue context');
       }
 
-      const commentsRes = await github.issueComments(projectDirectory, args.issue.number, { sourceRepo: args.issue.sourceRepo ?? null });
-      if (commentsRes.connected === false) {
-        throw new Error('Failed to load issue comments');
-      }
+      const comments = await sourceControl.issueComments(args.issueContext, args.issue.number, project);
 
       const visiblePromptText = await renderMagicPrompt('github.issue.review.visible', {
         issue_number: String(args.issue.number),
       });
       const instructionsText = await renderMagicPrompt('github.issue.review.instructions');
       const contextText = buildIssueContextText({
-        repo: issueRes.repo,
-        issue: issueRes.issue,
-        comments: commentsRes.comments ?? [],
+        issue,
+        comments,
       });
 
       await useSessionUIStore.getState().sendMessage(
@@ -547,11 +474,13 @@ export function NewWorktreeDialog({
         args.sessionId,
         args.directory,
         buildLinkedIssue({
-          url: issueRes.issue.url,
-          number: issueRes.issue.number,
-          title: issueRes.issue.title,
+          url: issue.url,
+          number: issue.number,
+          title: issue.title,
           kind: 'issue',
-          author: issueRes.issue.author,
+          author: issue.author
+            ? { login: issue.author.username, avatarUrl: issue.author.avatarUrl }
+            : undefined,
           linkedAt: Date.now(),
         }),
         true,
@@ -562,16 +491,14 @@ export function NewWorktreeDialog({
     }
 
     if (args.pr) {
-      if (!github.prContext) {
-        return;
-      }
+      if (!args.prContext) return;
 
-      const prContext = await github.prContext(projectDirectory, args.pr.number, {
-        sourceRepo: args.pr.sourceRepo ?? null,
+      const prContext = await sourceControl.changeRequestContext(args.prContext, args.pr.number, {
+        project: { owner: args.pr.project.owner, name: args.pr.project.name },
         includeDiff: args.includeDiff,
-        includeCheckDetails: false,
+        includeCIDetails: false,
       });
-      if (prContext.connected === false || !prContext.repo || !prContext.pr) {
+      if (!prContext.project || !prContext.changeRequest) {
         throw new Error('Failed to load PR context');
       }
 
@@ -601,11 +528,16 @@ export function NewWorktreeDialog({
         args.sessionId,
         args.directory,
         buildLinkedIssue({
-          url: prContext.pr.url,
-          number: prContext.pr.number,
-          title: prContext.pr.title,
+          url: prContext.changeRequest.url,
+          number: prContext.changeRequest.number,
+          title: prContext.changeRequest.title,
           kind: 'pull',
-          author: prContext.pr.author,
+          author: prContext.changeRequest.author
+            ? {
+              login: prContext.changeRequest.author.username,
+              avatarUrl: prContext.changeRequest.author.avatarUrl,
+            }
+            : undefined,
           linkedAt: Date.now(),
         }),
         true,
@@ -614,11 +546,10 @@ export function NewWorktreeDialog({
       toast.success(t('session.newWorktree.toast.sessionFromPr'));
     }
   }, [
-    github,
-    projectDirectory,
     resolveDefaultAgentName,
     resolveDefaultModelSelection,
     resolveDefaultVariant,
+    sourceControl,
     t,
   ]);
 
@@ -701,7 +632,9 @@ export function NewWorktreeDialog({
       isSyncingWorktreeName: true,
       sourceBranch: '',
       linkedIssue: null,
+      linkedIssueContext: null,
       linkedPr: null,
+      linkedPrContext: null,
       includePrDiff: false,
     });
   }, [open, generateUniqueSlug]);
@@ -749,15 +682,18 @@ export function NewWorktreeDialog({
       // Only run server validation if we have values
       if (normalizedBranch && normalizedWorktree) {
         const linkedPr = mode === 'new-branch' ? newBranchState.linkedPr : null;
-        const prConfig = linkedPr ? resolvePrWorktreeConfig(linkedPr, localBranches, remoteBranches) : null;
-        const result = await validateWorktreeCreate(projectRef, {
+        const prConfig = linkedPr && newBranchState.linkedPrContext
+          ? resolvePrWorktreeConfig(linkedPr, newBranchState.linkedPrContext, branches?.branches ?? {})
+          : null;
+        const validationArgs: CreateWorktreeArgs = {
           mode: mode === 'existing-branch' || prConfig ? 'existing' : 'new',
           branchName: normalizedBranch,
           worktreeName: normalizedWorktree,
           existingBranch: prConfig?.existingBranch ?? (mode === 'existing-branch' ? normalizedBranch : undefined),
-          ...(prConfig?.ensureRemoteName ? { ensureRemoteName: prConfig.ensureRemoteName } : {}),
-          ...(prConfig?.ensureRemoteUrl ? { ensureRemoteUrl: prConfig.ensureRemoteUrl } : {}),
-        });
+        };
+        if (prConfig?.expectedRevision) validationArgs.expectedRevision = prConfig.expectedRevision;
+        if (prConfig?.changeRequestSource) validationArgs.changeRequestSource = prConfig.changeRequestSource;
+        const result = await validateWorktreeCreate(projectRef, validationArgs);
         
         if (abortController.signal.aborted) return;
         
@@ -796,10 +732,10 @@ export function NewWorktreeDialog({
     mode,
     newBranchState.branchName,
     newBranchState.linkedPr,
+    newBranchState.linkedPrContext,
     existingBranchState.selectedBranch,
     currentState.worktreeName,
-    localBranches,
-    remoteBranches,
+    branches?.branches,
     validation.touched,
     validationAbortController,
     isCreating,
@@ -862,7 +798,9 @@ export function NewWorktreeDialog({
     try {
       const linkedPr = mode === 'new-branch' ? newBranchState.linkedPr : null;
       const linkedIssue = mode === 'new-branch' ? newBranchState.linkedIssue : null;
+      const linkedIssueContext = mode === 'new-branch' ? newBranchState.linkedIssueContext : null;
       const linkedPrState = mode === 'new-branch' ? newBranchState.linkedPr : null;
+      const linkedPrContext = mode === 'new-branch' ? newBranchState.linkedPrContext : null;
       const includePrDiff = mode === 'new-branch' ? newBranchState.includePrDiff : false;
       const shouldCreateSession = Boolean(linkedIssue || linkedPrState);
 
@@ -870,42 +808,50 @@ export function NewWorktreeDialog({
       const sourceBranch = newBranchState.sourceBranch;
 
       let sourceLabel = '';
-      const args = (() => {
-        if (linkedPr) {
-          const prConfig = resolvePrWorktreeConfig(linkedPr, localBranches, remoteBranches);
-          sourceLabel = prConfig.sourceLabel;
-          return {
-            preferredName: normalizedBranch || normalizedWorktree,
-            mode: 'existing' as const,
-            branchName: normalizedBranch,
-            worktreeName: normalizedWorktree,
-            existingBranch: prConfig.existingBranch,
-            setupCommands,
-            setUpstream: prConfig.setUpstream,
-            upstreamRemote: prConfig.upstreamRemote,
-            upstreamBranch: prConfig.upstreamBranch,
-            returnAfterDirectoryCreated: true,
-            ...(prConfig.ensureRemoteName ? { ensureRemoteName: prConfig.ensureRemoteName } : {}),
-            ...(prConfig.ensureRemoteUrl ? { ensureRemoteUrl: prConfig.ensureRemoteUrl } : {}),
-          };
-        }
-
-        sourceLabel = mode === 'new-branch' ? sourceBranch : '';
-        return {
+      let args: CreateWorktreeArgs;
+      if (linkedPr) {
+        if (!linkedPrContext) throw new Error(t('session.newWorktree.error.changeRequestAuthorityMissing'));
+        const prConfig = resolvePrWorktreeConfig(linkedPr, linkedPrContext, branches?.branches ?? {});
+        sourceLabel = prConfig.sourceLabel;
+        args = {
           preferredName: normalizedBranch || normalizedWorktree,
-          mode: mode === 'existing-branch' ? 'existing' as const : 'new' as const,
+          mode: 'existing',
+          branchName: normalizedBranch,
+          worktreeName: normalizedWorktree,
+          existingBranch: prConfig.existingBranch,
+          setupCommands,
+          returnAfterDirectoryCreated: true,
+          expectedRevision: prConfig.expectedRevision,
+          changeRequestSource: prConfig.changeRequestSource,
+        };
+      } else {
+        sourceLabel = mode === 'new-branch' ? sourceBranch : '';
+        args = {
+          preferredName: normalizedBranch || normalizedWorktree,
+          mode: mode === 'existing-branch' ? 'existing' : 'new',
           branchName: mode === 'existing-branch' ? undefined : normalizedBranch,
           worktreeName: normalizedWorktree,
           existingBranch: mode === 'existing-branch' ? normalizedBranch : undefined,
           setupCommands,
           returnAfterDirectoryCreated: true,
-          ...(sourceBranch && mode === 'new-branch' ? { startRef: sourceBranch } : {}),
         };
-      })();
+        if (sourceBranch && mode === 'new-branch') args.startRef = sourceBranch;
+      }
 
       const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
 
       const metadata = await createWorktree(projectRef, resolvedArgs);
+
+      if (metadata.provenance?.kind === 'contributor-fork') {
+        await waitForWorktreeBootstrap(metadata.path);
+        const trust = await git.inspectCheckoutTrust(metadata.path);
+        if (trust.actions.length > 0) {
+          const run = window.confirm(t('session.newWorktree.trust.confirmation', {
+            actions: trust.actions.map((action) => action.label).join('\n'),
+          }));
+          await git.decideCheckoutTrust(metadata.path, trust.digest, run ? 'run' : 'skip');
+        }
+      }
 
       let createdSessionId: string | null = null;
 
@@ -965,7 +911,9 @@ export function NewWorktreeDialog({
           sessionId: createdSessionId,
           directory: metadata.path,
           issue: linkedIssue,
+          issueContext: linkedIssueContext,
           pr: linkedPrState,
+          prContext: linkedPrContext,
           includeDiff: includePrDiff,
         }).catch((error) => {
           const message = error instanceof Error ? error.message : t('session.newWorktree.error.sendGitHubContextFailed');
@@ -983,22 +931,25 @@ export function NewWorktreeDialog({
   };
 
   // Handle mode change
-  const handleModeChange = (newMode: Mode) => {
+  const handleModeChange = (newMode: string) => {
+    if (newMode !== 'new-branch' && newMode !== 'existing-branch') return;
     setMode(newMode);
     setValidation(prev => ({ ...prev, touched: false, branchError: null, worktreeError: null }));
   };
 
   // Handle GitHub selection
-  const handleGitHubSelect = (result: {
-    type: 'issue' | 'pr';
-    item: GitHubIssue | GitHubPullRequestSummary;
-    includeDiff?: boolean;
-  } | null) => {
+  const handleGitHubSelect = (result:
+    | { type: 'issue'; item: Issue; context: SourceControlReadContext }
+    | { type: 'pr'; item: ChangeRequest; context: SourceControlReadContext; includeDiff?: boolean }
+    | null
+  ) => {
     if (!result) {
       setNewBranchState(prev => ({
         ...prev,
         linkedIssue: null,
+        linkedIssueContext: null,
         linkedPr: null,
+        linkedPrContext: null,
         includePrDiff: false,
         branchName: '',
       }));
@@ -1006,23 +957,27 @@ export function NewWorktreeDialog({
     }
 
     if (result.type === 'issue') {
-      const issue = result.item as GitHubIssue;
+      const issue = result.item;
       const newBranchName = `issue-${issue.number}-${generateBranchSlug()}`;
       setNewBranchState(prev => ({
         ...prev,
         linkedIssue: issue,
+        linkedIssueContext: result.context,
         linkedPr: null,
+        linkedPrContext: null,
         includePrDiff: false,
         branchName: newBranchName,
         worktreeName: slugifyWorktreeName(newBranchName),
         isSyncingWorktreeName: true,
       }));
     } else if (result.type === 'pr') {
-      const pr = result.item as GitHubPullRequestSummary;
+      const pr = result.item;
       setNewBranchState(prev => ({
         ...prev,
         linkedPr: pr,
+        linkedPrContext: result.context,
         linkedIssue: null,
+        linkedIssueContext: null,
         includePrDiff: result.includeDiff ?? false,
         branchName: pr.head,
         worktreeName: slugifyWorktreeName(pr.head),
@@ -1045,7 +1000,9 @@ export function NewWorktreeDialog({
     setNewBranchState(prev => ({
       ...prev,
       linkedIssue: null,
+      linkedIssueContext: null,
       linkedPr: null,
+      linkedPrContext: null,
       branchName: '',
       includePrDiff: false,
       isSyncingWorktreeName: true,
@@ -1108,7 +1065,7 @@ export function NewWorktreeDialog({
                 { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <Icon name="git-repository" className="h-3.5 w-3.5" /> },
               ]}
               activeId={mode}
-              onSelect={(id) => handleModeChange(id as Mode)}
+              onSelect={handleModeChange}
               variant="active-pill"
               layoutMode="fit"
               className="w-full"
@@ -1301,7 +1258,9 @@ export function NewWorktreeDialog({
                       branchName: e.target.value,
                       isSyncingWorktreeName: true,
                       linkedIssue: null,
+                      linkedIssueContext: null,
                       linkedPr: null,
+                      linkedPrContext: null,
                     }));
                   }}
                   onBlur={() => setValidation(prev => ({ ...prev, touched: true }))}
@@ -1601,7 +1560,7 @@ export function NewWorktreeDialog({
                       { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <Icon name="git-repository" className="h-3.5 w-3.5" /> },
                     ]}
                     activeId={mode}
-                    onSelect={(id) => handleModeChange(id as Mode)}
+                    onSelect={handleModeChange}
                     variant="active-pill"
                     layoutMode="fit"
                     className="w-full"
@@ -1770,7 +1729,9 @@ export function NewWorktreeDialog({
                         branchName: e.target.value,
                         isSyncingWorktreeName: true,
                         linkedIssue: null,
+                        linkedIssueContext: null,
                         linkedPr: null,
+                        linkedPrContext: null,
                       }));
                     }}
                     onBlur={() => setValidation(prev => ({ ...prev, touched: true }))}

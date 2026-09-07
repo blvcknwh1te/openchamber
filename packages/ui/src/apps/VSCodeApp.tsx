@@ -18,7 +18,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
-import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import { useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -43,7 +43,7 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   const error = useSessionUIStore((state) => state.error);
   const clearError = useSessionUIStore((state) => state.clearError);
   const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
-  const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
+  const refreshSourceControlAuth = useSourceControlAuthStore((state) => state.refreshAll);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const panelType = typeof window !== 'undefined'
     ? window.__OPENCHAMBER_PANEL_TYPE__
@@ -68,8 +68,8 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   }, [wideChatLayoutEnabled]);
 
   React.useEffect(() => {
-    void refreshGitHubAuthStatus(apis.github, { force: true });
-  }, [apis.github, refreshGitHubAuthStatus]);
+    void refreshSourceControlAuth(apis.sourceControl, { force: true });
+  }, [apis.sourceControl, refreshSourceControlAuth]);
 
   React.useEffect(() => {
     let cancelled = false;

@@ -183,8 +183,8 @@ const UserContextPart: React.FC<{
                     {...shared}
                 />
             );
-        case 'github-issue':
-        case 'github-pr':
+        case 'repository-issue':
+        case 'change-request':
             // Rendered as link attachments by normalizeUserDisplayParts.
             return null;
     }

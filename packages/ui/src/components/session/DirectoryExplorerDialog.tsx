@@ -1,5 +1,22 @@
 import React from 'react';
 import {
+  buildManagedAccountOptions,
+  endpointsShareOrigin,
+  getManagedCredentialSourceLabelKey,
+  getSourceControlIdentityOrigin,
+} from '@/lib/source-control/identity';
+import { ManagedSshCredentials } from '@/components/sections/openchamber/ManagedSshCredentials';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { GitOperationResultError, runGitClone } from '@/lib/boundGitNetworkOperation';
+import { PendingGitOperationError } from '@/lib/source-control/git-operation-recovery';
+import { useGitOperationRecovery } from '@/components/views/git/useGitOperationRecovery';
+import { GitOperationStatus } from '@/components/views/git/GitOperationStatus';
+import { getRuntimeKey } from '@/lib/runtime-switch';
+import { getSourceControlAuthKey, useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -145,6 +162,14 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   onOpenChange,
 }) => {
   const { t } = useI18n();
+  const { git, sourceControl, runtime } = useRuntimeAPIs();
+  const runtimeKey = getRuntimeKey();
+  const openContextSurface = useUIStore((s) => s.openContextSurface);
+  const mobileActions = useMobileAppActions();
+  const identities = useSourceControlAuthStore((s) => s.identities);
+  const authEntries = useSourceControlAuthStore((s) => s.entries);
+  const identitiesError = useSourceControlAuthStore((s) => s.identitiesError);
+  const refreshAccounts = useSourceControlAuthStore((s) => s.refreshAll);
   const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
   const projects = useProjectsStore((s) => s.projects);
   const addProject = useProjectsStore((s) => s.addProject);
@@ -174,6 +199,12 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const [addButtonWidth, setAddButtonWidth] = React.useState(0);
   const [isCloneMode, setIsCloneMode] = React.useState(false);
   const [cloneRemoteUrl, setCloneRemoteUrl] = React.useState('');
+  const [cloneTransport, setCloneTransport] = React.useState<'system' | 'https' | 'ssh' | 'anonymous' | ''>('');
+  const [cloneSshCredential, setCloneSshCredential] = React.useState('');
+  const [cloneCredentialAccount, setCloneCredentialAccount] = React.useState('');
+  const [unverifiedConfirmed, setUnverifiedConfirmed] = React.useState(false);
+  const cloneController = React.useRef<AbortController | null>(null);
+  const cloneRecovery = useGitOperationRecovery(open && isCloneMode ? 'clone' : null, git, sourceControl, { kind: 'clone' });
   const [selectedGitIdentityId, setSelectedGitIdentityId] = React.useState<string | null>(null);
   const [showHidden, setShowHidden] = React.useState(false);
 
@@ -194,6 +225,10 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     setIsOpeningFinder(false);
     setIsCloneMode(false);
     setCloneRemoteUrl('');
+    setCloneTransport('');
+    setCloneCredentialAccount('');
+    setCloneSshCredential('');
+    setUnverifiedConfirmed(false);
     setSelectedGitIdentityId(null);
     setShowHidden(false);
     requestAnimationFrame(() => focusPathInput(inputRef.current));
@@ -208,8 +243,26 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     void resolveHome();
     return () => {
       cancelled = true;
+      cloneController.current?.abort();
     };
-  }, [homeDirectory, open]);
+  }, [homeDirectory, open, runtimeKey]);
+
+  React.useEffect(() => {
+    if (open && isCloneMode && !runtime.isVSCode) void refreshAccounts(sourceControl);
+  }, [open, isCloneMode, runtime.isVSCode, refreshAccounts, sourceControl, runtimeKey]);
+
+  const cloneAccounts = identities.flatMap((identity) => {
+    const entry = authEntries[getSourceControlAuthKey(identity)];
+    if (identitiesError || !entry?.hasChecked || entry.isLoading || entry.status?.status !== 'connected') return [];
+    const origin = getSourceControlIdentityOrigin(identity);
+    if (!origin || !cloneRemoteUrl.startsWith('https://') || !endpointsShareOrigin([cloneRemoteUrl], origin)) return [];
+    return buildManagedAccountOptions(identity, entry.status.accounts, (account) => t(getManagedCredentialSourceLabelKey(account.source)));
+  });
+  const cloneAccount = cloneAccounts.find((account) => account.key === cloneCredentialAccount);
+  const cloneAccountsFailed = Boolean(identitiesError) || identities.some((identity) => {
+    const status = authEntries[getSourceControlAuthKey(identity)]?.status?.status;
+    return status && status !== 'connected' && status !== 'disconnected';
+  });
 
   React.useEffect(() => {
     if (!open) return;
@@ -231,14 +284,9 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
 
   React.useEffect(() => {
     if (!open || !isCloneMode || selectedGitIdentityId !== null) return;
-    const defaultId = typeof defaultGitIdentityId === 'string' ? defaultGitIdentityId.trim() : '';
+    const defaultId = defaultGitIdentityId?.trim();
     if (defaultId && availableGitIdentities.some((identity) => identity.id === defaultId)) {
       setSelectedGitIdentityId(defaultId);
-      return;
-    }
-    const firstSshIdentity = availableGitIdentities.find((identity) => identity.authType === 'ssh' || identity.sshKey);
-    if (firstSshIdentity) {
-      setSelectedGitIdentityId(firstSshIdentity.id);
     }
   }, [availableGitIdentities, defaultGitIdentityId, isCloneMode, open, selectedGitIdentityId]);
 
@@ -355,7 +403,10 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
     && browseErrorReason !== 'invalid-response'
     && browseErrorReason !== 'unknown'
     && Boolean(targetPath);
-  const canSubmitClone = canAddProject && cloneRemoteUrl.trim().length > 0;
+  const canSubmitClone = canAddProject && !runtime.isVSCode && !cloneRecovery.blocked && cloneRemoteUrl.trim().length > 0
+    && (cloneTransport === 'system' && unverifiedConfirmed || cloneTransport === 'https' && Boolean(cloneAccount)
+      || cloneTransport === 'ssh' && Boolean(cloneSshCredential)
+      || cloneTransport === 'anonymous' && cloneRemoteUrl.trim().startsWith('https://'));
   const highlightedRow = rows[highlightedIndex] ?? null;
   const hasHighlightedBrowseItem = Boolean(
     highlightedRow && (highlightedRow.type === 'up' || (highlightedRow.type === 'directory' && !highlightedRow.disabled))
@@ -406,6 +457,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   }, [highlightedIndex, rows]);
 
   const handleClose = React.useCallback(() => {
+    cloneController.current?.abort();
     onOpenChange(false);
   }, [onOpenChange]);
 
@@ -430,10 +482,14 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   }, [addProject, addedProjectPaths, openProjectDraft, t]);
 
   const finalizeSelection = React.useCallback(async (target: string) => {
+    if (runtimeKey !== getRuntimeKey()) return;
     if (!target || isConfirming) return;
+    if (isCloneMode && (!canSubmitClone || cloneController.current)) return;
+    const capturedRuntime = runtimeKey;
     const normalized = normalizeDirectoryPath(target);
     if (normalized && addedProjectPaths.has(normalized)) return;
     let selectedTarget = target;
+    let setupRequired = false;
 
     setIsConfirming(true);
     try {
@@ -444,15 +500,32 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
           toast.error(t('directoryExplorerDialog.toast.cloneUrlRequired'));
           return;
         }
-        const result = await opencodeClient.cloneRepository({
+        const selection: Parameters<typeof runGitClone>[0]['selection'] | null = cloneTransport === 'system' && unverifiedConfirmed
+          ? { transportMode: 'system', unverifiedConfirmed: true }
+          : cloneTransport === 'anonymous' ? { transportMode: 'anonymous' }
+            : cloneTransport === 'ssh' && cloneSshCredential ? { transportMode: 'managed', sshCredentialId: cloneSshCredential }
+              : cloneTransport === 'https' && cloneAccount ? { transportMode: 'managed', credentialAccount: cloneAccount.reference } : null;
+        if (!selection) return;
+        const recovery = cloneRecovery.start();
+        if (!recovery) return;
+        const controller = new AbortController();
+        cloneController.current = controller;
+        const result = await runGitClone({
           remoteUrl,
           destinationPath: target,
-          gitIdentityId: selectedGitIdentity?.id ?? null,
-        });
-        selectedTarget = result.path;
+          gitIdentityId: selectedGitIdentity?.id,
+          git,
+          selection,
+          signal: controller.signal,
+          onOperation: recovery.onOperation,
+        }).finally(recovery.finish);
+        if (result.status === 'cancelled') return;
+        setupRequired = result.status === 'setup-required';
+        selectedTarget = target;
       } else if (shouldCreateSelection) {
         await opencodeClient.createDirectory(target, { asProject: true });
       }
+      if (capturedRuntime !== getRuntimeKey()) return;
       const project = addProject(selectedTarget);
       if (!project) {
         toast.error(t('directoryExplorerDialog.toast.failedToAddProject'), {
@@ -461,14 +534,22 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         return;
       }
       openProjectDraft(project.id, project.path);
+      if (setupRequired) {
+        if (mobileActions) mobileActions.openChanges();
+        else openContextSurface(project.path, 'git');
+        toast.warning(t('directoryExplorerDialog.clone.setupRequired'));
+      }
     } catch (error) {
+      if (capturedRuntime !== getRuntimeKey()) return;
+      if (error instanceof GitOperationResultError || error instanceof PendingGitOperationError) return;
       toast.error(t('directoryExplorerDialog.toast.failedToSelectDirectory'), {
         description: error instanceof Error ? error.message : t('directoryExplorerDialog.toast.unknownError'),
       });
     } finally {
+      cloneController.current = null;
       setIsConfirming(false);
     }
-  }, [addProject, addedProjectPaths, cloneRemoteUrl, isCloneMode, isConfirming, openProjectDraft, selectedGitIdentity?.id, shouldCreateTarget, targetPath, t]);
+  }, [addProject, addedProjectPaths, canSubmitClone, cloneRecovery, cloneTransport, cloneAccount, cloneSshCredential, unverifiedConfirmed, cloneRemoteUrl, git, isCloneMode, isConfirming, mobileActions, openContextSurface, openProjectDraft, runtimeKey, selectedGitIdentity?.id, shouldCreateTarget, targetPath, t]);
 
   const browseToDisplayPath = React.useCallback((displayPath: string) => {
     setQuery(ensureBrowseDirectoryPath(displayPath));
@@ -562,24 +643,72 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   const inputSection = (
     <div className="px-2.5 py-1.5">
       {isCloneMode ? (
-        <div className="mb-1.5 flex items-center gap-1.5">
-          <Input
-            value={cloneRemoteUrl}
-            onChange={(event) => setCloneRemoteUrl(event.target.value)}
-            placeholder={t('directoryExplorerDialog.clone.remoteUrlPlaceholder')}
-            className="min-w-0 flex-1 border-border/60 bg-[var(--surface-elevated)] font-mono typography-ui-label shadow-none"
-            spellCheck={false}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-          />
-          <IdentityDropdown
-            activeProfile={selectedGitIdentity}
-            identities={availableGitIdentities}
-            onSelect={(profile) => setSelectedGitIdentityId(profile.id)}
-            isApplying={isConfirming}
-            iconOnly
-          />
+        <div className="mb-1.5 space-y-1.5">
+          <GitOperationStatus entry={cloneRecovery.entry} onRefresh={() => void cloneRecovery.refresh()} onCancel={() => void cloneRecovery.cancel()} />
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={cloneRemoteUrl}
+              disabled={isConfirming}
+              onChange={(event) => {
+                setCloneRemoteUrl(event.target.value);
+                setCloneTransport('');
+                setCloneCredentialAccount('');
+                setUnverifiedConfirmed(false);
+              }}
+              placeholder={t('directoryExplorerDialog.clone.remoteUrlPlaceholder')}
+              aria-label={t('directoryExplorerDialog.clone.remoteUrlPlaceholder')}
+              className="min-w-0 flex-1 border-border/60 bg-[var(--surface-elevated)] font-mono typography-ui-label shadow-none"
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+            <IdentityDropdown
+              activeProfile={selectedGitIdentity}
+              identities={availableGitIdentities}
+              onSelect={(profile) => setSelectedGitIdentityId(profile.id)}
+              isApplying={isConfirming}
+              iconOnly
+            />
+          </div>
+          <Select value={cloneTransport} disabled={isConfirming || runtime.isVSCode} onValueChange={(value) => {
+            if (value !== 'system' && value !== 'https' && value !== 'ssh' && value !== 'anonymous') return;
+            setCloneTransport(value);
+            setCloneCredentialAccount('');
+            setUnverifiedConfirmed(false);
+          }}>
+            <SelectTrigger className="w-full" aria-label={t('settings.sourceControl.transport.modeLabel')}>
+              <SelectValue placeholder={t('settings.sourceControl.transport.choose')}>
+                {cloneTransport ? t(cloneTransport === 'anonymous' ? 'settings.sourceControl.transport.anonymous' : cloneTransport === 'system' ? 'settings.sourceControl.transport.system' : cloneTransport === 'ssh' ? 'settings.sourceControl.transport.ssh' : 'settings.sourceControl.transport.https') : undefined}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">{t('settings.sourceControl.transport.system')}</SelectItem>
+              <SelectItem value="anonymous" disabled={!cloneRemoteUrl.trim().startsWith('https://')}>{t('settings.sourceControl.transport.anonymous')}</SelectItem>
+              <SelectItem value="https" disabled={!cloneRemoteUrl.trim().startsWith('https://')}>{t('settings.sourceControl.transport.https')}</SelectItem>
+              <SelectItem value="ssh" disabled={!cloneRemoteUrl.trim().startsWith('ssh://') && !/^(?:[^@/:\s]+@)?[^/:\s]+:[^\s]+$/.test(cloneRemoteUrl.trim())}>{t('settings.sourceControl.transport.ssh')}</SelectItem>
+            </SelectContent>
+          </Select>
+          {cloneTransport === 'system' ? <label className="flex items-start gap-2 typography-micro text-muted-foreground">
+            <Checkbox checked={unverifiedConfirmed} onChange={setUnverifiedConfirmed} disabled={isConfirming}
+              ariaLabel={t('settings.sourceControl.transport.unverifiedConfirmation')} />
+            {t('settings.sourceControl.transport.unverifiedConfirmation')}
+          </label> : null}
+          {cloneTransport === 'ssh' ? <ManagedSshCredentials selection={{ value: cloneSshCredential, onChange: setCloneSshCredential }} disabled={isConfirming} /> : null}
+          {cloneTransport === 'https' ? <>
+            <Select value={cloneCredentialAccount} onValueChange={setCloneCredentialAccount} disabled={isConfirming}>
+              <SelectTrigger className="w-full" aria-label={t('settings.sourceControl.transport.credentialAccount')}>
+                <SelectValue placeholder={t('settings.sourceControl.transport.credentialAccount')}>{cloneAccount?.label}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>{cloneAccounts.map((account) => <SelectItem key={account.key} value={account.key}>{account.label}</SelectItem>)}</SelectContent>
+            </Select>
+            {cloneAccountsFailed ? <p className="typography-micro text-status-error">{t('settings.gitlab.status.operationFailed')}</p>
+              : !cloneAccounts.length ? <p className="typography-micro text-muted-foreground">{t('settings.sourceControl.binding.noAccounts')}</p> : null}
+            <Button size="xs" variant="ghost" disabled={isConfirming} onClick={() => void refreshAccounts(sourceControl, { force: true })}>
+              {t('settings.sourceControl.transport.retry')}
+            </Button>
+          </> : null}
+          {runtime.isVSCode ? <p className="typography-micro text-muted-foreground">{t('directoryExplorerDialog.clone.unsupported')}</p> : null}
         </div>
       ) : null}
       <div className="relative">
@@ -587,6 +716,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
         <Input
           ref={inputRef}
           value={query}
+          disabled={isConfirming}
           onChange={(event) => setQuery(normalizeSeparators(event.target.value))}
           onKeyDown={handleKeyDown}
           placeholder={t('directoryExplorerDialog.pathInput.placeholder')}
@@ -774,7 +904,7 @@ export const DirectoryExplorerDialog: React.FC<DirectoryExplorerDialogProps> = (
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => value ? onOpenChange(true) : handleClose()}>
       <DialogContent
         className="flex w-full max-w-xl flex-col gap-0 overflow-hidden p-0 sm:max-h-[80vh]"
         initialFocus={false}

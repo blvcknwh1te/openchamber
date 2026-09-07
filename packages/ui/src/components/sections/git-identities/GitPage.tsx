@@ -16,15 +16,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
-import { useGitIdentitiesStore, type GitIdentityProfile, type DiscoveredGitCredential } from '@/stores/useGitIdentitiesStore';
+import { useGitIdentitiesStore, type GitIdentityProfile } from '@/stores/useGitIdentitiesStore';
 import { useShallow } from 'zustand/react/shallow';
 import { GitSettings } from '@/components/sections/openchamber/GitSettings';
 import { GitHubSettings } from '@/components/sections/openchamber/GitHubSettings';
+import { GitLabSettings } from '@/components/sections/openchamber/GitLabSettings';
+import { ManagedSshCredentials } from '@/components/sections/openchamber/ManagedSshCredentials';
 import { GitIdentityEditorDialog } from './GitIdentityEditorDialog';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { useIsVSCodeRuntime } from '@/hooks/useRuntimeAPIs';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 
@@ -47,6 +50,7 @@ const COLOR_MAP: Record<string, string> = {
 
 export const GitPage: React.FC = () => {
   const { t } = useI18n();
+  const isVSCode = useIsVSCodeRuntime();
   const {
     profiles,
     globalIdentity,
@@ -54,10 +58,8 @@ export const GitPage: React.FC = () => {
     deleteProfile,
     loadProfiles,
     loadGlobalIdentity,
-    loadDiscoveredCredentials,
     loadDefaultGitIdentityId,
     setDefaultGitIdentityId,
-    getUnimportedCredentials,
   } = useGitIdentitiesStore(useShallow((s) => ({
     profiles: s.profiles,
     globalIdentity: s.globalIdentity,
@@ -65,30 +67,23 @@ export const GitPage: React.FC = () => {
     deleteProfile: s.deleteProfile,
     loadProfiles: s.loadProfiles,
     loadGlobalIdentity: s.loadGlobalIdentity,
-    loadDiscoveredCredentials: s.loadDiscoveredCredentials,
     loadDefaultGitIdentityId: s.loadDefaultGitIdentityId,
     setDefaultGitIdentityId: s.setDefaultGitIdentityId,
-    getUnimportedCredentials: s.getUnimportedCredentials,
   })));
 
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [editorProfileId, setEditorProfileId] = React.useState<string | null>(null);
-  const [editorImportData, setEditorImportData] = React.useState<{ host: string; username: string } | null>(null);
   const [deleteDialogProfile, setDeleteDialogProfile] = React.useState<GitIdentityProfile | null>(null);
   const [isDeletePending, setIsDeletePending] = React.useState(false);
 
   React.useEffect(() => {
     loadProfiles();
     loadGlobalIdentity();
-    loadDiscoveredCredentials();
     loadDefaultGitIdentityId();
-  }, [loadProfiles, loadGlobalIdentity, loadDiscoveredCredentials, loadDefaultGitIdentityId]);
+  }, [loadProfiles, loadGlobalIdentity, loadDefaultGitIdentityId]);
 
-  const unimportedCredentials = getUnimportedCredentials();
-
-  const openEditor = (id: string | null, importData?: { host: string; username: string } | null) => {
+  const openEditor = (id: string | null) => {
     setEditorProfileId(id);
-    setEditorImportData(importData ?? null);
     setEditorOpen(true);
   };
 
@@ -120,9 +115,13 @@ export const GitPage: React.FC = () => {
       <SettingsPageLayout
         title={t('settings.page.git.title')}
         showSaveStatus
+        className="px-4 @xl:px-6 @3xl:px-12"
       >
-        <GitHubSettings />
-
+        {!isVSCode && <GitHubSettings />}
+        {!isVSCode && <GitLabSettings />}
+        {!isVSCode && <SettingsSection title={t('settings.sourceControl.ssh.title')} settingsItem="git.managed-ssh">
+          <ManagedSshCredentials />
+        </SettingsSection>}
         <SettingsSection
           title={t('settings.gitIdentities.page.section.title')}
           headerAction={(
@@ -141,7 +140,7 @@ export const GitPage: React.FC = () => {
                 onEdit={() => openEditor('global')}
                 onToggleDefault={() => handleToggleDefault('global')}
                 isReadOnly
-                hasBorder={profiles.length > 0 || unimportedCredentials.length > 0}
+                hasBorder={profiles.length > 0}
               />
             )}
 
@@ -154,36 +153,17 @@ export const GitPage: React.FC = () => {
                 onEdit={() => openEditor(profile.id)}
                 onToggleDefault={() => handleToggleDefault(profile.id)}
                 onDelete={() => setDeleteDialogProfile(profile)}
-                hasBorder={i < profiles.length - 1 || unimportedCredentials.length > 0}
+                hasBorder={i < profiles.length - 1}
               />
             ))}
 
             {/* Empty state */}
-            {!globalIdentity && profiles.length === 0 && unimportedCredentials.length === 0 && (
+            {!globalIdentity && profiles.length === 0 && (
               <div className="py-8 px-4 text-center text-muted-foreground">
                 <Icon name="shield-keyhole" className="mx-auto mb-2 h-8 w-8 opacity-40" />
                 <p className="typography-ui-label">{t('settings.gitIdentities.page.empty.title')}</p>
                 <p className="typography-meta mt-1 opacity-75">{t('settings.gitIdentities.page.empty.description')}</p>
               </div>
-            )}
-
-            {/* Discovered credentials */}
-            {unimportedCredentials.length > 0 && (
-              <>
-                <div className="px-4 py-2 border-t border-[var(--surface-subtle)]">
-                  <span className="typography-micro text-muted-foreground">
-                    {t('settings.gitIdentities.page.discoveredCredentials.title')}
-                  </span>
-                </div>
-                {unimportedCredentials.map((cred, i) => (
-                  <DiscoveredRow
-                    key={`${cred.host}-${cred.username}`}
-                    credential={cred}
-                    onImport={() => openEditor('new', { host: cred.host, username: cred.username })}
-                    hasBorder={i < unimportedCredentials.length - 1}
-                  />
-                ))}
-              </>
             )}
           </div>
         </SettingsSection>
@@ -196,13 +176,14 @@ export const GitPage: React.FC = () => {
         open={editorOpen}
         onOpenChange={setEditorOpen}
         profileId={editorProfileId}
-        importData={editorImportData}
       />
 
       {/* Delete confirmation */}
       <Dialog
         open={deleteDialogProfile !== null}
-        onOpenChange={(o) => { if (!isDeletePending) { if (!o) setDeleteDialogProfile(null); } }}
+        onOpenChange={(open) => {
+          if (!open && !isDeletePending) setDeleteDialogProfile(null);
+        }}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -250,7 +231,6 @@ const IdentityRow: React.FC<IdentityRowProps> = ({
   const [contextMenuOpen, setContextMenuOpen] = React.useState(false);
   const iconName = ICON_MAP[profile.icon || 'branch'] || 'git-branch';
   const iconColor = COLOR_MAP[profile.color || ''];
-  const authType = profile.authType || 'ssh';
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.currentTarget !== e.target) return;
@@ -302,9 +282,6 @@ const IdentityRow: React.FC<IdentityRowProps> = ({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="typography-ui-label text-foreground truncate">{profile.name}</span>
-            <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
-              {authType}
-            </span>
             {isDefault && (
               <span className="typography-micro text-primary bg-primary/12 px-1 rounded flex-shrink-0 leading-none pb-px border border-primary/25">
                 {t('settings.gitIdentities.page.badge.default')}
@@ -317,7 +294,7 @@ const IdentityRow: React.FC<IdentityRowProps> = ({
             )}
           </div>
           <div className="typography-micro text-muted-foreground/60 truncate leading-tight">
-            {authType === 'token' && profile.host ? profile.host : profile.userEmail}
+            {profile.userEmail}
           </div>
         </div>
       </div>
@@ -342,40 +319,5 @@ const IdentityRow: React.FC<IdentityRowProps> = ({
         {renderMenuItems(ContextMenuItem)}
       </ContextMenuContent>
     </ContextMenu>
-  );
-};
-
-// --- Discovered credential row ---
-
-interface DiscoveredRowProps {
-  credential: DiscoveredGitCredential;
-  onImport: () => void;
-  hasBorder?: boolean;
-}
-
-const DiscoveredRow: React.FC<DiscoveredRowProps> = ({ credential, onImport, hasBorder }) => {
-  const { t } = useI18n();
-  const parts = credential.host.split('/');
-  const displayName = parts.length >= 3 ? parts[parts.length - 1] : credential.host;
-  const isRepoSpecific = credential.host.includes('/');
-
-  return (
-    <div
-      className={cn(
-        'flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--interactive-hover)]/30',
-        hasBorder && 'border-b border-[var(--surface-subtle)]'
-      )}
-    >
-      <div className="min-w-0">
-        <span className="typography-ui-label text-foreground truncate block">{displayName}</span>
-        <span className="typography-micro text-muted-foreground/60 truncate block leading-tight">
-          {isRepoSpecific ? credential.host : credential.username}
-        </span>
-      </div>
-      <Button size="sm" variant="ghost" onClick={onImport} className="gap-1 shrink-0">
-        <Icon name="download" className="h-3 w-3" />
-        {t('settings.gitIdentities.page.actions.import')}
-      </Button>
-    </div>
   );
 };

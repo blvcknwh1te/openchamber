@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
-import { useGitIdentitiesStore, type GitIdentityProfile, type GitIdentityAuthType } from '@/stores/useGitIdentitiesStore';
+import { useGitIdentitiesStore, type GitIdentityProfile } from '@/stores/useGitIdentitiesStore';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 
@@ -39,15 +39,12 @@ interface GitIdentityEditorDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Profile ID to edit, 'new' for creation, or null */
   profileId: string | null;
-  /** Pre-fill data for importing a discovered credential */
-  importData?: { host: string; username: string } | null;
 }
 
 export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = ({
   open,
   onOpenChange,
   profileId,
-  importData,
 }) => {
   const { t } = useI18n();
   const getProfileById = useGitIdentitiesStore((s) => s.getProfileById);
@@ -56,20 +53,17 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
   const deleteProfile = useGitIdentitiesStore((s) => s.deleteProfile);
 
   const selectedProfile = React.useMemo(() =>
-    profileId && profileId !== 'new' && !importData ? getProfileById(profileId) : null,
-    [profileId, getProfileById, importData]
+    profileId && profileId !== 'new' ? getProfileById(profileId) : null,
+    [profileId, getProfileById]
   );
-  const isNewProfile = profileId === 'new' || importData != null;
+  const isNewProfile = profileId === 'new';
   const isGlobalProfile = profileId === 'global';
 
   const [name, setName] = React.useState('');
   const [userName, setUserName] = React.useState('');
   const [userEmail, setUserEmail] = React.useState('');
-  const [authType, setAuthType] = React.useState<GitIdentityAuthType>('ssh');
-  const [sshKey, setSshKey] = React.useState('');
   const [signCommits, setSignCommits] = React.useState(false);
   const [signingKey, setSigningKey] = React.useState('');
-  const [host, setHost] = React.useState('');
   const [color, setColor] = React.useState('keyword');
   const [icon, setIcon] = React.useState('branch');
   const [isSaving, setIsSaving] = React.useState(false);
@@ -78,39 +72,20 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
 
   React.useEffect(() => {
     if (!open) return;
-    if (importData) {
-      const parts = importData.host.split('/');
-      const displayName = parts.length >= 3 ? parts[parts.length - 1] : importData.host;
-      setName(displayName);
-      setUserName(importData.username);
-      setUserEmail('');
-      setAuthType('token');
-      setSshKey('');
-      setSignCommits(false);
-      setSigningKey('');
-      setHost(importData.host);
-      setColor('string');
-      setIcon('code');
-    } else if (isNewProfile) {
+    if (isNewProfile) {
       setName('');
       setUserName('');
       setUserEmail('');
-      setAuthType('ssh');
-      setSshKey('');
       setSignCommits(false);
       setSigningKey('');
-      setHost('');
       setColor('keyword');
       setIcon('branch');
     } else if (selectedProfile) {
       setName(selectedProfile.name);
       setUserName(selectedProfile.userName);
       setUserEmail(selectedProfile.userEmail);
-      setAuthType(selectedProfile.authType || 'ssh');
-      setSshKey(selectedProfile.sshKey || '');
       setSignCommits(selectedProfile.signCommits === true);
       setSigningKey(selectedProfile.signingKey || '');
-      setHost(selectedProfile.host || '');
       setColor(selectedProfile.color || 'keyword');
       setIcon(selectedProfile.icon || 'branch');
     } else if (isGlobalProfile) {
@@ -119,24 +94,17 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
         setName(global.name);
         setUserName(global.userName);
         setUserEmail(global.userEmail);
-        setAuthType(global.authType || 'ssh');
-        setSshKey(global.sshKey || '');
         setSignCommits(false);
         setSigningKey('');
-        setHost(global.host || '');
         setColor(global.color || 'keyword');
         setIcon(global.icon || 'branch');
       }
     }
-  }, [open, profileId, selectedProfile, isNewProfile, importData, isGlobalProfile, getProfileById]);
+  }, [open, profileId, selectedProfile, isNewProfile, isGlobalProfile, getProfileById]);
 
   const handleSave = async () => {
     if (!userName.trim() || !userEmail.trim()) {
       toast.error(t('settings.gitIdentities.editor.toast.userNameEmailRequired'));
-      return;
-    }
-    if (authType === 'token' && !host.trim()) {
-      toast.error(t('settings.gitIdentities.editor.toast.hostRequiredForToken'));
       return;
     }
     if (signCommits && !signingKey.trim()) {
@@ -146,15 +114,13 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
 
     setIsSaving(true);
     try {
+      // The server owns any private migration fields; editors send only the public author DTO.
       const profileData: Omit<GitIdentityProfile, 'id'> & { id?: string } = {
         name: name.trim() || userName.trim(),
         userName: userName.trim(),
         userEmail: userEmail.trim(),
-        authType,
-        sshKey: authType === 'ssh' ? (sshKey.trim() || null) : null,
         signCommits,
         signingKey: signingKey.trim() || null,
-        host: authType === 'token' ? (host.trim() || null) : null,
         color,
         icon,
       };
@@ -207,9 +173,7 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
     return colorConfig?.cssVar || 'var(--syntax-keyword)';
   }, [color]);
 
-  const title = importData
-    ? t('settings.gitIdentities.editor.title.importCredential')
-    : isNewProfile
+  const title = isNewProfile
     ? t('settings.gitIdentities.editor.title.newIdentity')
     : isGlobalProfile
     ? t('settings.gitIdentities.editor.title.globalIdentity')
@@ -340,93 +304,33 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
               </div>
             </div>
 
-            {/* Authentication */}
+            {/* Commit signing is independent of transport authentication. */}
             {!isGlobalProfile && (
               <>
                 <div className="border-t border-border/40" />
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="typography-ui-label text-foreground">{t('settings.gitIdentities.editor.field.authMethod')}</span>
-                    <div className="flex items-center gap-1">
-                      <Button size="sm"
-                        type="button"
-                        variant="chip"
-                        aria-pressed={authType === 'ssh'}
-                        onClick={() => setAuthType('ssh')}
-                      >
-                        <Icon name="lock-2" className="w-3.5 h-3.5 mr-1" /> SSH
-                      </Button>
-                      <Button size="sm"
-                        type="button"
-                        variant="chip"
-                        aria-pressed={authType === 'token'}
-                        onClick={() => setAuthType('token')}
-                      >
-                        <Icon name="key" className="w-3.5 h-3.5 mr-1" /> {t('settings.gitIdentities.editor.field.authToken')}
-                      </Button>
-                    </div>
-                  </div>
+                  <SettingsCheckboxRow
+                    checked={signCommits}
+                    onChange={setSignCommits}
+                    label={t('settings.gitIdentities.editor.field.signCommits')}
+                    info={t('settings.gitIdentities.editor.section.commitSigning')}
+                    ariaLabel={t('settings.gitIdentities.editor.field.signCommits')}
+                  />
 
-                  {authType === 'ssh' && (
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className={SETTINGS_FIELD_LABEL_CLASS}>{t('settings.gitIdentities.editor.field.sshKeyPath')}</label>
-                        <SettingsInfoHint contentClassName="max-w-xs">
-                          {t('settings.gitIdentities.editor.field.sshKeyPathTooltip')}
-                        </SettingsInfoHint>
-                      </div>
-                      <Input
-                        value={sshKey}
-                        onChange={(e) => setSshKey(e.target.value)}
-                        placeholder={t('settings.gitIdentities.editor.field.sshKeyPathPlaceholder')}
-                        className="h-8 font-mono text-xs"
-                      />
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <label className={SETTINGS_FIELD_LABEL_CLASS}>
+                        {t('settings.gitIdentities.editor.field.signingKey')}
+                      </label>
                     </div>
-                  )}
-
-                  <div className="border-t border-border/40 pt-3 space-y-3">
-                    <SettingsCheckboxRow
-                      checked={signCommits}
-                      onChange={setSignCommits}
-                      label={t('settings.gitIdentities.editor.field.signCommits')}
-                      info={t('settings.gitIdentities.editor.section.commitSigning')}
-                      ariaLabel={t('settings.gitIdentities.editor.field.signCommits')}
+                    <Input
+                      value={signingKey}
+                      onChange={(e) => setSigningKey(e.target.value)}
+                      placeholder={t('settings.gitIdentities.editor.field.signingKeyPlaceholder')}
+                      disabled={!signCommits}
+                      className="h-8 font-mono text-xs"
                     />
-
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className={SETTINGS_FIELD_LABEL_CLASS}>
-                          {t('settings.gitIdentities.editor.field.signingKey')}
-                        </label>
-                      </div>
-                      <Input
-                        value={signingKey}
-                        onChange={(e) => setSigningKey(e.target.value)}
-                        placeholder={t('settings.gitIdentities.editor.field.signingKeyPlaceholder')}
-                        disabled={!signCommits}
-                        className="h-8 font-mono text-xs"
-                      />
-                    </div>
                   </div>
-
-                  {authType === 'token' && (
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className={SETTINGS_FIELD_LABEL_CLASS}>{t('settings.gitIdentities.editor.field.host')}</label>
-                        <span className="text-[var(--status-error)] text-xs">*</span>
-                        <SettingsInfoHint contentClassName="max-w-xs">
-                          {t('settings.gitIdentities.editor.field.hostTooltip')}
-                        </SettingsInfoHint>
-                      </div>
-                      <Input
-                        value={host}
-                        onChange={(e) => setHost(e.target.value)}
-                        placeholder={t('settings.gitIdentities.editor.field.hostPlaceholder')}
-                        required
-                        className="h-8 font-mono text-xs"
-                      />
-                    </div>
-                  )}
                 </div>
               </>
             )}

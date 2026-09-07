@@ -4,7 +4,10 @@
  * both resolve the same base for the same repository state.
  */
 export const deriveBaseBranch = (options: {
+  /** Remotes authorized to supply the base branch. */
   remoteNames: ReadonlySet<string>;
+  /** All repository remotes, used to reject a remote-qualified hint outside the binding. */
+  knownRemoteNames?: ReadonlySet<string>;
   localBranches: readonly string[];
   worktreeCreatedFromBranch?: string | null;
   rootBranchHint?: string | null;
@@ -15,6 +18,8 @@ export const deriveBaseBranch = (options: {
    * things is one the next caller gets wrong.
    */
   defaultBranch?: string | null;
+  /** Whether to guess a conventional branch when no repository authority resolves a base. */
+  fallbackToConventional?: boolean;
   /**
    * The branch being compared. A branch is never its own base, so a candidate
    * equal to it is skipped — in a plain checkout `rootBranchHint` *is* the
@@ -24,10 +29,12 @@ export const deriveBaseBranch = (options: {
 }): string => {
   const {
     remoteNames,
+    knownRemoteNames = remoteNames,
     localBranches,
     worktreeCreatedFromBranch,
     rootBranchHint,
     defaultBranch,
+    fallbackToConventional = true,
     headBranch,
   } = options;
 
@@ -60,7 +67,8 @@ export const deriveBaseBranch = (options: {
     const slashIndex = normalized.indexOf('/');
     if (slashIndex > 0) {
       const maybeRemote = normalized.slice(0, slashIndex);
-      if (remoteNames.has(maybeRemote)) {
+      if (knownRemoteNames.has(maybeRemote)) {
+        if (!remoteNames.has(maybeRemote)) return '';
         const withoutRemote = normalized.slice(slashIndex + 1).trim();
         if (withoutRemote) {
           normalized = withoutRemote;
@@ -87,6 +95,7 @@ export const deriveBaseBranch = (options: {
   const fromDefault = candidate(defaultBranch);
   if (fromDefault) return fromDefault;
 
+  if (!fallbackToConventional) return '';
   if (localBranches.includes('main')) return 'main';
   if (localBranches.includes('master')) return 'master';
   if (localBranches.includes('develop')) return 'develop';

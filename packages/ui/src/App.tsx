@@ -47,7 +47,7 @@ import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useUIStore } from '@/stores/useUIStore';
-import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import { useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import type { RuntimeAPIs } from '@/lib/api/types';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -245,7 +245,7 @@ function App({ apis }: AppProps) {
   const setDirectory = useDirectoryStore((state) => state.setDirectory);
   const isSwitchingDirectory = useDirectoryStore((state) => state.isSwitchingDirectory);
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
-  const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
+  const refreshSourceControlAuth = useSourceControlAuthStore((state) => state.refreshAll);
   const [isVSCodeRuntime, setIsVSCodeRuntime] = React.useState<boolean>(() => apis.runtime.isVSCode);
   // Embedded chats start inactive until the parent panel identifies the active
   // tab. Otherwise a newly loaded background tab can focus its composer first
@@ -332,12 +332,12 @@ function App({ apis }: AppProps) {
   }, [apis]);
 
   React.useEffect(() => {
-    if (embeddedSessionChat) {
+    if (embeddedSessionChat || !isConnected) {
       return;
     }
 
-    void refreshGitHubAuthStatus(apis.github, { force: true });
-  }, [apis.github, embeddedSessionChat, refreshGitHubAuthStatus]);
+    void refreshSourceControlAuth(apis.sourceControl, { force: true });
+  }, [apis.sourceControl, embeddedSessionChat, isConnected, refreshSourceControlAuth, runtimeEndpointEpoch]);
 
   useAppFontEffects();
 

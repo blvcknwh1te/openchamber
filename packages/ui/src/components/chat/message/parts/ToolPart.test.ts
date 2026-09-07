@@ -5,6 +5,27 @@ import { readTaskTagSessionIdFromOutput } from './taskSessionIdParser';
 import { tryParseJsonOutput } from '../toolRenderers';
 import { getStreamingThrottleText } from '../../hooks/useStreamingTextThrottle';
 import { getToolDescriptionFallback } from './toolRenderUtils';
+import { getShellOperationBoundary } from './shellOperationBoundary';
+
+describe('getShellOperationBoundary', () => {
+    test('classifies only shell tool aliases without inspecting command input', () => {
+        for (const toolName of ['bash', 'shell', 'cmd', 'terminal', 'shell_command', ' BASH ']) {
+            expect(getShellOperationBoundary(toolName, 'agent')).toEqual({
+                initiator: 'agent',
+                verification: 'unverified',
+                boundary: 'outside-managed-boundary',
+            });
+        }
+
+        expect(getShellOperationBoundary('read', 'agent')).toBeNull();
+        expect(getShellOperationBoundary('git', 'agent')).toBeNull();
+    });
+
+    test('preserves the authoritative user or agent initiator', () => {
+        expect(getShellOperationBoundary('bash', 'agent')?.initiator).toBe('agent');
+        expect(getShellOperationBoundary('bash', 'user')?.initiator).toBe('user');
+    });
+});
 
 describe('getToolOutput', () => {
     test('prefers state.output for completed tools', () => {

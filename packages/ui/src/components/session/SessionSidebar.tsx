@@ -93,17 +93,24 @@ import {
   resolveGlobalSessionDirectory,
   useGlobalSessionsStore,
 } from '@/stores/useGlobalSessionsStore';
-import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import {
+  getSourceControlAuthKey,
+  getSourceControlReadContextAuthState,
+  useSourceControlAuthStore,
+} from '@/stores/useSourceControlAuthStore';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import { getGitHubPrStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
+import { getSourceControlStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { buildSessionBootstrapDemands } from './sidebar/sessionBootstrapDemands';
 import { recordWorktreesSeen } from './sidebar/worktreeFirstSeen';
+import { selectSourceControlDiscoveryCandidates } from './sidebar/sourceControlDiscovery';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { streamPerfCount, streamPerfMark } from '@/stores/utils/streamDebug';
 import { runBackgroundNetworkTask } from '@/lib/background-network';
 import { isCapacitorApp } from '@/lib/platform';
+import { repositoryBindingOwner } from '@/lib/source-control/repository-binding';
+import type { SourceControlReadContext } from '@/lib/api/types';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -149,7 +156,7 @@ const isKnownActiveSessionDirectory = (
   return knownDirectories.has(directory);
 };
 
-const SIDEBAR_PR_NO_PR_RETRY_MS = 5 * 60_000;
+const SIDEBAR_MISSING_CHANGE_REQUEST_RETRY_MS = 5 * 60_000;
 
 const EMPTY_SUBTREE_SET: Set<string> = new Set();
 const EMPTY_STRING_ARRAY: string[] = [];
@@ -1077,13 +1084,16 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     void refreshGlobalSessionsForDirectories(addedDirectories, syncSessionsSnapshotRef.current);
   }, [isVSCode, projectSessionDirectories]);
 
-  const { github } = useRuntimeAPIs();
-  const githubAuthStatus = useGitHubAuthStore((state) => state.status);
-  const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
+  const { sourceControl } = useRuntimeAPIs();
   const gitRepoStatus = useGitRepoStatusMap(isVisible ? normalizedProjectPaths : EMPTY_STRING_ARRAY);
   const ensurePrStatusEntry = useGitHubPrStatusStore((state) => state.ensureEntry);
   const setPrStatusParams = useGitHubPrStatusStore((state) => state.setParams);
+  const beginActiveSourceControlContextsLoad = useGitHubPrStatusStore((state) => state.beginActiveContextsLoad);
+  const commitActiveSourceControlContexts = useGitHubPrStatusStore((state) => state.commitActiveContexts);
+  const releaseActiveSourceControlContexts = useGitHubPrStatusStore((state) => state.releaseActiveContexts);
+  const sourceControlContextsOwnerId = React.useId();
   const refreshPrStatusTargets = useGitHubPrStatusStore((state) => state.refreshTargets);
+  const clearDirectoryStatus = useGitHubPrStatusStore((state) => state.clearDirectoryStatus);
 
   useProjectRepoStatus({
     enabled: isVisible,
@@ -1179,8 +1189,6 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     collapsedFolderIds,
     gitBranches,
     gitRepoStatus,
-    githubAuthStatus,
-    githubAuthChecked,
     updateStore,
     showRecentSection: shouldShowRecentSection,
     showArchivedSessions,
@@ -1460,94 +1468,176 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     setSingleProjectId(projectId);
   }, [setSingleProjectId]);
 
-  // Discover/refresh PR status for expanded projects' worktree branches so
-  // session rows can tint their branch marker and show PR state in tooltips.
+  // Discover/refresh change-request status for expanded projects' worktree
+  // branches so session rows can tint their branch marker and show state in
+  // tooltips. Resolve the provider from each worktree's actual remotes.
   // The data source is the worktree-grouped projectSections (data layer), not
   // the flat display sections.
-  const retriedNoPrStatusKeysRef = React.useRef<Set<string>>(new Set());
+  const retriedMissingChangeRequestKeysRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
-    if (!isVisible || !githubAuthChecked || !githubAuthStatus?.connected || !github) {
+    if (!isVisible) {
       return;
     }
 
-    const targetsByKey = new Map<string, { directory: string; branch: string }>();
-    const now = Date.now();
+    const candidates = selectSourceControlDiscoveryCandidates(projectSections, collapsedProjects, gitBranches);
 
-    projectSections.forEach((section) => {
-      if (collapsedProjects.has(section.project.id)) {
-        return;
-      }
+    if (candidates.length === 0) {
+      return;
+    }
 
-      section.groups.forEach((group) => {
-        if (group.isArchivedBucket || group.isMain) {
-          return;
-        }
-        const directory = normalizePath(group.directory ?? null);
-        const branch = group.branch?.trim() || gitBranches.get(directory || '')?.trim();
-        if (!directory || !branch) {
-          return;
-        }
-        const key = getGitHubPrStatusKey(directory, branch);
+    let cancelled = false;
+    const discoveryRuntimeKey = getRuntimeKey();
+    const discover = async (changedDirectory?: string) => {
+      const now = Date.now();
+      const contextsByDirectory = new Map<string, Promise<SourceControlReadContext[] | null>>();
+      const loadContexts = (directory: string): Promise<SourceControlReadContext[] | null> => {
+        const pending = contextsByDirectory.get(directory);
+        if (pending) return pending;
+        const contextRequestId = beginActiveSourceControlContextsLoad(
+          discoveryRuntimeKey,
+          directory,
+          sourceControlContextsOwnerId,
+        );
+        const scope = repositoryBindingOwner.scope(directory);
+        const loading = runBackgroundNetworkTask(() => repositoryBindingOwner.read(scope, sourceControl)).then((load) => {
+          if (cancelled || discoveryRuntimeKey !== getRuntimeKey()) return null;
+          const primaryContext = load.contexts[0];
+          const contexts = primaryContext && getSourceControlReadContextAuthState(
+            useSourceControlAuthStore.getState().entries[getSourceControlAuthKey(primaryContext)],
+            primaryContext,
+          ).connected ? [primaryContext] : [];
+          const accepted = commitActiveSourceControlContexts(
+            discoveryRuntimeKey,
+            directory,
+            sourceControlContextsOwnerId,
+            contextRequestId,
+            contexts,
+          );
+          if (!accepted) return null;
+          if (contexts.length === 0) clearDirectoryStatus(directory);
+          return contexts;
+        });
+        contextsByDirectory.set(directory, loading);
+        return loading;
+      };
+      const resolvedTargets = await Promise.all(candidates.filter((candidate) => !changedDirectory || candidate.directory === changedDirectory).map(async (candidate) => {
+        const contexts = await loadContexts(candidate.directory);
+        return (contexts ?? []).map((context) => ({ ...candidate, context }));
+      }));
+
+      if (cancelled || discoveryRuntimeKey !== getRuntimeKey()) return;
+
+      const targetsByKey = new Map<string, {
+        context: SourceControlReadContext;
+        branch: string;
+      }>();
+      const activeTargetsByKey = new Map<string, {
+        context: SourceControlReadContext;
+        branch: string;
+      }>();
+      for (const target of resolvedTargets.flat()) {
+        const key = getSourceControlStatusKey(target.context, target.branch);
+        activeTargetsByKey.set(key, { context: target.context, branch: target.branch });
         const entry = useGitHubPrStatusStore.getState().entries[key];
-        const prState = entry?.status?.pr?.state;
-        const isTerminalPr = prState === 'closed' || prState === 'merged';
+        const changeRequest = entry?.status?.changeRequest ?? entry?.status?.pr;
+        const changeRequestState = changeRequest?.state;
+        const isTerminalChangeRequest = changeRequestState === 'closed' || changeRequestState === 'merged';
         // Closed/merged associations are not live branch status — retry them on
-        // the same cadence as missing PRs so a newer open PR can appear.
-        const hasLivePr = Boolean(entry?.status?.pr) && !isTerminalPr;
-        const retryKey = `${directory}::${branch}`;
-        const noPrLastCheckedAt = Math.max(entry?.lastRefreshAt ?? 0, entry?.lastDiscoveryPollAt ?? 0);
-        const shouldRetryNoPr = Boolean(
+        // the same cadence as missing change requests so a newer one can appear.
+        const hasLiveChangeRequest = Boolean(changeRequest) && !isTerminalChangeRequest;
+        const retryKey = key;
+        const lastCheckedAt = Math.max(entry?.lastRefreshAt ?? 0, entry?.lastDiscoveryPollAt ?? 0);
+        const shouldRetryMissingChangeRequest = Boolean(
           entry?.isInitialStatusResolved
-          && !hasLivePr
+          && !hasLiveChangeRequest
           && (
-            !retriedNoPrStatusKeysRef.current.has(retryKey)
-            || now - noPrLastCheckedAt >= SIDEBAR_PR_NO_PR_RETRY_MS
+            !retriedMissingChangeRequestKeysRef.current.has(retryKey)
+            || now - lastCheckedAt >= SIDEBAR_MISSING_CHANGE_REQUEST_RETRY_MS
           ),
         );
 
-        if (!entry || !entry.isInitialStatusResolved || shouldRetryNoPr) {
-          if (shouldRetryNoPr) {
-            retriedNoPrStatusKeysRef.current.add(retryKey);
+        if (!entry || !entry.isInitialStatusResolved || shouldRetryMissingChangeRequest) {
+          if (shouldRetryMissingChangeRequest) {
+            retriedMissingChangeRequestKeysRef.current.add(retryKey);
           }
           if (!targetsByKey.has(key)) {
-            targetsByKey.set(key, { directory, branch });
+            targetsByKey.set(key, {
+              context: target.context,
+              branch: target.branch,
+            });
           }
         }
+      }
+
+      activeTargetsByKey.forEach((target, key) => {
+        ensurePrStatusEntry(key);
+        setPrStatusParams(key, {
+          directory: target.context.directory,
+          branch: target.branch,
+          remoteName: target.context.primaryRemote,
+          canShow: true,
+          identity: target.context,
+          readContext: target.context,
+          sourceControl,
+          authChecked: true,
+          connected: true,
+        });
+      });
+
+      if (targetsByKey.size === 0) return;
+
+      await refreshPrStatusTargets([...targetsByKey.values()], {
+        silent: true,
+        markInitialResolved: true,
+      });
+    };
+
+    const bindingScopes = [...new Set(candidates.map((candidate) => candidate.directory))].map((directory) => repositoryBindingOwner.scope(directory));
+    const releases = bindingScopes.map((scope) => {
+      let previous = repositoryBindingOwner.snapshot(scope);
+      return repositoryBindingOwner.subscribe(scope, () => {
+        const next = repositoryBindingOwner.snapshot(scope);
+        const changed = previous.read !== null && previous !== next;
+        previous = next;
+        if (changed && !cancelled) void discover(scope.directory);
       });
     });
-
-    if (targetsByKey.size === 0) {
-      return;
-    }
-
-    targetsByKey.forEach((target, key) => {
-      ensurePrStatusEntry(key);
-      setPrStatusParams(key, {
-        directory: target.directory,
-        branch: target.branch,
-        remoteName: null,
-        canShow: true,
-        github,
-        githubAuthChecked,
-        githubConnected: githubAuthStatus.connected,
-      });
+    const releaseAuth = useSourceControlAuthStore.subscribe((next, previous) => {
+      if (cancelled || discoveryRuntimeKey !== getRuntimeKey() || next.entries === previous.entries) return;
+      for (const scope of bindingScopes) {
+        const context = repositoryBindingOwner.snapshot(scope).contexts[0];
+        if (!context) continue;
+        const key = getSourceControlAuthKey(context);
+        if (next.entries[key] !== previous.entries[key]) void discover(scope.directory);
+      }
     });
-
-    void refreshPrStatusTargets([...targetsByKey.values()], {
-      silent: true,
-      markInitialResolved: true,
-    });
+    void discover();
+    const discoveryTimer = window.setInterval(() => {
+      void discover();
+    }, SIDEBAR_MISSING_CHANGE_REQUEST_RETRY_MS);
+    return () => {
+      cancelled = true;
+      releaseAuth();
+      releases.forEach((release) => release());
+      window.clearInterval(discoveryTimer);
+      for (const candidate of candidates) {
+        releaseActiveSourceControlContexts(discoveryRuntimeKey, candidate.directory, sourceControlContextsOwnerId);
+      }
+    };
   }, [
     collapsedProjects,
+    beginActiveSourceControlContextsLoad,
+    clearDirectoryStatus,
     ensurePrStatusEntry,
-    github,
-    githubAuthChecked,
-    githubAuthStatus?.connected,
     isVisible,
     gitBranches,
     projectSections,
+    releaseActiveSourceControlContexts,
     refreshPrStatusTargets,
+    commitActiveSourceControlContexts,
     setPrStatusParams,
+    sourceControl,
+    sourceControlContextsOwnerId,
   ]);
 
   const desktopHeaderActionButtonClass =

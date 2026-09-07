@@ -1,4 +1,5 @@
 import React from 'react';
+import type { SourceControlProvider } from '@/lib/api/types';
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -63,8 +64,8 @@ import { isIMECompositionEvent } from '@/lib/ime';
 import { getCycledPrimaryAgentName, type MobileControlsPanel } from './mobileControlsUtils';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
-import { GitHubIssuePickerDialog } from '@/components/session/GitHubIssuePickerDialog';
-import { GitHubPrPickerDialog } from '@/components/session/GitHubPrPickerDialog';
+import { IssuePickerDialog } from '@/components/session/IssuePickerDialog';
+import { ChangeRequestPickerDialog } from '@/components/session/ChangeRequestPickerDialog';
 import { Icon } from "@/components/icon/Icon";
 import { DraftPresetChips } from './DraftPresetChips';
 import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
@@ -704,7 +705,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         author?: { login: string; avatarUrl?: string };
     } | null>(null);
     const [linkedPr, setLinkedPr] = React.useState<{
+        provider: SourceControlProvider;
         number: number;
+        reference: string;
         title: string;
         url: string;
         head: string;
@@ -1112,7 +1115,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 ? { number: linkedIssue.number, title: linkedIssue.title, url: linkedIssue.url, contextText: linkedIssue.contextText }
                 : null,
             linkedPr: linkedPr
-                ? { number: linkedPr.number, title: linkedPr.title, url: linkedPr.url, instructions: linkedPr.instructionsText, context: linkedPr.contextText }
+                ? { provider: linkedPr.provider, number: linkedPr.number, title: linkedPr.title, url: linkedPr.url, instructions: linkedPr.instructionsText, context: linkedPr.contextText }
                 : null,
         }, {
             parseAgentMention: (text) => {
@@ -2633,7 +2636,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 ) : null}
                 {linkedPr && !isVSCode ? (
                     <LinkedReferenceRow
-                        numberLabel={t('chat.chatInput.linked.pr.number', { number: linkedPr.number })}
+                        numberLabel={linkedPr.reference}
                         title={linkedPr.title}
                         url={linkedPr.url}
                         author={linkedPr.author}
@@ -2948,18 +2951,19 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         </form>
 
         {/* Issue Picker Dialog */}
-        <GitHubIssuePickerDialog
+        <IssuePickerDialog
             open={issuePickerOpen}
             onOpenChange={setIssuePickerOpen}
-            mode="select"
+            directory={currentSessionDirectoryForSync ?? currentDirectory ?? null}
             onSelect={(issue) => {
                 setLinkedIssue(issue);
                 setLinkedPr(null);
             }}
         />
-        <GitHubPrPickerDialog
+        <ChangeRequestPickerDialog
             open={prPickerOpen}
             onOpenChange={setPrPickerOpen}
+            directory={currentSessionDirectoryForSync ?? currentDirectory ?? null}
             onSelect={(pr) => {
                 setLinkedPr(pr);
                 setLinkedIssue(null);
@@ -3031,8 +3035,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                             requestAnimationFrame(openIssuePicker);
                         }}
                     >
-                        <Icon name="github" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.linkGithubIssue')}
+                        <Icon name="git-repository" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
+                        {t('session.issuePicker.title')}
                     </button>
                     <button
                         type="button"
@@ -3044,7 +3048,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         }}
                     >
                         <Icon name="git-pull-request" className="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground" />
-                        {t('chat.chatInput.actions.linkGithubPr')}
+                        {t('session.changeRequestPicker.title')}
                     </button>
                 </div>
             </MobileOverlayPanel>

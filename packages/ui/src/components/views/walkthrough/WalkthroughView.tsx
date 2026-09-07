@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,16 +14,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useI18n, type Locale } from '@/lib/i18n';
 import { openExternalUrl } from '@/lib/url';
 import { buildWalkthroughView } from '@/lib/walkthrough/model';
-import type { WalkthroughSource, WalkthroughWorkingTreeScope } from '@/lib/walkthrough/types';
+import type { WalkthroughSource, WalkthroughTarget, WalkthroughWorkingTreeScope } from '@/lib/walkthrough/types';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { deriveBaseBranch, hasResolvableBaseBranch } from '@/components/views/git/baseBranch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useGitBranches, useGitStatus, useGitStore } from '@/stores/useGitStore';
-import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import {
-  getFreshestPrStatusForBranch,
-  getGitHubPrStatusKey,
+  getFreshestSourceControlStatusForBranch,
+  getSourceControlStatusKey,
   useGitHubPrStatusStore,
 } from '@/stores/useGitHubPrStatusStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -36,6 +35,8 @@ import { WalkthroughStages } from './WalkthroughStages';
 import { useWalkthroughStageProgress } from './useWalkthroughStageProgress';
 import { WalkthroughStream } from './WalkthroughStream';
 import { WalkthroughToc } from './WalkthroughToc';
+import { useRepositoryBinding } from '@/lib/source-control/repository-binding';
+import { getSourceControlAuthKey, getSourceControlReadContextAuthState, useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 
 interface WalkthroughViewProps {
   directory: string;
@@ -155,13 +156,14 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   // from the window width.
   const renderSideBySide = diffLayoutPreference === 'side-by-side';
 
-  const requestedSource = useWalkthroughStore((state) => state.requestedSource[directory]);
-  const clearRequestedSource = useWalkthroughStore((state) => state.clearRequestedSource);
+  const requestedTarget = useWalkthroughStore((state) => state.getRequestedTarget(directory));
+  const clearRequestedTarget = useWalkthroughStore((state) => state.clearRequestedTarget);
 
   const status = useGitStatus(directory || null);
   const branches = useGitBranches(directory || null);
   const ensureAll = useGitStore((state) => state.ensureAll);
-  const { github, git } = useRuntimeAPIs();
+  const { sourceControl, git } = useRuntimeAPIs();
+  const binding = useRepositoryBinding(directory, sourceControl);
 
   useEffect(() => {
     if (directory) void ensureAll(directory, git);
@@ -171,7 +173,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   // base. Three-dot semantics server-side mean merges from the base are
   // already excluded.
   const currentBranch = status?.current ?? null;
-  const branchSource = useMemo<WalkthroughSource | null>(() => {
+  const branchSource = useMemo<Extract<WalkthroughSource, { kind: 'branch' }> | null>(() => {
     const headRef = currentBranch;
     if (!headRef) return null;
     const all = branches?.all ?? [];
@@ -179,97 +181,133 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
     const remoteBranches = all
       .filter((name) => name.startsWith('remotes/'))
       .map((name) => name.slice('remotes/'.length));
-    const remoteNames = new Set(
-      remoteBranches
-        .map((name) => name.split('/')[0])
-        .filter(Boolean)
-    );
-    const trackingRemote = status?.tracking?.split('/')[0];
-    const defaultBranch = (trackingRemote && branches?.defaultBranches?.[trackingRemote])
-      ?? branches?.defaultBranches?.origin;
-    const baseRef = deriveBaseBranch({
-      remoteNames,
+    const primaryRemote = binding.contexts[0]?.primaryRemote;
+    const defaultBranch = primaryRemote ? branches?.defaultBranches?.[primaryRemote] : undefined;
+    const baseBranch = deriveBaseBranch({
+      remoteNames: new Set(primaryRemote ? [primaryRemote] : []),
+      knownRemoteNames: new Set(binding.read?.repository.remotes.map((remote) => remote.name) ?? []),
       localBranches,
       defaultBranch,
       headBranch: headRef,
+      fallbackToConventional: false,
     });
-    if (!baseRef || baseRef === headRef || !hasResolvableBaseBranch({ baseBranch: baseRef, localBranches, remoteBranches })) {
+    const boundRemoteBranches = primaryRemote
+      ? remoteBranches.filter((name) => name.startsWith(`${primaryRemote}/`))
+      : [];
+    if (!baseBranch || baseBranch === headRef || !hasResolvableBaseBranch({
+      baseBranch,
+      localBranches,
+      remoteBranches: boundRemoteBranches,
+    })) {
       return null;
     }
+    const baseRef = primaryRemote && remoteBranches.includes(`${primaryRemote}/${baseBranch}`)
+      ? `${primaryRemote}/${baseBranch}`
+      : `refs/heads/${baseBranch}`;
     return { kind: 'branch', baseRef, headRef };
-  }, [branches, currentBranch, status?.tracking]);
+  }, [binding.contexts, binding.read, branches, currentBranch]);
 
   // The pull request for this branch used to appear only after visiting the PR
   // panel, because nothing else asked GitHub about it. Ask here too: the status
   // store already dedupes by signature and throttles by TTL, so several panels
   // wanting the same answer produce one request.
-  const githubConnected = useGitHubAuthStore((state) => state.status?.connected ?? false);
-  const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
+  const sourceControlAuthEntries = useSourceControlAuthStore((state) => state.entries);
   const ensurePrStatusEntry = useGitHubPrStatusStore((state) => state.ensureEntry);
   const setPrStatusParams = useGitHubPrStatusStore((state) => state.setParams);
+  const beginActiveSourceControlContextsLoad = useGitHubPrStatusStore((state) => state.beginActiveContextsLoad);
+  const commitActiveSourceControlContexts = useGitHubPrStatusStore((state) => state.commitActiveContexts);
+  const releaseActiveSourceControlContexts = useGitHubPrStatusStore((state) => state.releaseActiveContexts);
+  const sourceControlContextsOwnerId = useId();
   const refreshPrStatusTargets = useGitHubPrStatusStore((state) => state.refreshTargets);
 
   useEffect(() => {
-    if (!directory || !currentBranch || !githubAuthChecked || !githubConnected) return;
-    const key = getGitHubPrStatusKey(directory, currentBranch);
+    if (!directory) return;
+    const capturedRuntimeKey = binding.scope.runtimeKey;
+    const contextRequestId = beginActiveSourceControlContextsLoad(capturedRuntimeKey, directory, sourceControlContextsOwnerId);
+    const activeContexts = binding.contexts.filter((context) => getSourceControlReadContextAuthState(
+      sourceControlAuthEntries[getSourceControlAuthKey(context)], context,
+    ).connected);
+    commitActiveSourceControlContexts(capturedRuntimeKey, directory, sourceControlContextsOwnerId, contextRequestId, activeContexts);
+    return () => {
+      releaseActiveSourceControlContexts(capturedRuntimeKey, directory, sourceControlContextsOwnerId);
+    };
+  }, [beginActiveSourceControlContextsLoad, binding.contexts, binding.scope.runtimeKey, commitActiveSourceControlContexts, directory, releaseActiveSourceControlContexts, sourceControlAuthEntries, sourceControlContextsOwnerId]);
+  const readContext = binding.contexts[0] ?? null;
+  const readAuthEntry = readContext ? sourceControlAuthEntries[getSourceControlAuthKey(readContext)] : undefined;
+  const readAuth = readContext
+    ? getSourceControlReadContextAuthState(readAuthEntry, readContext)
+    : { authChecked: false, connected: false };
+
+  useEffect(() => {
+    if (!readContext || !currentBranch) return;
+    const key = getSourceControlStatusKey(readContext, currentBranch);
     ensurePrStatusEntry(key);
     setPrStatusParams(key, {
-      directory,
+      directory: readContext.directory,
       branch: currentBranch,
-      remoteName: null,
+      remoteName: readContext.primaryRemote,
       canShow: true,
-      github,
-      githubAuthChecked,
-      githubConnected,
+      identity: readContext,
+      readContext,
+      sourceControl,
+      authChecked: readAuth.authChecked,
+      connected: readAuth.connected,
     });
-    void refreshPrStatusTargets([{ directory, branch: currentBranch, remoteName: null }]);
+    void refreshPrStatusTargets([{ context: readContext, branch: currentBranch }]);
   }, [
     currentBranch,
-    directory,
     ensurePrStatusEntry,
-    github,
-    githubAuthChecked,
-    githubConnected,
+    readContext,
+    readAuth.authChecked,
+    readAuth.connected,
     refreshPrStatusTargets,
     setPrStatusParams,
+    sourceControl,
   ]);
 
   // Selecting the number rather than the entry map: a primitive keeps this
   // panel out of every unrelated PR status update.
-  const branchPrNumber = useGitHubPrStatusStore((state) => (
-    directory && currentBranch
-      ? getFreshestPrStatusForBranch(state.entries, directory, currentBranch)?.pr?.number ?? null
-      : null
-  ));
+  const branchPrNumber = useGitHubPrStatusStore((state) => {
+    if (!directory || !currentBranch || !readContext || !readAuth.connected) return null;
+    const branchStatus = getFreshestSourceControlStatusForBranch(
+      state.entries,
+      readContext,
+      currentBranch,
+    );
+    return (branchStatus?.changeRequest ?? branchStatus?.pr)?.number ?? null;
+  });
 
-  const source = useMemo<WalkthroughSource>(
-    () => requestedSource ?? { kind: 'working-tree', scope },
-    [requestedSource, scope]
+  const target = useMemo<WalkthroughTarget>(
+    () => requestedTarget ?? { source: { kind: 'working-tree', scope } },
+    [requestedTarget, scope]
   );
+  const source = target.source;
 
   // Offer whichever pull request we know about: the one already selected, or
   // the one this branch has.
-  const prSource = useMemo<Extract<WalkthroughSource, { kind: 'pr' }> | null>(() => {
-    if (source.kind === 'pr') return source;
-    return branchPrNumber ? { kind: 'pr', number: branchPrNumber } : null;
-  }, [branchPrNumber, source]);
+  const prTarget = useMemo<Extract<WalkthroughTarget, { source: { kind: 'pr' } }> | null>(() => {
+    if ('context' in target) return target;
+    return branchPrNumber && readContext?.provider === 'github'
+      ? { source: { kind: 'pr', number: branchPrNumber }, context: readContext }
+      : null;
+  }, [branchPrNumber, readContext, target]);
 
   const selectWorkingTree = useCallback(
     (value: WalkthroughWorkingTreeScope) => {
-      clearRequestedSource(directory);
+      clearRequestedTarget(directory);
       setScope(value);
     },
-    [clearRequestedSource, directory]
+    [clearRequestedTarget, directory]
   );
-  const entry = useWalkthroughStore((state) => state.getEntry(directory, source));
+  const entry = useWalkthroughStore((state) => state.getEntry(directory, target));
   const load = useWalkthroughStore((state) => state.load);
   const generate = useWalkthroughStore((state) => state.generate);
   const cancel = useWalkthroughStore((state) => state.cancel);
-  const requestSource = useWalkthroughStore((state) => state.requestSource);
+  const requestTarget = useWalkthroughStore((state) => state.requestTarget);
   const selectModel = useWalkthroughStore((state) => state.selectModel);
-  const selectedModel = useWalkthroughStore((state) => state.getSelectedModel(directory, source));
+  const selectedModel = useWalkthroughStore((state) => state.getSelectedModel(directory, target));
   const selectLanguage = useWalkthroughStore((state) => state.selectLanguage);
-  const selectedLanguage = useWalkthroughStore((state) => state.getSelectedLanguage(directory, source));
+  const selectedLanguage = useWalkthroughStore((state) => state.getSelectedLanguage(directory, target));
 
   // Explicit pick first, then the language the walkthrough on screen is
   // actually written in, then the interface locale. The middle step matters for
@@ -288,8 +326,8 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   // the model can produce structured output, are answers about a specific
   // request — and the language instruction is part of that request.
   useEffect(() => {
-    void load(directory, source, { language: activeLanguage });
-  }, [activeLanguage, directory, load, source, selectedModel]);
+    void load(directory, target, { language: activeLanguage });
+  }, [activeLanguage, directory, load, selectedModel, target]);
 
   const view = useMemo(() => buildWalkthroughView(entry.result), [entry.result]);
 
@@ -479,9 +517,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
   const handleGenerate = useCallback(
     (force: boolean) => {
       if (generateDisabled) return;
-      void generate(directory, source, { force, language: activeLanguage });
+      void generate(directory, target, { force, language: activeLanguage });
     },
-    [activeLanguage, directory, generate, generateDisabled, source]
+    [activeLanguage, directory, generate, generateDisabled, target]
   );
 
   return (
@@ -504,11 +542,11 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               onValueChange={(value) => {
                 setSourceMenuOpen(false);
                 if (value === 'branch') {
-                  if (branchSource) requestSource(directory, branchSource);
+                  if (branchSource) requestTarget(directory, { source: branchSource });
                   return;
                 }
                 if (value === 'pr') {
-                  if (prSource) requestSource(directory, prSource);
+                  if (prTarget) requestTarget(directory, prTarget);
                   return;
                 }
                 selectWorkingTree(value as WalkthroughWorkingTreeScope);
@@ -529,7 +567,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
                       : t('walkthrough.scope.working')}
                 </DropdownMenuRadioItem>
               ))}
-              {(branchSource || prSource) && (
+              {(branchSource || prTarget) && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className={SCOPE_GROUP_LABEL_CLASS}>
@@ -542,9 +580,9 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
                   {t('walkthrough.scope.branch')}
                 </DropdownMenuRadioItem>
               )}
-              {prSource && (
+              {prTarget && (
                 <DropdownMenuRadioItem value="pr">
-                  {t('walkthrough.scope.pullRequest', { number: prSource.number })}
+                  {t('walkthrough.scope.pullRequest', { number: prTarget.source.number })}
                 </DropdownMenuRadioItem>
               )}
             </DropdownMenuRadioGroup>
@@ -600,7 +638,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
                 value={activeLanguage}
                 onValueChange={(value) => {
                   setLanguageMenuOpen(false);
-                  selectLanguage(directory, source, value);
+                  selectLanguage(directory, target, value);
                 }}
               >
                 {locales.map((value) => (
@@ -618,7 +656,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             providerId={activeProviderId ?? ''}
             modelId={activeModelId}
             onChange={(providerId, modelId) => {
-              selectModel(directory, source, providerId && modelId ? `${providerId}/${modelId}` : null);
+              selectModel(directory, target, providerId && modelId ? `${providerId}/${modelId}` : null);
             }}
             // While the auth list is loading, allow none — not every provider.
             allowedProviderIds={modelProviders ?? []}
@@ -658,7 +696,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
               size="sm"
               aria-label={compactHeader ? t('walkthrough.action.cancel') : undefined}
               title={compactHeader ? t('walkthrough.action.cancel') : undefined}
-              onClick={() => cancel(directory, source)}
+              onClick={() => cancel(directory, target)}
             >
               {compactHeader
                 ? <Icon name="stop" className="size-3.5" />
@@ -776,7 +814,7 @@ export const WalkthroughView = ({ directory }: WalkthroughViewProps) => {
             model={blockedModel}
             requiredChars={blockedRequiredChars}
             availableChars={blockedAvailableChars}
-            onRetry={() => void load(directory, source)}
+            onRetry={() => void load(directory, target)}
           />
         ) : showStages ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">

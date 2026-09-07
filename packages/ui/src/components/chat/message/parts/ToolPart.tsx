@@ -69,6 +69,8 @@ import { toAbsoluteFilePath } from '@/lib/path-utils';
 import { getToolDescriptionFallback } from './toolRenderUtils';
 import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
 import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
+import ShellBoundaryIndicator from './ShellBoundaryIndicator';
+import { getShellOperationBoundary } from './shellOperationBoundary';
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
@@ -1698,6 +1700,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
+    const shellOperation = getShellOperationBoundary(normalizedPartTool, 'agent');
 
     const status = state?.status as string | undefined;
     const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
@@ -2171,6 +2174,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 >
                                     {displayName}
                                 </MinDurationShineText>
+                                {shellOperation ? <ShellBoundaryIndicator operation={shellOperation} /> : null}
                             </div>
                             {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>

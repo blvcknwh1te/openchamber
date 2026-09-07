@@ -88,6 +88,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ToolPart` defers expanded content after a user toggle, preventing large tool input/output payloads from mounting during the initial chat render.
 - The rich tool diff preview lives in `ToolPartDiffPreview.tsx` and is lazy-loaded from `ToolPart`. It is the only tool-card piece that imports the `@pierre/diffs` + Shiki rendering stack, keeping that stack out of the eager chat startup graph. While its chunk loads (first rendered diff only) the plain-text patch from `PlainDiffFallback.tsx` renders as the Suspense fallback, mirroring the preview's error fallback. `ToolPart` itself must not statically import `@pierre/diffs` runtime modules or `@/lib/shiki/appThemeRegistry`.
 - Running bash output falls back to `state.metadata.output` until canonical `state.output` arrives. Its output viewport grows with the content up to `46vh`, then scrolls and follows new output until the user scrolls up; following resumes when the user returns to the bottom. Live output appends or replaces rewritten snapshots as plain text without worker highlighting; finalized output normalizes ANSI terminal controls with a bounded synthetic-cell budget, bypasses the throttle, and receives the normal one-time highlighted rendering.
+- Assistant shell tool rows and synthetic user `/shell` actions are marked `unverified` and `outside-managed-boundary`. Classification uses the tool name and the authoritative render path only; it never inspects command text or infers Git activity.
 - Thinking/Justification duration is hidden in `sorted` mode (handled in `ReasoningPart.tsx` + `JustificationBlock.tsx`).
 
 ## "I want to change description for Perplexity" (example recipe)
@@ -125,11 +126,11 @@ Why: only navigation tools use the compact static path; all other tools need obs
   annotations, PR comments/checks): `UserContextPart.tsx`. `UserTextPart`
   routes to it when the part's metadata carries an `openchamberContext`
   payload (see `lib/messages/contextParts.ts`, which owns both the send-time
-  builder and the read-back parser). Linked GitHub issues/PRs are instead
+  builder and the read-back parser). Linked source-control issues/change requests are instead
   converted to link file-parts in `normalizeUserDisplayParts.ts`. Legacy
   pre-metadata messages still render via text sniffing (`<terminal_context>`
   blocks, `GitHub issue context (JSON)` prefixes).
-- Tools: `ToolPart.tsx`, `ToolPartDiffPreview.tsx`, `PlainDiffFallback.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
+- Tools: `ToolPart.tsx`, `ToolPartDiffPreview.tsx`, `PlainDiffFallback.tsx`, `ProgressiveGroup.tsx`, `ShellBoundaryIndicator.tsx`, `shellOperationBoundary.ts`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
 - Reasoning/justification: `ReasoningPart.tsx`, `JustificationBlock.tsx`
 - Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`, `BusyDots.tsx`
 - Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`

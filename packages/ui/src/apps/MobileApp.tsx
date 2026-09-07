@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
-import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
+import { useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import { useGitStore } from '@/stores/useGitStore';
 import { useMcpConfigStore, type McpDraft } from '@/stores/useMcpConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -627,7 +627,7 @@ export function MobileApp({ apis }: MobileAppProps) {
   const error = useSessionUIStore((state) => state.error);
   const clearError = useSessionUIStore((state) => state.clearError);
   const setIsMobile = useUIStore((state) => state.setIsMobile);
-  const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
+  const refreshSourceControlAuth = useSourceControlAuthStore((state) => state.refreshAll);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const projects = useProjectsStore((state) => state.projects);
   const [connectionEpoch, setConnectionEpoch] = React.useState(0);
@@ -675,7 +675,7 @@ export function MobileApp({ apis }: MobileAppProps) {
     // only refresh in place when the transport is 'unchanged'.
     const refreshInPlace = () => {
       void initializeApp();
-      void refreshGitHubAuthStatus(apis.github, { force: true });
+      void refreshSourceControlAuth(apis.sourceControl, { force: true });
       if (providersCount === 0) void loadProviders({ source: 'mobileApp:nativeResume' });
       if (agentsCount === 0) void loadAgents({ source: 'mobileApp:nativeResume' });
     };
@@ -744,7 +744,7 @@ export function MobileApp({ apis }: MobileAppProps) {
       lastNativeResumeSyncEventAtRef.current = now;
       window.dispatchEvent(new Event('openchamber:system-resume'));
     }
-  }, [agentsCount, apis.github, initializeApp, loadAgents, loadProviders, providersCount, refreshGitHubAuthStatus]);
+  }, [agentsCount, apis.sourceControl, initializeApp, loadAgents, loadProviders, providersCount, refreshSourceControlAuth]);
 
   useNativeMobileChrome();
   useNativeMobileLifecycle(handleNativeResume);
@@ -1007,12 +1007,12 @@ export function MobileApp({ apis }: MobileAppProps) {
   }, [currentDirectory, isConnected]);
 
   // Gated on isConnected (and re-run on reconnect/instance switch): probing the
-  // GitHub auth status before the runtime is reachable cached a "not connected"
+  // Source-control auth status before the runtime is reachable cached a "not connected"
   // answer that stuck until something else forced a re-check.
   React.useEffect(() => {
     if (!isConnected) return;
-    void refreshGitHubAuthStatus(apis.github, { force: true });
-  }, [apis.github, isConnected, refreshGitHubAuthStatus]);
+    void refreshSourceControlAuth(apis.sourceControl, { force: true });
+  }, [apis.sourceControl, isConnected, refreshSourceControlAuth]);
 
   // Discover all worktrees for every known project so the draft session's
   // worktree/branch dropdown can list every available branch — not only the

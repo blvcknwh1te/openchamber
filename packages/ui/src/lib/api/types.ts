@@ -1,5 +1,42 @@
-import type { WorktreeMetadata } from '@/types/worktree';
-import type { DraftStarterRef } from '@/lib/draftStarters';
+import type { WorktreeMetadata } from '../../types/worktree';
+import type { DraftStarterRef } from '../draftStarters';
+import type { GitIdentityProfile, GitIdentitySummary } from './git-identity';
+import type {
+  ChangeRequest,
+  ChangeRequestContext,
+  ChangeRequestStatus,
+  CreateChangeRequestInput,
+  Issue,
+  IssueComment,
+  MergeChangeRequestInput,
+  PageResult,
+  ProjectUpstream,
+  ReadyChangeRequestInput,
+  SourceControlAuthStatus,
+  SourceControlCapabilities,
+  SourceControlDeviceFlowComplete,
+  SourceControlDeviceFlowStart,
+  SourceControlIdentity,
+  SourceControlEmptyMutationResult,
+  SourceControlMergeMutationResult,
+  SourceControlMutationReceipt,
+  SourceControlReadyMutationResult,
+  SourceControlBindingRead,
+  SourceControlProviderBindingMutation,
+  SourceControlReadContext,
+  SourceControlRepositoryBindingResetIntent,
+  SourceControlRepositoryContext,
+  GitTransportBindingIntent,
+  GitTransportBindingResult,
+  GitTransportBindingRemovalIntent,
+  GitTransportBindingRemovalResult,
+  GitAuxiliaryBindingIntent,
+  GitAuxiliaryBindingResult,
+  UpdateChangeRequestInput,
+} from '../source-control/types';
+
+export type * from '../source-control/types';
+export type { GitIdentityProfile, GitIdentitySummary } from './git-identity';
 
 type RuntimePlatform = 'web' | 'desktop' | 'vscode';
 
@@ -250,6 +287,387 @@ export interface GitPullOptions {
   rebase?: boolean;
 }
 
+export type GitNetworkTransportMode = 'managed' | 'system' | 'anonymous';
+
+export interface GitNetworkRedactedEndpoint {
+  displayUrl: string;
+  fingerprint: string;
+}
+
+export interface GitNetworkRedactedDestination {
+  displayName: string;
+  fingerprint: string;
+}
+
+export interface GitNetworkRuntimeIdentity {
+  id: string;
+  platform: RuntimePlatform;
+  label?: string;
+}
+
+export type GitNetworkTransportActor =
+  | {
+      kind: 'provider';
+      provider: string;
+      instance: string;
+      accountId: string;
+      login?: string;
+    }
+  | {
+      kind: 'ssh-key';
+      fingerprint: string;
+    };
+
+export type GitNetworkTransport =
+  | { mode: 'anonymous'; verification: { status: 'anonymous' } }
+  | {
+      mode: 'managed';
+      verification: { status: 'verified'; method: 'credential' | 'git-identity' };
+      actor?: GitNetworkTransportActor;
+    }
+  | {
+      mode: 'system';
+      verification: { status: 'unverified'; reason: 'system-credentials' };
+    };
+
+export interface GitNetworkRemoteTarget {
+  name: string;
+  endpoint: GitNetworkRedactedEndpoint;
+}
+
+export interface GitCheckoutHydrationRequirement {
+  kind: 'submodule' | 'lfs';
+  path: string;
+  endpoint: GitNetworkRedactedEndpoint;
+}
+
+type ExistingRepositoryNetworkOperationRequest = {
+  directory: string;
+  repositoryId: string;
+  bindingRevision: number;
+  configRevision: string;
+  remote: GitNetworkRemoteTarget;
+  sourceRef: string;
+  destinationRef: string;
+  transportMode: GitNetworkTransportMode;
+};
+
+type GitNetworkSyncRemoteRequest = {
+  remote: GitNetworkRemoteTarget;
+  sourceRef: string;
+  destinationRef: string;
+  transportMode: GitNetworkTransportMode;
+};
+
+export type GitNetworkOperationRequest =
+  | (ExistingRepositoryNetworkOperationRequest & {
+      operation: 'push';
+      forceWithLease?: { expectedRemoteSha: string };
+      configureUpstream?: boolean;
+      acknowledgeSystemTransport?: boolean;
+      destinationSelectionId?: string;
+    })
+  | (ExistingRepositoryNetworkOperationRequest & { operation: 'fetch'; fetchScope?: 'ref' })
+  | (Omit<ExistingRepositoryNetworkOperationRequest, 'sourceRef' | 'destinationRef'> & {
+      operation: 'fetch';
+      fetchScope: 'remote';
+    })
+  | (ExistingRepositoryNetworkOperationRequest & { operation: 'pull' })
+  | {
+      operation: 'delete-remote-branch';
+      directory: string;
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      destinationRef: string;
+      transportMode: GitNetworkTransportMode;
+      acknowledgeSystemTransport?: boolean;
+    }
+  | {
+      operation: 'checkout-hydration';
+      directory: string;
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+    }
+  | {
+      operation: 'sync';
+      directory: string;
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      fetch: GitNetworkSyncRemoteRequest;
+      pull: { destinationRef: string };
+      push: GitNetworkSyncRemoteRequest & {
+        forceWithLease?: { expectedRemoteSha: string };
+        acknowledgeSystemTransport?: boolean;
+        destinationSelectionId?: string;
+      };
+    }
+  | ({
+      operation: 'clone';
+      remoteUrl: string;
+      destinationPath: string;
+      gitIdentityId?: string;
+      auxiliaryGrants?: Array<{
+        kind: 'submodule' | 'lfs';
+        endpoint: GitNetworkRedactedEndpoint;
+      } & (
+        | { transportMode: 'managed'; credentialId: string }
+        | { transportMode: 'system'; unverifiedConfirmed: true; credentialId?: never }
+        | { transportMode: 'anonymous'; credentialId?: never; unverifiedConfirmed?: never }
+      )>;
+    } & (
+      | { transportMode: 'system'; unverifiedConfirmed: true; credentialAccount?: never; sshCredentialId?: never }
+      | { transportMode: 'anonymous'; credentialAccount?: never; sshCredentialId?: never; unverifiedConfirmed?: never }
+      | { transportMode: 'managed'; credentialAccount: SourceControlIdentity & { accountId: string }; sshCredentialId?: never; unverifiedConfirmed?: never }
+      | { transportMode: 'managed'; sshCredentialId: string; credentialAccount?: never; unverifiedConfirmed?: never }
+    ));
+
+export type GitManagedSshCredential = {
+  credentialId: string;
+  label: string;
+  fingerprint: string;
+  capability: { status: 'ready' } | { status: 'unavailable'; reason: 'unreadable' | 'encrypted-or-unverifiable' | 'fingerprint-mismatch' };
+};
+
+export type GitManagedSshCandidate =
+  | {
+      candidateId: string;
+      label: string;
+      fingerprint: string;
+      capability: { status: 'ready' };
+    }
+  | {
+      label: string;
+      capability: { status: 'unavailable'; reason: 'unreadable' | 'encrypted-or-unverifiable' | 'insecure-permissions' };
+    };
+
+export type GitManagedSshIntent = { operation: 'inventory' | 'discover' }
+  | { operation: 'import'; candidateId: string; expectedFingerprint: string; confirmed: true };
+
+export type GitManagedSshResult =
+  | { status: 'available'; credentials: GitManagedSshCredential[] }
+  | { status: 'discovered'; candidates: GitManagedSshCandidate[]; truncated: boolean }
+  | { status: 'imported'; credentials: GitManagedSshCredential[]; selectedCredential: GitManagedSshCredential & { capability: { status: 'ready' } } }
+  | { status: 'rejected'; reason: 'candidate-expired' | 'candidate-changed' | 'fingerprint-mismatch' | 'candidate-unavailable' | 'inventory-full' }
+  | { status: 'unsupported'; reason: 'host-setup-required' };
+
+export type GitNetworkOperationTarget =
+  | {
+      operation: 'push';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      sourceRef: string;
+      destinationRef: string;
+      forceWithLease?: { expectedRemoteSha: string };
+      configureUpstream?: boolean;
+    }
+  | {
+      operation: 'fetch';
+      fetchScope: 'remote';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      force: boolean;
+    }
+  | {
+      operation: 'fetch';
+      fetchScope?: 'ref';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      sourceRef: string;
+      destinationRef: string;
+    }
+  | {
+      operation: 'pull';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      sourceRef: string;
+      destinationRef: string;
+    }
+  | {
+      operation: 'delete-remote-branch';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      destinationRef: string;
+    }
+  | {
+      operation: 'checkout-hydration';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      remote: GitNetworkRemoteTarget;
+      requirements: GitCheckoutHydrationRequirement[];
+    }
+  | {
+      operation: 'sync';
+      repositoryId: string;
+      bindingRevision: number;
+      configRevision: string;
+      fetch: GitNetworkRemoteTarget & { sourceRef: string; destinationRef: string };
+      pull: { destinationRef: string };
+      push: GitNetworkRemoteTarget & {
+        sourceRef: string;
+        destinationRef: string;
+        forceWithLease?: { expectedRemoteSha: string };
+      };
+    }
+  | {
+      operation: 'clone';
+      remote: GitNetworkRedactedEndpoint;
+      destination: GitNetworkRedactedDestination;
+    };
+
+export type GitNetworkOperationStep =
+  | 'validated'
+  | 'authenticated'
+  | 'transferred'
+  | 'updated-local-repository'
+  | 'checked-out'
+  | 'cleaned-up';
+
+export type GitNetworkSyncStepStatus = 'succeeded' | 'skipped' | 'conflicted' | 'failed' | 'cancelled';
+
+export interface GitNetworkSyncStepResult {
+  step: 'fetch' | 'pull' | 'push';
+  status: GitNetworkSyncStepStatus;
+  error?: GitNetworkOperationError;
+}
+
+export type GitNetworkOperationErrorCode =
+  | 'INVALID_REQUEST'
+  | 'NOT_FOUND'
+  | 'STALE_REPOSITORY'
+  | 'STALE_BINDING'
+  | 'STALE_CONFIG'
+  | 'REMOTE_CHANGED'
+  | 'AUTHENTICATION_REQUIRED'
+  | 'ACKNOWLEDGEMENT_REQUIRED'
+  | 'DESTINATION_SELECTION_REQUIRED'
+  | 'CONTRIBUTOR_MANAGED_TRANSPORT_REQUIRED'
+  | 'AUTHENTICATION_FAILED'
+  | 'TRANSPORT_FAILED'
+  | 'CONFLICT'
+  | 'CANCELLED'
+  | 'TIMEOUT'
+  | 'OUTCOME_UNKNOWN'
+  | 'RUNTIME_UNSUPPORTED'
+  | 'GIT_LFS_CLIENT_MISSING'
+  | 'UNKNOWN';
+
+export interface GitNetworkOperationError<Code extends GitNetworkOperationErrorCode = GitNetworkOperationErrorCode> {
+  code: Code;
+  message: string;
+}
+
+export class GitNetworkOperationRequestError extends Error {
+  readonly code: GitNetworkOperationErrorCode;
+  readonly status: number;
+
+  constructor(code: GitNetworkOperationErrorCode, message: string, status: number) {
+    super(message);
+    this.name = 'GitNetworkOperationRequestError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export type GitCheckoutHydrationStatus =
+  | 'succeeded'
+  | 'authorization-required'
+  | 'invalid'
+  | 'client-missing'
+  | 'failed'
+  | 'cancelled'
+  | 'not-needed';
+
+export interface GitCheckoutHydrationItemResult {
+  path: string;
+  status: GitCheckoutHydrationStatus;
+  endpoint?: GitNetworkRedactedEndpoint;
+  error?: GitNetworkOperationError;
+}
+
+export interface GitCheckoutLfsResult {
+  path: string;
+  status: GitCheckoutHydrationStatus;
+  endpoint?: GitNetworkRedactedEndpoint;
+  error?: GitNetworkOperationError;
+}
+
+export interface GitCheckoutHydrationResult {
+  status: GitCheckoutHydrationStatus;
+  submodules: GitCheckoutHydrationItemResult[];
+  lfs: GitCheckoutLfsResult[];
+}
+
+type GitNetworkOperationBase = {
+  operationId: string;
+  runtimeIdentity: GitNetworkRuntimeIdentity;
+  transport: GitNetworkTransport | { fetch: GitNetworkTransport; push: GitNetworkTransport };
+  target: GitNetworkOperationTarget;
+  completedSteps: GitNetworkOperationStep[];
+  stepResults?: GitNetworkSyncStepResult[];
+  hydration?: GitCheckoutHydrationResult;
+};
+
+export type GitNetworkOperationPlan = GitNetworkOperationBase & { state: 'planned' };
+
+export type GitNetworkOperation =
+  | GitNetworkOperationPlan
+  | (GitNetworkOperationBase & { state: 'running' })
+  | (GitNetworkOperationBase & { state: 'succeeded' })
+  | (GitNetworkOperationBase & {
+      state: 'partial';
+      error: GitNetworkOperationError<
+        | 'INVALID_REQUEST'
+        | 'AUTHENTICATION_REQUIRED'
+        | 'AUTHENTICATION_FAILED'
+        | 'TRANSPORT_FAILED'
+        | 'RUNTIME_UNSUPPORTED'
+        | 'GIT_LFS_CLIENT_MISSING'
+        | 'UNKNOWN'
+      >;
+    })
+  | (GitNetworkOperationBase & {
+      state: 'failed';
+      error: GitNetworkOperationError<
+        | 'INVALID_REQUEST'
+        | 'AUTHENTICATION_REQUIRED'
+        | 'AUTHENTICATION_FAILED'
+        | 'TRANSPORT_FAILED'
+        | 'RUNTIME_UNSUPPORTED'
+        | 'GIT_LFS_CLIENT_MISSING'
+        | 'UNKNOWN'
+      >;
+    })
+  | (GitNetworkOperationBase & {
+      state: 'cancelled';
+      error: GitNetworkOperationError<'CANCELLED' | 'TIMEOUT'>;
+    })
+  | (GitNetworkOperationBase & {
+      state: 'outcome-unknown';
+      error: GitNetworkOperationError<'OUTCOME_UNKNOWN'>;
+    })
+  | (GitNetworkOperationBase & {
+      state: 'conflicted';
+      error: GitNetworkOperationError<
+        'STALE_REPOSITORY' | 'STALE_BINDING' | 'STALE_CONFIG' | 'REMOTE_CHANGED' | 'CONFLICT'
+      >;
+    });
+
 export interface GitStashEntry {
   ref: string;
   message: string;
@@ -259,7 +677,9 @@ export interface GitStashEntry {
 
 export interface GitRemote {
   name: string;
+  /** Redacted display URL. Never includes HTTP userinfo, query data, or fragments. */
   fetchUrl: string;
+  /** Redacted display URL. Never includes HTTP userinfo, query data, or fragments. */
   pushUrl: string;
 }
 
@@ -308,32 +728,6 @@ export interface MergeConflictDetails {
   operation: 'merge' | 'rebase';
 }
 
-export type GitIdentityAuthType = 'ssh' | 'token';
-
-export interface GitIdentityProfile {
-  id: string;
-  name: string;
-  userName: string;
-  userEmail: string;
-  authType?: GitIdentityAuthType;
-  sshKey?: string | null;
-  signCommits?: boolean;
-  signingKey?: string | null;
-  host?: string | null;
-  color?: string | null;
-  icon?: string | null;
-}
-
-export interface DiscoveredGitCredential {
-  host: string;
-  username: string;
-}
-
-export interface GitIdentitySummary {
-  userName: string | null;
-  userEmail: string | null;
-  sshCommand: string | null;
-}
 
 export interface GitLogEntry {
   hash: string;
@@ -378,6 +772,14 @@ export interface GitWorktreeInfo {
   name: string;
   branch: string;
   path: string;
+  provenance?: GitContributorWorktreeProvenance;
+}
+
+export interface GitContributorWorktreeProvenance {
+  kind: 'contributor-fork';
+  revision: number;
+  trust: 'untrusted';
+  push: 'destination-selection-required';
 }
 
 export interface GitWorktreeValidationError {
@@ -394,11 +796,27 @@ export interface GitWorktreeValidationResult {
   };
 }
 
+export class GitWorktreeRequestError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly remoteName?: string;
+
+  constructor(code: string, message: string, status: number, remoteName?: string) {
+    super(message);
+    this.name = 'GitWorktreeRequestError';
+    this.code = code;
+    this.status = status;
+    this.remoteName = remoteName;
+  }
+}
+
 export interface GitWorktreeBootstrapStatus {
   status: 'pending' | 'ready' | 'failed';
   phase?: 'directory-created' | 'git-ready' | 'setup-ready';
   error: string | null;
+  errorCode?: GitNetworkOperationErrorCode;
   updatedAt: number;
+  hydration?: GitCheckoutHydrationResult;
 }
 
 export interface CreateGitWorktreePayload {
@@ -419,11 +837,23 @@ export interface CreateGitWorktreePayload {
   setUpstream?: boolean;
   upstreamRemote?: string;
   upstreamBranch?: string;
-  /** Optional remote provisioning (used for fork PR workflows). */
+  /** Optional remote provisioning for non-change-request workflows. */
   ensureRemoteName?: string;
   ensureRemoteUrl?: string;
+  /** Exact commit the selected existing ref must resolve to before checkout. */
+  expectedRevision?: string;
+  /** Server-resolved change-request checkout. Unsupported by VS Code. */
+  changeRequestSource?: GitChangeRequestSourceRequest;
   /** Return once the target directory exists and finish Git worktree setup in the background. */
   returnAfterDirectoryCreated?: boolean;
+}
+
+export interface GitChangeRequestSourceRequest {
+  context: SourceControlReadContext;
+  project: { id: string; owner: string; name: string };
+  number: number;
+  expectedHeadSha: string;
+  requestedRemoteName: string;
 }
 
 export interface GitWorktreeCreateResult {
@@ -433,6 +863,13 @@ export interface GitWorktreeCreateResult {
   path: string;
   directoryCreated?: true;
   bootstrapStatus?: GitWorktreeBootstrapStatus;
+  provenance?: GitContributorWorktreeProvenance;
+}
+
+export interface GitCheckoutTrustInspection {
+  state: 'awaiting-trust';
+  digest: string;
+  actions: Array<{ kind: 'post-checkout-hook' | 'project-start-command' | 'setup-command'; label: string }>;
 }
 
 export interface RemoveGitWorktreePayload {
@@ -445,10 +882,6 @@ export interface GitDeleteBranchPayload {
   force?: boolean;
 }
 
-export interface GitDeleteRemoteBranchPayload {
-  branch: string;
-  remote?: string;
-}
 
 export interface GitRemoveRemotePayload {
   remote: string;
@@ -506,7 +939,6 @@ export interface GitAPI {
   isLinkedWorktree(directory: string): Promise<boolean>;
   getGitBranches(directory: string): Promise<GitBranch>;
   deleteGitBranch(directory: string, payload: GitDeleteBranchPayload): Promise<{ success: boolean }>;
-  deleteRemoteBranch(directory: string, payload: GitDeleteRemoteBranchPayload): Promise<{ success: boolean }>;
   removeRemote(directory: string, payload: GitRemoveRemotePayload): Promise<{ success: boolean }>;
   generateCommitMessage(directory: string, files: string[], options?: { zenModel?: string; providerId?: string; modelId?: string }): Promise<{ message: GeneratedCommitMessage }>;
   generatePullRequestDescription(
@@ -523,6 +955,22 @@ export interface GitAPI {
   gitPush(directory: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
   gitPull(directory: string, options?: GitPullOptions): Promise<GitPullResult>;
   gitFetch(directory: string, options?: { remote?: string; branch?: string }): Promise<{ success: boolean }>;
+  planNetworkOperation(request: GitNetworkOperationRequest): Promise<GitNetworkOperationPlan>;
+  issueContributorDestination(request: GitContributorDestinationRequest): Promise<GitContributorDestinationSelection>;
+  listContributorDestinations(directory: string): Promise<GitContributorDestinationCandidates>;
+  inspectCheckoutTrust(directory: string): Promise<GitCheckoutTrustInspection>;
+  decideCheckoutTrust(directory: string, digest: string, decision: 'run' | 'skip'): Promise<{ state: string }>;
+  executeNetworkOperation(operationId: string): Promise<GitNetworkOperation>;
+  getNetworkOperation(operationId: string): Promise<GitNetworkOperation>;
+  cancelNetworkOperation(operationId: string): Promise<GitNetworkOperation>;
+  /** Connected-server inventory only; the VS Code webview does not implement it. */
+  managedSshCredentials?(intent: GitManagedSshIntent): Promise<GitManagedSshResult>;
+  /** Host-owned credential setup is available only in runtimes that implement this operation. */
+  configureTransportBinding?(intent: GitTransportBindingIntent): Promise<GitTransportBindingResult>;
+  /** Removes only one committed remote transport grant. Git configuration and credentials are unchanged. */
+  removeTransportBinding?(intent: GitTransportBindingRemovalIntent): Promise<GitTransportBindingRemovalResult>;
+  /** Exact-endpoint checkout grants are configured by the runtime that owns Git execution. */
+  configureAuxiliaryBinding?(intent: GitAuxiliaryBindingIntent): Promise<GitAuxiliaryBindingResult>;
   listGitStashes(directory: string): Promise<{ stashes: GitStashEntry[] }>;
   countGitStashFiles(directory: string, refs: string[]): Promise<{ counts: Record<string, number> }>;
   stashGitChanges(directory: string, options?: { message?: string }): Promise<{ success: boolean; created: boolean; message: string; output: string }>;
@@ -542,9 +990,8 @@ export interface GitAPI {
   createGitIdentity(profile: GitIdentityProfile): Promise<GitIdentityProfile>;
   updateGitIdentity(id: string, updates: GitIdentityProfile): Promise<GitIdentityProfile>;
   deleteGitIdentity(id: string): Promise<void>;
-  discoverGitCredentials?(): Promise<DiscoveredGitCredential[]>;
   getGlobalGitIdentity?(): Promise<GitIdentitySummary | null>;
-  getRemoteUrl?(directory: string, remote?: string): Promise<string | null>;
+  /** Returns a redacted display URL, never a transport credential source. */
   getRemotes(directory: string): Promise<GitRemote[]>;
   rebase(directory: string, options: { onto: string }): Promise<GitRebaseResult>;
   abortRebase(directory: string): Promise<{ success: boolean }>;
@@ -579,6 +1026,40 @@ export interface GitAPI {
   }>;
   worktree?: GitWorktreeAPI;
 }
+
+export interface GitContributorDestinationRequest {
+  directory: string;
+  repositoryId: string;
+  bindingRevision: number;
+  configRevision: string;
+  provenanceRevision: number;
+  remote: GitNetworkRemoteTarget;
+  sourceRef: string;
+  destinationRef: string;
+  transportMode: 'managed';
+}
+
+export interface GitContributorDestinationSelection {
+  selectionId: string;
+  provenanceRevision: number;
+  sourceSha: string;
+  expiresInMs: number;
+}
+
+export type GitContributorDestinationClassification = 'contributor-fork' | 'own-fork' | 'bound-repository' | 'other';
+
+export type GitContributorDestinationCandidates = { kind: 'ordinary' } | {
+  kind: 'contributor';
+  repositoryId: string;
+  bindingRevision: number;
+  configRevision: string;
+  provenanceRevision: number;
+  candidates: Array<{
+    remote: GitNetworkRemoteTarget;
+    transportMode: 'managed';
+    classification: GitContributorDestinationClassification;
+  }>;
+};
 
 export interface FileListEntry {
   name: string;
@@ -975,6 +1456,7 @@ export type GitHubPullRequestsListResult = {
   prs?: GitHubPullRequestSummary[];
   page?: number;
   hasMore?: boolean;
+  failedRepos?: Array<{ owner: string; repo: string }>;
 };
 
 export type GitHubPullRequestContextResult = {
@@ -1002,48 +1484,6 @@ export type GitHubPullRequestStatus = {
   canMerge?: boolean;
   defaultBranch?: string | null;
   resolvedRemoteName?: string | null;
-};
-
-export type GitHubPullRequestCreateInput = {
-  directory: string;
-  title: string;
-  head: string;
-  base: string;
-  body?: string;
-  draft?: boolean;
-  /** Remote to create the PR against (target repo, e.g., 'upstream' for forks) */
-  remote?: string;
-  /** Remote where the head branch lives (source repo, e.g., 'origin' for forks) */
-  headRemote?: string;
-  /** Explicit target repo (alternative to remote, for auto-detected upstream) */
-  targetRepo?: { owner: string; repo: string };
-};
-
-export type GitHubPullRequestUpdateInput = {
-  directory: string;
-  number: number;
-  title: string;
-  body?: string;
-};
-
-export type GitHubPullRequestMergeInput = {
-  directory: string;
-  number: number;
-  method: 'merge' | 'squash' | 'rebase';
-};
-
-export type GitHubPullRequestReadyInput = {
-  directory: string;
-  number: number;
-};
-
-export type GitHubPullRequestReadyResult = {
-  ready: boolean;
-};
-
-export type GitHubPullRequestMergeResult = {
-  merged: boolean;
-  message?: string;
 };
 
 type GitHubIssueLabel = {
@@ -1088,6 +1528,7 @@ export type GitHubIssuesListResult = {
   issues?: GitHubIssueSummary[];
   page?: number;
   hasMore?: boolean;
+  failedRepos?: Array<{ owner: string; repo: string }>;
 };
 
 export type GitHubRepoUpstreamResult = {
@@ -1123,14 +1564,19 @@ export type GitHubAuthStatus = {
 
 type GitHubAuthAccount = {
   id: string;
+  credentialId: string;
+  credentialRevision: number;
+  providerUserId: string;
+  providerUserStatus: 'available' | 'unavailable';
   user: GitHubUserSummary;
   scope?: string;
   current?: boolean;
-  source?: 'oauth' | 'gh-cli';
+  source?: 'oauth' | 'pat' | 'cli' | 'gh-cli';
+  status?: 'valid' | 'invalid';
 };
 
 export type GitHubDeviceFlowStart = {
-  deviceCode: string;
+  flowId: string;
   userCode: string;
   verificationUri: string;
   verificationUriComplete?: string;
@@ -1143,33 +1589,56 @@ export type GitHubDeviceFlowComplete =
   | { connected: true; user: GitHubUserSummary; scope?: string }
   | { connected: false; status?: string; error?: string };
 
-export interface GitHubAPI {
-  authStatus(): Promise<GitHubAuthStatus>;
-  authStart(): Promise<GitHubDeviceFlowStart>;
-  authComplete(deviceCode: string): Promise<GitHubDeviceFlowComplete>;
-  authDisconnect(): Promise<{ removed: boolean }>;
-  authActivate(accountId: string): Promise<GitHubAuthStatus>;
-  authSetGhCliDisabled(disabled: boolean): Promise<{ disabled: boolean }>;
-  me?(): Promise<GitHubUserSummary>;
+export interface SourceControlAPI {
+  repositoryContext(directory: string): Promise<SourceControlRepositoryContext>;
+  repositoryBinding(directory: string): Promise<SourceControlBindingRead>;
+  resetRepositoryBinding(intent: SourceControlRepositoryBindingResetIntent): Promise<SourceControlBindingRead>;
+  repositoryProviderBindingMutate(input: SourceControlProviderBindingMutation): Promise<SourceControlBindingRead>;
+  authInstances(): Promise<SourceControlIdentity[]>;
+  capabilities(identity: SourceControlIdentity): Promise<SourceControlCapabilities>;
+  authStatus(identity: SourceControlIdentity): Promise<SourceControlAuthStatus>;
+  authStart(identity: SourceControlIdentity): Promise<SourceControlDeviceFlowStart>;
+  authComplete(identity: SourceControlIdentity, flowId: string): Promise<SourceControlDeviceFlowComplete>;
+  authSetToken(identity: SourceControlIdentity, token: string): Promise<SourceControlAuthStatus>;
+  authDisconnect(identity: SourceControlIdentity, accountId: string): Promise<{ removed: boolean }>;
+  authActivate(identity: SourceControlIdentity, accountId: string): Promise<SourceControlAuthStatus>;
+  authSetCliDisabled(identity: SourceControlIdentity, disabled: boolean): Promise<{ disabled: boolean }>;
 
-  prStatus(directory: string, branch: string, remote?: string, options?: { force?: boolean }): Promise<GitHubPullRequestStatus>;
-  prCreate(payload: GitHubPullRequestCreateInput): Promise<GitHubPullRequest>;
-  prUpdate(payload: GitHubPullRequestUpdateInput): Promise<GitHubPullRequest>;
-  prMerge(payload: GitHubPullRequestMergeInput): Promise<GitHubPullRequestMergeResult>;
-  prReady(payload: GitHubPullRequestReadyInput): Promise<GitHubPullRequestReadyResult>;
-
-  prsList(directory: string, options?: { page?: number; query?: string }): Promise<GitHubPullRequestsListResult>;
-  prContext(
-    directory: string,
+  changeRequestStatus(
+    context: SourceControlReadContext,
+    branch: string,
+    options?: { force?: boolean },
+  ): Promise<ChangeRequestStatus>;
+  changeRequestCreate(payload: CreateChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  changeRequestUpdate(payload: UpdateChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlEmptyMutationResult>>;
+  changeRequestMerge(payload: MergeChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlMergeMutationResult>>;
+  changeRequestReady(payload: ReadyChangeRequestInput): Promise<SourceControlMutationReceipt<SourceControlReadyMutationResult>>;
+  changeRequestsList(
+    context: SourceControlReadContext,
+    options?: { page?: number; query?: string },
+  ): Promise<PageResult<ChangeRequest>>;
+  changeRequestContext(
+    context: SourceControlReadContext,
     number: number,
-    options?: { includeDiff?: boolean; includeCheckDetails?: boolean; sourceRepo?: GitHubRepoSelector | null }
-  ): Promise<GitHubPullRequestContextResult>;
+    options?: { includeDiff?: boolean; includeCIDetails?: boolean; project?: { owner: string; name: string } },
+  ): Promise<ChangeRequestContext>;
 
-  issuesList(directory: string, options?: { page?: number; query?: string }): Promise<GitHubIssuesListResult>;
-  issueGet(directory: string, number: number, options?: { sourceRepo?: GitHubRepoSelector | null }): Promise<GitHubIssueGetResult>;
-  issueComments(directory: string, number: number, options?: { sourceRepo?: GitHubRepoSelector | null }): Promise<GitHubIssueCommentsResult>;
-  repoUpstream(directory: string): Promise<GitHubRepoUpstreamResult>;
-  repoBranches(owner: string, repo: string): Promise<string[]>;
+  issuesList(
+    context: SourceControlReadContext,
+    options?: { page?: number; query?: string },
+  ): Promise<PageResult<Issue>>;
+  issueGet(
+    context: SourceControlReadContext,
+    number: number,
+    project?: { owner: string; name: string },
+  ): Promise<Issue | null>;
+  issueComments(
+    context: SourceControlReadContext,
+    number: number,
+    project?: { owner: string; name: string },
+  ): Promise<IssueComment[]>;
+  projectUpstream(context: SourceControlReadContext): Promise<ProjectUpstream>;
+  projectBranches(context: SourceControlReadContext, owner: string, project: string): Promise<string[]>;
 }
 
 export interface RemoteClientRecord {
@@ -1266,7 +1735,7 @@ export interface RuntimeAPIs {
   settings: SettingsAPI;
   permissions: PermissionsAPI;
   notifications: NotificationsAPI;
-  github?: GitHubAPI;
+  sourceControl: SourceControlAPI;
   push?: PushAPI;
   diagnostics?: DiagnosticsAPI;
   clientAuth?: ClientAuthAPI;

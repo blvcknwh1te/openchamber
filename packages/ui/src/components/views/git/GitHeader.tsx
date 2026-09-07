@@ -22,7 +22,7 @@ import type {
 } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 
-type SyncAction = 'fetch' | 'pull' | 'push' | 'sync' | null;
+type SyncAction = 'fetch' | 'sync' | 'publish' | null;
 
 interface GitHeaderProps {
   status: GitStatus | null;
@@ -30,13 +30,16 @@ interface GitHeaderProps {
   remoteBranches: string[];
   branchInfo: Record<string, { ahead?: number; behind?: number }> | undefined;
   syncAction: SyncAction;
+  operationBlocked?: boolean;
   remotes: GitRemote[];
   onFetch: (remote: GitRemote) => void;
   onSync: (remote: GitRemote) => void;
+  onPublish: () => void;
+  onChooseSyncTargets: () => void;
   onRemoveRemote: (remote: GitRemote) => void;
   removingRemoteName: string | null;
   onCheckoutBranch: (branch: string) => void;
-  onCreateBranch: (name: string, remote?: GitRemote) => Promise<void>;
+  onCreateBranch: (name: string) => Promise<void>;
   onRenameBranch?: (oldName: string, newName: string) => Promise<void>;
   activeIdentityProfile: GitIdentityProfile | null;
   availableIdentities: GitIdentityProfile[];
@@ -128,6 +131,7 @@ export const IdentityDropdown: React.FC<IdentityDropdownProps> = ({
               className="h-8 min-w-0 max-w-[15rem] justify-start gap-1.5 px-2 py-1 typography-ui-label"
               style={{ color: getIdentityColor(activeProfile?.color) }}
               disabled={isDisabled}
+              aria-label={t('gitView.header.identityTooltip')}
             >
               {isApplying ? (
                 <Icon name="loader-4" className="size-4 animate-spin" />
@@ -237,9 +241,12 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
   remoteBranches,
   branchInfo,
   syncAction,
+  operationBlocked = false,
   remotes,
   onFetch,
   onSync,
+  onPublish,
+  onChooseSyncTargets,
   onRemoveRemote,
   removingRemoteName,
   onCheckoutBranch,
@@ -377,9 +384,13 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
       remotes={remotes}
       onFetch={onFetch}
       onSync={onSync}
+      onPublish={onPublish}
+      onChooseSyncTargets={onChooseSyncTargets}
+      currentBranch={status.current}
+      hasTracking={Boolean(status.tracking)}
       onRemoveRemote={onRemoveRemote}
       removingRemoteName={removingRemoteName}
-      disabled={!status}
+      disabled={!status || operationBlocked}
       iconOnly={true}
 
       aheadCount={status.ahead}
@@ -424,7 +435,6 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
               branchInfo={branchInfo}
               onCheckout={onCheckoutBranch}
               onCreate={onCreateBranch}
-              remotes={remotes}
             />
           )}
         </div>

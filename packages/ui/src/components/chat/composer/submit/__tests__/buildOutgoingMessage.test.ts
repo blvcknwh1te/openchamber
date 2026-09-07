@@ -183,13 +183,13 @@ describe('synthetic context', () => {
     test('a linked PR sends its instructions before its diff', () => {
         const result = buildOutgoingMessage(input({
             composerText: 'review this',
-            linkedPr: { number: 7, title: 'PR', url: 'https://x/pr/7', instructions: 'how to read it', context: 'the diff' },
+            linkedPr: { provider: 'gitlab', number: 7, title: 'PR', url: 'https://x/pr/7', instructions: 'how to read it', context: 'the diff' },
         }), deps());
         expect(result.additionalParts.map((p) => p.text))
             .toEqual(['how to read it', 'the diff']);
         expect(result.additionalParts.every((p) => p.synthetic)).toBe(true);
         expect(result.additionalParts[1].metadata?.[CONTEXT_METADATA_KEY])
-            .toEqual({ kind: 'github-pr', number: 7, title: 'PR', url: 'https://x/pr/7' });
+            .toEqual({ kind: 'change-request', provider: 'gitlab', number: 7, title: 'PR', url: 'https://x/pr/7' });
     });
 
     test('a linked issue is sent as context', () => {
@@ -200,7 +200,7 @@ describe('synthetic context', () => {
         expect(result.additionalParts).toHaveLength(1);
         expect(result.additionalParts[0].text).toBe('issue body');
         expect(result.additionalParts[0].metadata?.[CONTEXT_METADATA_KEY])
-            .toEqual({ kind: 'github-issue', number: 3, title: 'Bug', url: 'https://x/issues/3' });
+            .toEqual({ kind: 'repository-issue', number: 3, title: 'Bug', url: 'https://x/issues/3' });
     });
 
     test('synthetic texts precede the linked references', () => {
@@ -254,7 +254,7 @@ describe('full assembly order', () => {
             composerText: 'typed /deploy',
             syntheticTexts: ['synthetic'],
             linkedIssue: { number: 3, title: 'Bug', url: 'https://x/issues/3', contextText: 'issue' },
-            linkedPr: { number: 7, title: 'PR', url: 'https://x/pr/7', instructions: 'pr-how', context: 'pr-diff' },
+            linkedPr: { provider: 'github', number: 7, title: 'PR', url: 'https://x/pr/7', instructions: 'pr-how', context: 'pr-diff' },
         }), deps());
 
         expect(result.primaryText).toBe('q1');

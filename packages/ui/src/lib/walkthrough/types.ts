@@ -1,3 +1,5 @@
+import type { SourceControlReadContext } from '@/lib/source-control/types';
+
 /**
  * Contract for the AI diff walkthrough, mirrored from
  * `packages/web/server/lib/walkthrough`.
@@ -12,6 +14,13 @@ export type WalkthroughSource =
   | { kind: 'working-tree'; scope: WalkthroughWorkingTreeScope }
   | { kind: 'branch'; baseRef: string; headRef: string }
   | { kind: 'pr'; number: number };
+
+type WalkthroughLocalSource = Exclude<WalkthroughSource, { kind: 'pr' }>;
+type WalkthroughPullRequestSource = Extract<WalkthroughSource, { kind: 'pr' }>;
+
+export type WalkthroughTarget =
+  | { source: WalkthroughLocalSource }
+  | { source: WalkthroughPullRequestSource; context: Readonly<SourceControlReadContext> };
 
 export type WalkthroughChapterIcon = 'bug' | 'wrench' | 'path' | 'flask' | 'doc' | 'gear';
 export type WalkthroughStopImportance = 'critical' | 'normal' | 'context';
@@ -60,6 +69,8 @@ export interface WalkthroughModel {
 
 export interface WalkthroughResult {
   source: WalkthroughSource;
+  /** Required and validated by the client for pull-request results. */
+  readContext?: Readonly<SourceControlReadContext>;
   walkthrough: Walkthrough | null;
   model?: WalkthroughModel;
   /**

@@ -2,11 +2,11 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import { getSessionMetadata, type SessionMetadataRecord } from './sessionReviewMetadata';
 
 /**
- * GitHub issues and pull requests a user has linked to a session.
+ * Source-control issues and change requests a user has linked to a session.
  *
  * Stored as a **snapshot**, not a reference: number, title, author and avatar
  * only. Enough to render a row and open the thing, and nothing more — the body,
- * comments and state of an issue belong to GitHub, and mirroring them here
+ * comments and state of an issue belong to its provider, and mirroring them here
  * would mean owning their staleness. The stored title can drift from the real
  * one; that is the accepted cost of a storage that never needs refreshing.
  *
@@ -62,9 +62,21 @@ export const buildLinkedIssue = (input: {
   author?: { login?: string; avatarUrl?: string } | null;
   linkedAt: number;
 }): LinkedIssue => {
-  const match = /github\.com\/([^/]+)\/([^/]+)\//.exec(input.url);
-  const id = match
-    ? buildLinkedIssueId(match[1], match[2], input.number)
+  let project: { owner: string; name: string } | null = null;
+  try {
+    const segments = new URL(input.url).pathname.split('/').filter(Boolean);
+    const threadIndex = segments.findIndex((segment) => (
+      segment === 'issues' || segment === 'pull'
+    ));
+    const projectNameIndex = segments[threadIndex - 1] === '-' ? threadIndex - 2 : threadIndex - 1;
+    const owner = segments.slice(0, projectNameIndex).join('/');
+    const name = segments[projectNameIndex];
+    if (threadIndex > 1 && owner && name) project = { owner, name };
+  } catch {
+    // The URL itself remains a stable fallback id for malformed provider data.
+  }
+  const id = project
+    ? buildLinkedIssueId(project.owner, project.name, input.number)
     : `${input.url}#${input.number}`;
 
   return {
