@@ -61,20 +61,24 @@ the two ever disagree.
 
 ## Shared plans
 
-When the project's team config (`<repo>/.openchamber/project.json`, see
-`packages/web/server/lib/projects`) names a `plansDir`, every `.md` file in
-that folder is a plan too. `readContext` appends them after the personal ones,
+Every `.md` file in the repository plans folder is a plan too: `.openchamber/plans`
+by default, or the `plansDir` the team config (`<repo>/.openchamber/project.json`,
+see `packages/web/server/lib/projects`) names instead of it (the custom folder
+replaces the default outright; moving files between the two is the user's job). `readContext` appends them after the personal ones,
 each marked `source: "shared"` (personal ones get `source: "personal"`), and
 reports the folder as `sharedPlansDir`. A shared plan is addressed as
-`shared:<file>`; it has no manifest entry, so its title is parsed from the file
-on every list, and `readPlan` / `updatePlan` / `deletePlan` work on the file
-directly (an update writes the raw document verbatim, so a plan another tool
-wrote keeps its shape). `setPlanPinned` is `404` for a shared plan. `sharePlan`
-moves a personal plan's file into the folder (markdown first, then the manifest
-entry goes) and `unsharePlan` moves it back under a new id; a name collision
-gets a numeric suffix. Sharing without a `plansDir` is a validation error.
-Session-knowledge attachments reference plan ids, so an attached plan that
-moves has to be attached again.
+`shared:<file>` when no manifest entry claims it; its title is parsed from the
+file on every list, and `readPlan` / `updatePlan` / `deletePlan` work on the
+file directly (an update writes the raw document verbatim, so a plan another
+tool wrote keeps its shape). `setPlanPinned` is `404` for such a plan.
+
+A plan the user moves there keeps its id: `sharePlan` moves the markdown into
+the folder and keeps the manifest entry with `shared: true` (the flag says
+which folder holds the file), so a session that attached the plan still finds
+it, and the file is listed under that id instead of `shared:<file>`.
+`unsharePlan` moves it back and clears the flag; a plan that only ever lived
+in the team's folder gets a manifest entry (and an id) on the way in. A name
+collision gets a numeric suffix. Sharing is refused only when the checkout cannot be located.
 
 ## Routes
 

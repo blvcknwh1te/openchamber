@@ -164,15 +164,22 @@ const sanitizePlanLinks = (value, now) => {
     const id = asNonEmptyString(entry.id);
     const file = asNonEmptyString(entry.file);
     if (!id || !file || !PLAN_FILE_PATTERN.test(file)) continue;
-    if (seenIds.has(id) || seenFiles.has(file)) continue;
+    // A personal file and a shared file may carry the same name: they live in different folders.
+    const shared = entry.shared === true;
+    const fileKey = `${shared ? 'shared' : 'personal'}/${file}`;
+    if (seenIds.has(id) || seenFiles.has(fileKey)) continue;
     seenIds.add(id);
-    seenFiles.add(file);
+    seenFiles.add(fileKey);
     result.push({
       id,
       file,
       title: sanitizePlanTitle(entry.title) || 'Plan',
       createdAt: Number.isFinite(entry.createdAt) && entry.createdAt >= 0 ? entry.createdAt : now,
       pinned: entry.pinned === true,
+      // The user's own plan that was moved into the team's folder: it keeps
+      // its id (session attachments still point at it) and this flag says
+      // which folder holds the file.
+      shared,
     });
   }
   return result.sort((a, b) => b.createdAt - a.createdAt);
@@ -404,7 +411,7 @@ export const createProjectContextRuntime = (deps) => {
    * addressed by `shared:<file>`. Plans written by other tools have no
    * manifest entry, so the title comes from the file each time.
    */
-  const listSharedPlans = async (projectId) => {
+  const listSharedPlans = async (projectId, claimedFiles = new Set()) => {
     const dir = await sharedPlansDirFor(projectId);
     if (!dir) return { dir: null, plans: [] };
     let entries;
@@ -417,6 +424,8 @@ export const createProjectContextRuntime = (deps) => {
     const plans = [];
     for (const entry of entries) {
       if (!entry.isFile() || !PLAN_FILE_PATTERN.test(entry.name)) continue;
+      // Listed under its own id by the manifest entry that moved it there.
+      if (claimedFiles.has(entry.name)) continue;
       const filePath = path.join(dir, entry.name);
       const [raw, stat] = await Promise.all([fsPromises.readFile(filePath, 'utf8'), fsPromises.stat(filePath)]);
       plans.push({
@@ -434,13 +443,22 @@ export const createProjectContextRuntime = (deps) => {
 
   /** What clients see: the stored context plus the team's shared plans, each marked with its source. */
   const readContext = async (projectId) => {
-    const [stored, shared] = await Promise.all([readStoredContext(projectId), listSharedPlans(projectId)]);
+    const stored = await readStoredContext(projectId);
+    const claimed = new Set(stored.plans.filter((plan) => plan.shared).map((plan) => plan.file));
+    const shared = await listSharedPlans(projectId, claimed);
+    const own = stored.plans
+      // A moved plan is only reachable while the project still has a shared folder.
+      .filter((plan) => !plan.shared || shared.dir)
+      .map(({ shared: isShared, ...plan }) => ({ ...plan, source: isShared ? 'shared' : 'personal' }));
     return {
       ...stored,
-      plans: [...stored.plans.map((plan) => ({ ...plan, source: 'personal' })), ...shared.plans],
+      plans: [...own, ...shared.plans],
       sharedPlansDir: shared.dir,
     };
   };
+
+  /** The folder a manifest plan's file lives in; null for a moved plan when the project lost its shared folder. */
+  const folderOfLink = async (projectId, link) => (link.shared ? sharedPlansDirFor(projectId) : plansDirFor(projectId));
 
   const writeContext = async (projectId, context) => {
     await writeJsonAtomic(contextPathFor(projectId), {
@@ -578,16 +596,18 @@ export const createProjectContextRuntime = (deps) => {
       return null;
     }
 
+    const folder = await folderOfLink(projectId, link);
+    if (!folder) return null;
     let raw;
     try {
-      raw = await fsPromises.readFile(path.join(plansDirFor(projectId), link.file), 'utf8');
+      raw = await fsPromises.readFile(path.join(folder, link.file), 'utf8');
     } catch (error) {
       if (error && error.code === 'ENOENT') return null;
       throw error;
     }
 
     const parsed = parsePlanMarkdown(raw);
-    return { id: link.id, file: link.file, createdAt: link.createdAt, title: parsed.title, body: parsed.body, raw };
+    return { id: link.id, file: link.file, createdAt: link.createdAt, title: parsed.title, body: parsed.body, raw, source: link.shared ? 'shared' : 'personal' };
   };
 
   /**
@@ -640,7 +660,9 @@ export const createProjectContextRuntime = (deps) => {
         return null;
       }
 
-      const filePath = path.join(plansDirFor(projectId), link.file);
+      const folder = await folderOfLink(projectId, link);
+      if (!folder) return null;
+      const filePath = path.join(folder, link.file);
       // Refuse to recreate a file that was deleted underneath us: the link is
       // already dead, and writing here would resurrect it with editor content
       // the user believed was discarded.
@@ -661,7 +683,8 @@ export const createProjectContextRuntime = (deps) => {
       };
       await writeContext(projectId, next);
 
-      return { plan: { ...nextLink, source: 'personal' }, context: await readContext(projectId), title: parsed.title, body: parsed.body, raw };
+      const { shared: isShared, ...publicLink } = nextLink;
+      return { plan: { ...publicLink, source: isShared ? 'shared' : 'personal' }, context: await readContext(projectId), title: parsed.title, body: parsed.body, raw };
     });
   };
 
@@ -686,7 +709,7 @@ export const createProjectContextRuntime = (deps) => {
       const baseName = `${createdAt}-${slugifyPlanTitle(title)}`;
       let file = `${baseName}.md`;
       let attempt = 1;
-      while (current.plans.some((entry) => entry.file === file)) {
+      while (current.plans.some((entry) => !entry.shared && entry.file === file)) {
         file = `${baseName}-${attempt}.md`;
         attempt += 1;
       }
@@ -723,7 +746,8 @@ export const createProjectContextRuntime = (deps) => {
       const plan = { ...existing, pinned: pinned === true };
       const next = { ...current, plans: current.plans.map((entry) => (entry.id === id ? plan : entry)) };
       await writeContext(projectId, next);
-      return { plan: { ...plan, source: 'personal' }, context: await readContext(projectId) };
+      const { shared: isShared, ...publicPlan } = plan;
+      return { plan: { ...publicPlan, source: isShared ? 'shared' : 'personal' }, context: await readContext(projectId) };
     });
   };
 
@@ -754,7 +778,8 @@ export const createProjectContextRuntime = (deps) => {
 
       const next = { ...current, plans: current.plans.filter((entry) => entry.id !== id) };
       await writeContext(projectId, next);
-      await fsPromises.rm(path.join(plansDirFor(projectId), link.file), { force: true });
+      const folder = await folderOfLink(projectId, link);
+      if (folder) await fsPromises.rm(path.join(folder, link.file), { force: true });
       return { deleted: true, context: await readContext(projectId) };
     });
   };
@@ -782,9 +807,11 @@ export const createProjectContextRuntime = (deps) => {
   };
 
   /**
-   * Move one of the user's plans into the team's shared folder. The markdown
-   * moves first, then the manifest entry goes; a failure in between leaves the
-   * file in the shared folder (already listed there) and a dead manifest entry
+   * Move one of the user's plans into the team's shared folder. The plan
+   * keeps its id: the manifest entry stays and gets the `shared` flag, so a
+   * session that attached the plan still finds it. The markdown moves first,
+   * then the manifest is written; a failure in between leaves the file in the
+   * shared folder (listed there as `shared:<file>`) and a dead personal entry
    * that `readPlan` reports as gone. Needs a shared plans folder; refused
    * (validation error) when the project has none.
    */
@@ -796,29 +823,35 @@ export const createProjectContextRuntime = (deps) => {
       if (!dir) throw new Error('shared plans folder is required');
       const current = await readStoredContext(projectId);
       const link = current.plans.find((entry) => entry.id === id);
-      if (!link) return null;
+      if (!link || link.shared) return null;
       const from = path.join(plansDirFor(projectId), link.file);
       const exists = await fsPromises.access(from).then(() => true, () => false);
       if (!exists) return null;
       await fsPromises.mkdir(dir, { recursive: true });
       const file = await freeFileNameIn(dir, link.file);
       await moveFile(from, path.join(dir, file));
-      await writeContext(projectId, { ...current, plans: current.plans.filter((entry) => entry.id !== id) });
+      const moved = { ...link, file, shared: true };
+      await writeContext(projectId, { ...current, plans: current.plans.map((entry) => (entry.id === id ? moved : entry)) });
       const context = await readContext(projectId);
-      const plan = context.plans.find((entry) => entry.id === `${SHARED_PLAN_ID_PREFIX}${file}`);
-      return { plan, context };
+      return { plan: context.plans.find((entry) => entry.id === id), context };
     });
   };
 
-  /** Move a shared plan back into the user's own plans; the reverse of `sharePlan`. */
+  /**
+   * Move a shared plan back into the user's own plans; the reverse of
+   * `sharePlan`. A plan the user moved keeps its id; a plan that only ever
+   * lived in the team's folder (`shared:<file>`) gets a manifest entry now.
+   */
   const unsharePlan = async (projectId, planId) => {
     const id = asNonEmptyString(planId);
     if (!id) throw new Error('planId is required');
-    const sharedFile = sharedPlanFileOf(id);
-    if (!sharedFile) return null;
     return withWriteLock(projectId, async () => {
       const dir = await sharedPlansDirFor(projectId);
       if (!dir) return null;
+      const current = await readStoredContext(projectId);
+      const ownLink = current.plans.find((entry) => entry.id === id && entry.shared);
+      const sharedFile = ownLink ? ownLink.file : sharedPlanFileOf(id);
+      if (!sharedFile) return null;
       const from = path.join(dir, sharedFile);
       let raw;
       try {
@@ -827,14 +860,21 @@ export const createProjectContextRuntime = (deps) => {
         if (error && error.code === 'ENOENT') return null;
         throw error;
       }
-      const current = await readStoredContext(projectId);
       const plansDir = plansDirFor(projectId);
       await fsPromises.mkdir(plansDir, { recursive: true });
-      const file = await freeFileNameIn(plansDir, sharedFile, new Set(current.plans.map((entry) => entry.file)));
+      const taken = new Set(current.plans.filter((entry) => !entry.shared).map((entry) => entry.file));
+      const file = await freeFileNameIn(plansDir, sharedFile, taken);
       await moveFile(from, path.join(plansDir, file));
-      const link = { id: idFactory(), file, title: parsePlanMarkdown(raw).title, createdAt: Date.now(), pinned: false };
-      await writeContext(projectId, { ...current, plans: [link, ...current.plans] });
-      return { plan: { ...link, source: 'personal' }, context: await readContext(projectId) };
+      const title = parsePlanMarkdown(raw).title;
+      const link = ownLink
+        ? { ...ownLink, file, title, shared: false }
+        : { id: idFactory(), file, title, createdAt: Date.now(), pinned: false, shared: false };
+      const plans = ownLink
+        ? current.plans.map((entry) => (entry.id === id ? link : entry))
+        : [link, ...current.plans];
+      await writeContext(projectId, { ...current, plans });
+      const { shared: _movedFlag, ...publicLink } = link;
+      return { plan: { ...publicLink, source: 'personal' }, context: await readContext(projectId) };
     });
   };
 

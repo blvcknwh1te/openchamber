@@ -541,24 +541,38 @@ describe('shared plans', () => {
   test('share moves a personal plan into the shared folder and unshare brings it back, avoiding name collisions', async () => {
     const { plan } = await sharedRuntime.createPlan(PROJECT_ID, { title: 'Mine', body: 'body' });
     const shared = await sharedRuntime.sharePlan(PROJECT_ID, plan.id);
-    expect(shared.plan.id).toBe(`shared:${plan.file}`);
+    // The id survives the move: a session that attached the plan still finds it.
+    expect(shared.plan.id).toBe(plan.id);
     expect(shared.plan.source).toBe('shared');
-    expect(shared.context.plans.map((entry) => entry.id)).toEqual([shared.plan.id]);
+    expect(shared.context.plans.map((entry) => `${entry.id}:${entry.source}`)).toEqual([`${plan.id}:shared`]);
     await expect(fsPromises.access(path.join(plansDir(), plan.file))).rejects.toThrow();
     expect(await fsPromises.readFile(path.join(sharedDir, plan.file), 'utf8')).toBe('# Mine\n\nbody');
-    expect((await readJson(path.join(projectsDirPath, PROJECT_ID, 'context.json'))).plans).toEqual([]);
+    expect((await readJson(path.join(projectsDirPath, PROJECT_ID, 'context.json'))).plans[0]).toMatchObject({ id: plan.id, shared: true });
+    const readMoved = await sharedRuntime.readPlan(PROJECT_ID, plan.id);
+    expect(readMoved.source).toBe('shared');
+    expect(readMoved.raw).toBe('# Mine\n\nbody');
+    expect((await sharedRuntime.updatePlan(PROJECT_ID, plan.id, { raw: '# Mine v2\n' })).plan).toMatchObject({ id: plan.id, title: 'Mine v2', source: 'shared' });
+    expect(await fsPromises.readFile(path.join(sharedDir, plan.file), 'utf8')).toBe('# Mine v2\n');
 
-    // A personal file with the same name already exists: the returning plan gets a suffix.
+    // A personal file with the same name already exists: the returning plan gets a suffix, same id.
     await fsPromises.mkdir(plansDir(), { recursive: true });
     await fsPromises.writeFile(path.join(plansDir(), plan.file), 'squatter');
-    const back = await sharedRuntime.unsharePlan(PROJECT_ID, shared.plan.id);
+    const back = await sharedRuntime.unsharePlan(PROJECT_ID, plan.id);
+    expect(back.plan.id).toBe(plan.id);
     expect(back.plan.source).toBe('personal');
     expect(back.plan.file).toBe(plan.file.replace(/\.md$/, '-1.md'));
-    expect(back.plan.title).toBe('Mine');
-    expect(back.context.plans.map((entry) => entry.id)).toEqual([back.plan.id]);
+    expect(back.plan.title).toBe('Mine v2');
+    expect(back.context.plans.map((entry) => `${entry.id}:${entry.source}`)).toEqual([`${plan.id}:personal`]);
     await expect(fsPromises.access(path.join(sharedDir, plan.file))).rejects.toThrow();
-    expect(await sharedRuntime.unsharePlan(PROJECT_ID, shared.plan.id)).toBeNull();
+    expect(await sharedRuntime.unsharePlan(PROJECT_ID, plan.id)).toBeNull();
     expect(await sharedRuntime.sharePlan(PROJECT_ID, 'nope')).toBeNull();
+
+    // A plan that only ever lived in the team's folder gets an id of its own on the way in.
+    await fsPromises.writeFile(path.join(sharedDir, 'foreign.md'), '# Foreign\n');
+    const adopted = await sharedRuntime.unsharePlan(PROJECT_ID, 'shared:foreign.md');
+    expect(adopted.plan.id).not.toMatch(/^shared:/);
+    expect(adopted.plan.title).toBe('Foreign');
+    expect(adopted.plan.source).toBe('personal');
   });
 
   test('share is refused without a shared plans folder', async () => {
