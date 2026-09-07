@@ -1673,7 +1673,10 @@ async function main(options = {}) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept,X-Requested-With,Cache-Control,X-OpenCode-Directory,X-OpenCode-Directory-Encoding,Ngrok-Skip-Browser-Warning');
+      // The packaged desktop UI (openchamber-ui://) and the dev UI sit on a
+      // different origin, so every custom request header must be listed here or
+      // the browser refuses the request at preflight, before it reaches a route.
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept,X-Requested-With,Cache-Control,X-OpenCode-Directory,X-OpenCode-Directory-Encoding,Ngrok-Skip-Browser-Warning,X-OpenChamber-Surface');
       res.setHeader('Access-Control-Expose-Headers', 'x-next-cursor');
       res.setHeader('Vary', 'Origin');
       if (req.method === 'OPTIONS') {

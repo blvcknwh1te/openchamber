@@ -15,7 +15,7 @@ import {
   parseSettingsDocument,
   SETTINGS_KEYS,
 } from '@/lib/settings/registry';
-import { SETTINGS_SURFACE_HEADER, getSettingsSurface } from '@/lib/settings/surface';
+import { SETTINGS_SURFACE_QUERY, getSettingsSurface } from '@/lib/settings/surface';
 
 export const applyPersistedHomeDirectoryToWindow = (homeDirectory: string): void => {
   if (typeof window === 'undefined') {
@@ -279,6 +279,8 @@ const getPersistApi = (): PersistApi | undefined => {
 
 const getRuntimeSettingsAPI = () => getRegisteredRuntimeAPIs()?.settings ?? null;
 
+const settingsEndpointForSurface = (): string => `/api/config/settings?${SETTINGS_SURFACE_QUERY}=${getSettingsSurface()}`;
+
 /** Copy a parsed snapshot into the live stores. Omitted keys stay as they are. */
 const applyDesktopUiPreferences = (settings: DesktopSettings): void => {
   applySettingsToStores(settings);
@@ -526,9 +528,12 @@ const fetchWebSettings = async (context = captureSettingsRuntimeContext()): Prom
 
       if (!isSettingsRuntimeContextCurrent(context)) return null;
       try {
-        const response = await runtimeFetch('/api/config/settings', {
+        // The surface kind travels as a query parameter, not a header: a header
+        // would turn the request into a CORS preflight, which older instances
+        // (and the packaged desktop's cross-origin shell) refuse.
+        const response = await runtimeFetch(settingsEndpointForSurface(), {
           method: 'GET',
-          headers: { Accept: 'application/json', [SETTINGS_SURFACE_HEADER]: getSettingsSurface() },
+          headers: { Accept: 'application/json' },
         });
         if (!isSettingsRuntimeContextCurrent(context)) return null;
         if (!response.ok) {
@@ -710,12 +715,11 @@ async function _flushSettingsUpdate({ keepalive = false }: { keepalive?: boolean
 
       if (!isSettingsRuntimeContextCurrent(context)) return;
       try {
-        const response = await runtimeFetch('/api/config/settings', {
+        const response = await runtimeFetch(settingsEndpointForSurface(), {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            [SETTINGS_SURFACE_HEADER]: getSettingsSurface(),
           },
           body: JSON.stringify(changes),
           keepalive,

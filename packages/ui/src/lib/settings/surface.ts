@@ -3,8 +3,14 @@ import { isCapacitorApp } from '@/lib/platform';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import type { SettingsSurface } from './registry';
 
-/** The request header that tells the server which surface kind a client is. */
-export const SETTINGS_SURFACE_HEADER = 'x-openchamber-surface';
+/**
+ * The query parameter that tells the server which surface kind a client is
+ * (`/api/config/settings?surface=desktop`). A query parameter rather than a
+ * header so the request stays CORS-simple: the packaged desktop shell and the
+ * phone app are cross-origin to the server, and an older instance would refuse
+ * an unknown header at preflight.
+ */
+export const SETTINGS_SURFACE_QUERY = 'surface';
 
 /**
  * Which surface kind this client is, for the registry's per-surface profile

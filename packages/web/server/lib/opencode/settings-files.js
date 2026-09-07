@@ -25,11 +25,18 @@ const isPerSurfaceSettingsKey = (key) => registry.fields[key]?.perSurface === tr
 
 const SETTINGS_SURFACES = Object.freeze(['web', 'desktop', 'vscode', 'mobile']);
 
-/** The header a client sends to say which surface kind it is; absent means "base". */
-export const SETTINGS_SURFACE_HEADER = 'x-openchamber-surface';
-
 export const normalizeSettingsSurface = (value) => (
   typeof value === 'string' && SETTINGS_SURFACES.includes(value.trim()) ? value.trim() : null
+);
+
+/**
+ * Which surface kind a settings request comes from; `null` means "base".
+ * Clients send `?surface=<kind>` (a query parameter keeps the request
+ * CORS-simple for cross-origin shells and older instances); the
+ * `x-openchamber-surface` header is still honoured for clients that sent it.
+ */
+export const settingsSurfaceOf = (req) => (
+  normalizeSettingsSurface(req.query?.surface) ?? normalizeSettingsSurface(req.get?.('x-openchamber-surface'))
 );
 
 export const preferencesFilePathFor = (settingsFilePath, path) => path.join(path.dirname(settingsFilePath), PREFERENCES_FILE_NAME);
