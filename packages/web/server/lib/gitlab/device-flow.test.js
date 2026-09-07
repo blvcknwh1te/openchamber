@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { exchangeGitLabDeviceCode, probeGitLabAuth } from './device-flow.js';
+import { defaultGitLabClientId, exchangeGitLabDeviceCode, probeGitLabAuth } from './device-flow.js';
 
 const json = (body, status = 200) => Response.json(body, { status });
+
+describe('built-in OAuth application', () => {
+  it('covers gitlab.com and leaves every other instance to its operator', () => {
+    expect(defaultGitLabClientId('https://gitlab.com')).toMatch(/^[0-9a-f]{64}$/);
+    expect(defaultGitLabClientId('https://gitlab.example.com')).toBe('');
+    expect(defaultGitLabClientId('http://localhost:8930')).toBe('');
+    // The origin arrives normalized, so a trailing slash is not a separate case
+    // the resolver has to strip - but a bare host is not an origin and must miss.
+    expect(defaultGitLabClientId('gitlab.com')).toBe('');
+  });
+});
 
 describe('GitLab device flow', () => {
   it('confirms GitLab before classifying a missing device endpoint as unsupported', async () => {

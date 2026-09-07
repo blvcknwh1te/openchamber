@@ -13,6 +13,15 @@ function form(fields) {
   return new URLSearchParams(Object.entries(fields).filter(([, value]) => isString(value) && value));
 }
 
+// OpenChamber registers its own OAuth application on gitlab.com only. A
+// self-managed instance has no such application, so its operator supplies an
+// id through OPENCHAMBER_GITLAB_CLIENT_ID or the `gitlabClientId` setting;
+// until then that instance offers personal access tokens and `glab` instead.
+const HOSTED_GITLAB_ORIGIN = 'https://gitlab.com';
+const HOSTED_GITLAB_CLIENT_ID = 'b5db9852a2368e2fd232a9945d94123fb61cf4af67e7eca680418929f93bcf59';
+
+export const defaultGitLabClientId = (origin) => (origin === HOSTED_GITLAB_ORIGIN ? HOSTED_GITLAB_CLIENT_ID : '');
+
 function requestDeviceAuthorization(origin, clientId, fetchImpl, timeoutMs) {
   return fetchWithTimeout(fetchImpl, `${origin}/oauth/authorize_device`, {
     method: 'POST',

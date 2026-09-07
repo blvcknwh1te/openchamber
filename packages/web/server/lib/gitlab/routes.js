@@ -2,7 +2,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 import { createSourceControlAuthStore } from './auth-storage.js';
-import { exchangeGitLabDeviceCode, probeGitLabAuth, startGitLabDeviceFlow } from './device-flow.js';
+import { defaultGitLabClientId, exchangeGitLabDeviceCode, probeGitLabAuth, startGitLabDeviceFlow } from './device-flow.js';
 import { getGlabToken } from './glab-credential.js';
 import { normalizeGitLabInstance } from './instance.js';
 import { classifyGitLabFailure } from './network.js';
@@ -81,11 +81,12 @@ export function registerGitLabRoutes(app, options = {}) {
   const store = options.store ?? createSourceControlAuthStore({ filePath: authFile });
   const oauthFlowRegistry = options.oauthFlowRegistry ?? createOAuthFlowRegistry();
   const readSettings = options.readSettings ?? (async () => ({}));
-  const getClientId = async () => {
+  const getClientId = async (origin) => {
     const envValue = isString(process.env.OPENCHAMBER_GITLAB_CLIENT_ID) ? process.env.OPENCHAMBER_GITLAB_CLIENT_ID.trim() : '';
     if (envValue) return envValue;
     const settings = await readSettings();
-    return isString(settings?.gitlabClientId) ? settings.gitlabClientId.trim() : '';
+    const stored = isString(settings?.gitlabClientId) ? settings.gitlabClientId.trim() : '';
+    return stored || defaultGitLabClientId(origin);
   };
   const glabToken = (origin) => getGlabToken(origin, { execFile: options.execFile, timeoutMs: options.cliTimeoutMs });
   const verify = (origin, token) => verifyGitLabToken({ origin, token, fetch: fetchImpl, timeoutMs });
@@ -131,7 +132,7 @@ export function registerGitLabRoutes(app, options = {}) {
             accounts, cli: { available: false, disabled: true, active: false },
           };
         }
-        const clientId = await getClientId();
+        const clientId = await getClientId(origin);
         const capability = await probeGitLabAuth({ origin, clientId, fetch: fetchImpl, timeoutMs, glabAvailable: false });
         if (!capability.confirmed) return { provider: 'gitlab', instance: origin, status: 'unsupported', connected: false, reason: 'no-supported-auth-method', accounts };
         return {
@@ -383,7 +384,7 @@ export function registerGitLabRoutes(app, options = {}) {
   app.get('/api/source-control/gitlab/capabilities', async (req, res) => {
     try {
       const origin = requestOrigin(req);
-      const clientId = await getClientId();
+      const clientId = await getClientId(origin);
       const probe = await probeGitLabAuth({ origin, clientId, fetch: fetchImpl, timeoutMs, glabAvailable: false });
       const cliAvailable = probe.confirmed && Boolean(await getUsableGlab(origin));
       const cli = cliAvailable ? { available: true } : { available: false, reason: 'cli-unavailable' };
@@ -437,7 +438,7 @@ export function registerGitLabRoutes(app, options = {}) {
     res.set('Cache-Control', 'no-store');
     try {
       const origin = requestOrigin(req);
-      const clientId = await getClientId();
+      const clientId = await getClientId(origin);
       if (!clientId) return res.status(400).json({ error: 'GitLab OAuth client is not configured', status: 'invalid-client' });
       const payload = await startGitLabDeviceFlow({ origin, clientId, fetch: fetchImpl, timeoutMs });
       const { flowId } = oauthFlowRegistry.register({
