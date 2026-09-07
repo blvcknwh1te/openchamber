@@ -378,6 +378,9 @@ const buildGitEnv = async () => {
   return env;
 };
 
+// Transport configuration is owned by repository bindings and the credential
+// broker, so no caller needs simple-git's unsafe SSH-command or
+// credential-helper escapes any more.
 const createGit = async (directory) => {
   const env = await buildGitEnv();
   const spawnOptions = { windowsHide: true };

@@ -15,9 +15,7 @@ import {
   gitIdentityProfilesSchema,
   gitIdentitySummarySchema,
 } from '@/lib/api/git-identity';
-import { reportSettingsSaveState, updateDesktopSettings } from '@/lib/persistence';
-import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { runtimeFetch } from '@/lib/runtime-fetch';
+import { loadDesktopSettings, reportSettingsSaveState, updateDesktopSettings } from '@/lib/persistence';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 
 export type { GitIdentityProfile } from '@/lib/api/types';
@@ -81,7 +79,6 @@ const isProfileMutationCurrent = (
 const defaultIdentityIdSchema = z.union([gitIdentityProfileIdSchema, z.literal('')])
   .nullable()
   .transform((value) => value || null);
-const defaultIdentitySettingsSchema = z.object({ defaultGitIdentityId: defaultIdentityIdSchema.optional() });
 
 export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
   devtools(
@@ -143,35 +140,12 @@ export const useGitIdentitiesStore = create<GitIdentitiesStore>()(
         const loadGeneration = ++defaultIdentityLoadGeneration;
         const mutationGeneration = defaultIdentityMutationGeneration;
         try {
-          let defaultId: string | null = null;
-          const runtimeApis = getRegisteredRuntimeAPIs();
-          {
-            if (runtimeApis?.settings) {
-              try {
-                const result = await runtimeApis.settings.load();
-                if (!isRuntimeCurrent(runtime)) return false;
-                defaultId = defaultIdentityIdSchema.parse(result?.settings.defaultGitIdentityId ?? null);
-              } catch {
-                if (!isRuntimeCurrent(runtime)) return false;
-              }
-            }
-            if (defaultId === null) {
-              try {
-                const response = await runtimeFetch('/api/config/settings', {
-                  method: 'GET',
-                  headers: { Accept: 'application/json' },
-                });
-                if (!isRuntimeCurrent(runtime)) return false;
-                if (response.ok) {
-                  const data = defaultIdentitySettingsSchema.parse(await response.json());
-                  if (!isRuntimeCurrent(runtime)) return false;
-                  defaultId = data.defaultGitIdentityId ?? null;
-                }
-              } catch {
-                if (!isRuntimeCurrent(runtime)) return false;
-              }
-            }
-          }
+          // Shared settings loading owns the runtime API call, the HTTP
+          // fallback, caching and runtime-context invalidation; the generation
+          // guards below still reject a read a newer load or write outran.
+          const settings = await loadDesktopSettings();
+          if (!isRuntimeCurrent(runtime)) return false;
+          const defaultId = defaultIdentityIdSchema.parse(settings?.defaultGitIdentityId ?? null);
           if (loadGeneration !== defaultIdentityLoadGeneration
             || mutationGeneration !== defaultIdentityMutationGeneration) return false;
           set({ defaultGitIdentityId: defaultId });

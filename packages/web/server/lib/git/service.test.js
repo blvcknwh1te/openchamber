@@ -272,6 +272,41 @@ describe.runIf(canRunGit())('setLocalIdentity', () => {
     await expect(hasLocalIdentity(tmpDir)).resolves.toBe(true);
     await expect(commit(tmpDir, 'Complete identity')).resolves.toMatchObject({ success: true });
   });
+
+  // Author profiles no longer carry transport configuration: `setLocalIdentity`
+  // writes only user.name, user.email and commit signing. Transport lives in the
+  // repository binding, and HTTPS credentials come from the loopback credential
+  // broker as single-use leases instead of a plaintext `credential.helper store`.
+  it('writes only author fields and never a transport credential helper', async () => {
+    const { tmpDir } = await createTempRepo();
+
+    await setLocalIdentity(tmpDir, {
+      userName: 'Token User',
+      userEmail: 'token@example.com',
+      authType: 'token',
+      host: 'github.com',
+    });
+
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'user.name']).trim()).toBe('Token User');
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'user.email']).trim()).toBe('token@example.com');
+    expect(() => runGit(tmpDir, ['config', '--local', '--get', 'credential.helper'])).toThrow();
+    expect(() => runGit(tmpDir, ['config', '--local', '--get', 'core.sshCommand'])).toThrow();
+  });
+
+  it('never writes an ssh command for an ssh author profile', async () => {
+    const { tmpDir } = await createTempRepo();
+
+    await setLocalIdentity(tmpDir, {
+      userName: 'SSH User',
+      userEmail: 'ssh@example.com',
+      authType: 'ssh',
+      sshKey: '/tmp/test key',
+    });
+
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'user.email']).trim()).toBe('ssh@example.com');
+    expect(() => runGit(tmpDir, ['config', '--local', '--get', 'core.sshCommand'])).toThrow();
+    expect(() => runGit(tmpDir, ['config', '--local', '--get', 'credential.helper'])).toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
