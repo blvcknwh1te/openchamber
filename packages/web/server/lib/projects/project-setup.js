@@ -333,6 +333,13 @@ const sharedBlockOf = (sharedRead, shared) => {
   return block;
 };
 
+/** An action without an icon is written without the key; readers fall back to the play icon. */
+const withoutEmptyIcon = (action) => {
+  if (action.icon !== null) return action;
+  const { icon: _emptyIcon, ...rest } = action;
+  return rest;
+};
+
 /** True when the shared config carries nothing: the file should not exist. */
 export const isSharedProjectConfigEmpty = (config) => (
   config.setupWorktree.length === 0
@@ -352,7 +359,7 @@ export const serializeSharedProjectConfig = (config) => {
   const document = { version: SHARED_CONFIG_VERSION };
   if (config.setupWorktree.length > 0) document.setupWorktree = config.setupWorktree;
   if (config.setupWorktreeWait !== null) document.setupWorktreeWait = config.setupWorktreeWait;
-  if (config.projectActions.length > 0) document.projectActions = sanitizeProjectActions(config.projectActions);
+  if (config.projectActions.length > 0) document.projectActions = sanitizeProjectActions(config.projectActions).map(withoutEmptyIcon);
   if (config.draftStarters.length > 0) document.draftStarters = config.draftStarters;
   if (config.plansDir !== null) document.plansDir = config.plansDir;
   return `${JSON.stringify(document, null, 2)}\n`;

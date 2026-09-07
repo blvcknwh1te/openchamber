@@ -305,8 +305,7 @@ describe('shared project config writes', () => {
       '    {',
       '      "id": "dev",',
       '      "name": "Dev",',
-      '      "command": "x",',
-      '      "icon": null',
+      '      "command": "x"',
       '    }',
       '  ],',
       '  "plansDir": "docs/plans"',
@@ -485,7 +484,7 @@ describe('project setup runtime', () => {
       expect(JSON.parse(await readFile(sharedPath, 'utf8'))).toEqual({
         version: 1,
         setupWorktree: ['bun install'],
-        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev', icon: null }],
+        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }],
       });
       expect(shared.shared.status).toBe('ok');
       expect(shared.projectActions.map((action) => `${action.id}:${action.source}`)).toEqual(['dev:shared']);
