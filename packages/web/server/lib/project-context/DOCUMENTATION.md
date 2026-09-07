@@ -9,7 +9,7 @@ The managed Chats root (`~/.config/openchamber/chats`) is also one context owner
 
 | Path | Owner | Contents |
 |---|---|---|
-| `<projectsDir>/<projectId>.json` | shared UI (`packages/ui/src/lib/openchamberConfig.ts`), plus server-owned `version` / `scheduledTasks` | worktree setup, draft starters, project actions |
+| `<projectsDir>/<projectId>.json` | `packages/web/server/lib/projects` (`project-setup.js` for the client-owned keys behind `/api/projects/:projectId/config`; `project-config.js` for `version` / `scheduledTasks`), one write lock for both | worktree setup, draft starters, project actions, scheduled tasks |
 | `<projectsDir>/<projectId>/context.json` | **this module, exclusively** | notes, todos, plan manifest |
 | `<projectsDir>/<projectId>/plans/*.md` | **this module, exclusively** | plan bodies |
 

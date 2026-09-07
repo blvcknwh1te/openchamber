@@ -1,6 +1,8 @@
 import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
 
+import { projectSetupPatchToStored, projectSetupViewOf } from './project-setup.js';
+
 const PROJECT_CONFIG_VERSION = 1;
 export const MAX_TASK_NAME_LENGTH = 80;
 const MAX_TASK_PROMPT_LENGTH = 20_000;
@@ -548,26 +550,30 @@ export const createProjectConfigRuntime = (deps) => {
     })
   );
 
-  const writeProjectConfigToDisk = async (projectID, config) => {
+  // Atomic whole-document write; callers hand in the merged document so the
+  // keys they do not own survive untouched.
+  const writeRawProjectConfigToDisk = async (projectID, document) => {
     const filePath = resolveProjectConfigPath(projectID);
     const parentDirectory = path.dirname(filePath);
     const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-    const existing = await readRawProjectConfigFromDisk(projectID);
-    const merged = {
-      ...existing,
-      version: PROJECT_CONFIG_VERSION,
-      scheduledTasks: Array.isArray(config?.scheduledTasks) ? config.scheduledTasks : [],
-    };
-
     await fsPromises.mkdir(parentDirectory, { recursive: true });
     try {
-      await fsPromises.writeFile(temporaryPath, JSON.stringify(merged, null, 2), 'utf8');
+      await fsPromises.writeFile(temporaryPath, JSON.stringify(document, null, 2), 'utf8');
       await fsPromises.rename(temporaryPath, filePath);
     } catch (error) {
       await fsPromises.rm(temporaryPath, { force: true }).catch(() => {});
       throw error;
     }
+  };
+
+  const writeProjectConfigToDisk = async (projectID, config) => {
+    const existing = await readRawProjectConfigFromDisk(projectID);
+    await writeRawProjectConfigToDisk(projectID, {
+      ...existing,
+      version: PROJECT_CONFIG_VERSION,
+      scheduledTasks: Array.isArray(config?.scheduledTasks) ? config.scheduledTasks : [],
+    });
   };
 
   const withProjectWriteLock = async (projectID, mutate) => {
@@ -905,7 +911,28 @@ export const createProjectConfigRuntime = (deps) => {
     });
   };
 
+  // The client-owned part of the file (worktree setup, project actions, draft
+  // starters); see `project-setup.js`. Reads are lock-free like task lists;
+  // an update merges the sanitized patch over the raw document under the same
+  // cross-process lock the task writers use, so neither side clobbers the other.
+  const readProjectSetup = async (projectID) => projectSetupViewOf(await readRawProjectConfigFromDisk(projectID));
+
+  const updateProjectSetup = async (projectID, patch) => {
+    const stored = projectSetupPatchToStored(patch);
+    return withProjectWriteLock(projectID, async () => {
+      const existing = await readRawProjectConfigFromDisk(projectID);
+      const merged = { ...existing, ...stored };
+      for (const [key, value] of Object.entries(stored)) {
+        if (value === undefined) delete merged[key];
+      }
+      await writeRawProjectConfigToDisk(projectID, merged);
+      return projectSetupViewOf(merged);
+    });
+  };
+
   return {
+    readProjectSetup,
+    updateProjectSetup,
     listScheduledTasks,
     upsertScheduledTask,
     deleteScheduledTask,

@@ -2,149 +2,106 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { createProjectIdFromPath } from './projectId';
 
-const homeDirectory = '/Users/test';
 const project = { id: 'openchamber', path: '/workspace/openchamber' };
+const endpoint = `/api/projects/${encodeURIComponent(createProjectIdFromPath(project.path))}/config`;
 
-let files = new Map<string, string>();
+const emptySetup = {
+  setupWorktree: [],
+  setupWorktreeWait: false,
+  projectActions: [],
+  projectActionsPrimaryId: null,
+  draftStarters: [],
+};
 
-mock.module('@/contexts/runtimeAPIRegistry', () => ({
-  getRegisteredRuntimeAPIs: mock(() => ({
-    files: {
-      createDirectory: mock(async () => ({ success: true })),
-      readFile: mock(async (path: string) => ({ content: files.get(path) ?? '' })),
-      writeFile: mock(async (path: string, content: string) => {
-        files.set(path, content);
-        return { success: true };
-      }),
-      delete: mock(async (path: string) => {
-        files.delete(path);
-      }),
-    },
-  })),
-}));
-
-mock.module('@/lib/desktop', () => ({
-  getDesktopHomeDirectory: mock(async () => homeDirectory),
-  isVSCodeRuntime: mock(() => false),
-}));
+// A minimal stand-in for the server: one document per project, the PUT
+// merges the patch and echoes the view back like the real route.
+let stored: Record<string, unknown> = { ...emptySetup };
+let requests: Array<{ url: string; method: string; body: unknown }> = [];
+let failWith: number | null = null;
 
 mock.module('@/lib/runtime-fetch', () => ({
-  runtimeFetch: mock(async (url: string) => {
-    if (url.endsWith('/fs/home')) {
-      return new Response(JSON.stringify({ home: homeDirectory }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+  runtimeFetch: mock(async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? 'GET';
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    requests.push({ url, method, body });
+    if (failWith !== null) {
+      return new Response(JSON.stringify({ error: 'nope' }), { status: failWith });
     }
-
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    if (method === 'PUT') {
+      const { projectPath: _projectPath, ...patch } = body as Record<string, unknown>;
+      stored = { ...stored, ...patch };
+    }
+    return new Response(JSON.stringify(stored), { headers: { 'Content-Type': 'application/json' } });
   }),
 }));
 
 const {
   getProjectActionsState,
+  getProjectDraftStarters,
+  getWorktreeSetupCommands,
+  getWorktreeSetupWaitEnabled,
   saveProjectActionsState,
+  saveWorktreeSetupCommands,
 } = await import('./openchamberConfig');
 
-const getConfigPath = (projectPath: string): string => (
-  `${homeDirectory}/.config/openchamber/projects/${createProjectIdFromPath(projectPath)}.json`
-);
-
-describe('project actions config sanitization', () => {
+describe('project config client', () => {
   beforeEach(() => {
-    files = new Map();
+    stored = { ...emptySetup };
+    requests = [];
+    failWith = null;
   });
 
-  test('round-trips runIn parent through saved project actions state', async () => {
+  test('reads and writes through the project config route, never a file path', async () => {
     const saved = await saveProjectActionsState(project, {
-      actions: [{
-        id: 'action-1',
-        name: 'Run action',
-        command: 'pnpm dev',
-        runIn: 'parent',
-      }],
+      actions: [{ id: 'action-1', name: 'Run action', command: 'pnpm dev', runIn: 'parent' }],
       primaryActionId: 'action-1',
     });
-
     expect(saved).toBe(true);
+    expect(requests[0]).toEqual({
+      url: endpoint,
+      method: 'PUT',
+      body: {
+        projectActions: [{ id: 'action-1', name: 'Run action', command: 'pnpm dev', runIn: 'parent' }],
+        projectActionsPrimaryId: 'action-1',
+        projectPath: project.path,
+      },
+    });
 
     const state = await getProjectActionsState(project);
-
     expect(state).toEqual({
-      actions: [{
-        id: 'action-1',
-        name: 'Run action',
-        command: 'pnpm dev',
-        icon: null,
-        runIn: 'parent',
-      }],
+      actions: [{ id: 'action-1', name: 'Run action', command: 'pnpm dev', runIn: 'parent' }],
       primaryActionId: 'action-1',
     });
+    expect(requests[1]).toEqual({ url: endpoint, method: 'GET', body: null });
   });
 
-  test('keeps runIn omitted when saving project actions in the current worktree', async () => {
-    const saved = await saveProjectActionsState(project, {
-      actions: [{
-        id: 'action-1',
-        name: 'Run action',
-        command: 'pnpm dev',
-      }],
-      primaryActionId: 'action-1',
-    });
-
-    expect(saved).toBe(true);
-
-    const state = await getProjectActionsState(project);
-
-    expect(state).toEqual({
-      actions: [{
-        id: 'action-1',
-        name: 'Run action',
-        command: 'pnpm dev',
-        icon: null,
-      }],
-      primaryActionId: 'action-1',
-    });
+  test('drops empty setup commands before sending', async () => {
+    await saveWorktreeSetupCommands(project, ['bun install', '', '  ']);
+    expect(requests[0].body).toEqual({ setupWorktree: ['bun install'], projectPath: project.path });
+    expect(await getWorktreeSetupCommands(project)).toEqual(['bun install']);
   });
 
-  test('normalizes runIn worktree to omission when loading project actions state', async () => {
-    files.set(getConfigPath(project.path), JSON.stringify({
-      projectPath: project.path,
-      projectActions: [
-        { id: 'action-1', name: 'Run action', command: 'pnpm dev', runIn: 'worktree' },
-      ],
-      projectActionsPrimaryId: 'action-1',
-    }));
-
-    const state = await getProjectActionsState(project);
-
-    expect(state).toEqual({
-      actions: [
-        { id: 'action-1', name: 'Run action', command: 'pnpm dev', icon: null },
-      ],
-      primaryActionId: 'action-1',
-    });
+  test('parses draft starters defensively from the response', async () => {
+    stored = { ...emptySetup, draftStarters: [{ type: 'skill', name: 'triage-prs' }, { type: 'bogus', name: 'x' }] };
+    expect(await getProjectDraftStarters(project)).toEqual([{ type: 'skill', name: 'triage-prs' }]);
   });
 
-  test('omits unsupported runIn values when loading project actions state', async () => {
-    files.set(getConfigPath(project.path), JSON.stringify({
-      projectPath: project.path,
-      projectActions: [
-        { id: 'action-project', name: 'Project', command: 'pnpm dev', runIn: 'project' },
-        { id: 'action-number', name: 'Number', command: 'pnpm test', runIn: 123 },
-      ],
-      projectActionsPrimaryId: 'action-project',
-    }));
+  test('a failed read resolves to the empty value and a failed write to false', async () => {
+    failWith = 500;
+    expect(await getWorktreeSetupCommands(project)).toEqual([]);
+    expect(await getWorktreeSetupWaitEnabled(project)).toBe(false);
+    expect(await getProjectActionsState(project)).toEqual({ actions: [], primaryActionId: null });
+    expect(await saveWorktreeSetupCommands(project, ['x'])).toBe(false);
+  });
 
-    const state = await getProjectActionsState(project);
+  test('a response with an unexpected shape is not trusted', async () => {
+    stored = { setupWorktree: 'bun install' };
+    expect(await getWorktreeSetupCommands(project)).toEqual([]);
+  });
 
-    expect(state).toEqual({
-      actions: [
-        { id: 'action-project', name: 'Project', command: 'pnpm dev', icon: null },
-        { id: 'action-number', name: 'Number', command: 'pnpm test', icon: null },
-      ],
-      primaryActionId: 'action-project',
-    });
+  test('a project without a path never hits the network', async () => {
+    expect(await getWorktreeSetupCommands({ id: 'x', path: '' })).toEqual([]);
+    expect(await saveWorktreeSetupCommands({ id: 'x', path: '' }, ['x'])).toBe(false);
+    expect(requests).toHaveLength(0);
   });
 });

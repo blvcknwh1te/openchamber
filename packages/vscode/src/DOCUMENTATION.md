@@ -66,6 +66,8 @@ The webview build emits each worker as one self-contained file. VS Code webviews
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
   - OpenCode JSONC reads in `opencodeConfig.ts` fail closed on a partial or non-object `jsonc-parser` tree (`INVALID_JSONC`) so mutations cannot rewrite a `$schema`-only stub over an existing config. Comment-only files read as empty, while other content that yields no JSON value (YAML, plain text) fails closed. A broken layer is omitted from the merge and recorded on `layerErrors`; valid sibling layers still load, including plugin list/read via `getPluginConfigSources`. Writes still refuse to overwrite the broken file.
 
+- `bridge-project-setup-runtime.ts`
+  - Extension-host side of `GET/PUT /api/projects/:projectId/config` (the webview handles the route locally and bridges `api:project-setup:get` / `api:project-setup:update`). Reads and writes the client-owned keys of `~/.config/openchamber/projects/<projectId>.json` (worktree setup commands, project actions, draft starters) with the rules in `project-setup.ts`, a mirror of the server's `packages/web/server/lib/projects/project-setup.js`; keep the two in sync. Writes to one file are chained; server-owned and unknown keys survive. The shared UI (`openchamberConfig.ts`) no longer composes that path or reads it through the fs bridge.
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
   - Writes are gated by the generated registry snapshot (`settings-registry.json`, via `settings-registry-gate.ts`): keys the registry does not list, or marks `computed`, `local`, or `owner: desktop-shell`, never reach the shared settings files. Regenerate the snapshot with `bun run settings-registry:generate` when the UI registry changes.
@@ -181,7 +183,7 @@ Handlers with no reachable caller in the VS Code webview.
 | `api:fs:write`, `api:fs:rename`, `api:fs:delete`, `api:fs:reveal`, `api:fs:mkdir` | `FilesView`, `SidebarFilesTree`, `PlanView` only |
 | `api:fs:exec` | Terminal API is a throwing stub; no other caller |
 
-Reachable filesystem routes: `api:fs:read` (attachments, config), `api:fs:search`
+Reachable filesystem routes: `api:fs:read` (attachments), `api:fs:search`
 (`useFileSearchStore` behind composer file mentions), `api:fs:list`, `api:fs:stat`.
 
 Maintenance: reviews, changelog entries, and parity claims consult this map;
