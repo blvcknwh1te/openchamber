@@ -2161,6 +2161,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.field.password': '桌面 UI 密碼',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber 會在重新啟動後要求輸入密碼，之後會在登入工作階段過期時再次要求：12 小時後，或選擇「信任此裝置」後 7 天。留空可停用登入。',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': '不需要密碼',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': '已設定密碼。輸入新密碼以取代。',
+  'settings.openchamber.desktopPassword.actions.removePassword': '移除密碼',
   'settings.page.plugins.title': '外掛',
   'settings.plugins.dialog.add.action.cancel': '取消',
   'settings.plugins.dialog.add.action.submit': '新增',

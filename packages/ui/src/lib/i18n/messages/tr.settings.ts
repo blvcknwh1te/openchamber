@@ -1008,6 +1008,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.actions.hidePassword': 'Şifreyi gizle',
   'settings.openchamber.desktopPassword.field.password': 'Masaüstü UI Şifresi',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'Şifre gerekmez',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Şifre ayarlı. Değiştirmek için yeni bir şifre yazın.',
+  'settings.openchamber.desktopPassword.actions.removePassword': 'Şifreyi kaldır',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber yeniden başlatma sonrasında sorar, ardından giriş session\'ı sona erdiğinde tekrar sorar: 12 saat sonra veya Trust this device ile 7 gün sonra. Girişi devre dışı bırakmak için boş bırakın.',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': 'Yeniden başlatma sonrasında başka bir cihazdan açın: ',
   'settings.openchamber.desktopNetwork.hint.openNow': 'Başka bir cihazdan açın: ',

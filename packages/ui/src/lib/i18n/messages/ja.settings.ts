@@ -1013,6 +1013,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.actions.hidePassword': 'パスワードを非表示',
   'settings.openchamber.desktopPassword.field.password': 'Desktop UI パスワード',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'パスワード不要',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'パスワード設定済み。置き換えるには新しいパスワードを入力してください。',
+  'settings.openchamber.desktopPassword.actions.removePassword': 'パスワードを削除',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber は再起動後、およびログイン Session の有効期限後（12時間、または「このデバイスを信頼」の場合は7日）に確認を求めます。空のままにするとログインが無効になります。',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': '再起動後、別のデバイスから開く: ',
   'settings.openchamber.desktopNetwork.hint.openNow': '別のデバイスから開く: ',

@@ -1012,6 +1012,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.actions.hidePassword': 'Hide password',
   'settings.openchamber.desktopPassword.field.password': 'Desktop UI Password',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'No password required',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Password set. Type a new one to replace it.',
+  'settings.openchamber.desktopPassword.actions.removePassword': 'Remove password',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber asks after restart, then when the login session expires: after 12 hours, or 7 days with Trust this device. Leave empty to disable login.',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': 'After restart, open from another device: ',
   'settings.openchamber.desktopNetwork.hint.openNow': 'Open from another device: ',

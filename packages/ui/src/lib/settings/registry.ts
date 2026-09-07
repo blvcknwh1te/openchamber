@@ -226,10 +226,11 @@ export const SETTINGS_REGISTRY = {
   desktopKeepAwakeEnabled: field({ scope: 'instance', surfaces: ['desktop'], parse: parseBoolean }),
   desktopMinimizeToTrayEnabled: field({ scope: 'instance', surfaces: ['desktop'], parse: parseBoolean }),
   desktopMacMenuBarEnabled: field({ scope: 'instance', surfaces: ['desktop'], parse: parseBoolean }),
-  // Still returned by GET today: the desktop network page prefills its field
-  // from it. Making it write-only needs a `hasDesktopUiPassword` flag first
-  // (Phase 2), so it is not marked `secret` yet.
-  desktopUiPassword: field({ scope: 'instance', surfaces: ['desktop'], parse: parseTrimmedString }),
+  // Write-only: the desktop network page learns whether one is set from
+  // `hasDesktopUiPassword` and sends a value only when the user types a new
+  // one (or removes it with an empty string).
+  desktopUiPassword: field({ scope: 'instance', secret: true, surfaces: ['desktop'], parse: parseTrimmedString }),
+  hasDesktopUiPassword: field({ scope: 'instance', computed: true, surfaces: ['desktop'], parse: parseBoolean }),
   desktopLanAccessActive: field({ scope: 'instance', computed: true, surfaces: ['desktop'], parse: parseBoolean }),
   desktopLanAccessBlockedReason: field({ scope: 'instance', computed: true, surfaces: ['desktop'], parse: parseTrimmedString }),
   githubClientId: field({ scope: 'instance', parse: parseNonEmptyTrimmedString }),
@@ -278,9 +279,9 @@ export const SETTINGS_REGISTRY = {
   hasManagedRemoteTunnelToken: field({ scope: 'instance', computed: true, parse: parseBoolean }),
   managedRemoteTunnelPresets: field<ManagedRemoteTunnelPreset[]>({ scope: 'instance', parse: parseManagedRemoteTunnelPresets }),
   managedRemoteTunnelSelectedPresetId: field({ scope: 'instance', parse: parseNonEmptyTrimmedString }),
-  // Same as the password: the tunnel page reads these back today; write-only
-  // comes with a presence flag in Phase 2.
-  managedRemoteTunnelPresetTokens: field({ scope: 'instance', parse: parseManagedRemoteTunnelPresetTokens }),
+  // Write-only: the tunnel page learns which presets have a token from the
+  // tunnel status endpoint (`managedRemoteTunnelTokenPresetIds`), never from here.
+  managedRemoteTunnelPresetTokens: field({ scope: 'instance', secret: true, parse: parseManagedRemoteTunnelPresetTokens }),
 
   // ── Sidebar display (profile; useSessionDisplayStore) ──
   sidebarProjectDisplayMode: field({ scope: 'profile', parse: parseOneOf(['all', 'single']), ui: sessionDisplayField('projectDisplayMode') }),

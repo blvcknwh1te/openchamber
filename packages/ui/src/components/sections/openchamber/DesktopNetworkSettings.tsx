@@ -34,8 +34,11 @@ export const DesktopNetworkSettings: React.FC = () => {
     && window.__OPENCHAMBER_PLATFORM__ === 'darwin';
   const [savedValue, setSavedValue] = React.useState(false);
   const [draftValue, setDraftValue] = React.useState(false);
-  const [savedPassword, setSavedPassword] = React.useState('');
+  // The password is write-only: the server says whether one is set, and the
+  // page sends a value only when the user types a new one or removes it.
+  const [hasSavedPassword, setHasSavedPassword] = React.useState(false);
   const [draftPassword, setDraftPassword] = React.useState('');
+  const [removePassword, setRemovePassword] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const [lanAccessActive, setLanAccessActive] = React.useState(false);
   const [lanAccessBlockedReason, setLanAccessBlockedReason] = React.useState<string | null>(null);
@@ -73,11 +76,11 @@ export const DesktopNetworkSettings: React.FC = () => {
         }
 
         const enabled = data.desktopLanAccessEnabled === true;
-        const password = data.desktopUiPassword ?? '';
         setSavedValue(enabled);
         setDraftValue(enabled);
-        setSavedPassword(password);
-        setDraftPassword(password);
+        setHasSavedPassword(data.hasDesktopUiPassword === true);
+        setDraftPassword('');
+        setRemovePassword(false);
         setLanAccessActive(data.desktopLanAccessActive === true);
         setLanAccessBlockedReason(data.desktopLanAccessBlockedReason ?? null);
         const macMenuBarEnabled = data.desktopMacMenuBarEnabled !== false;
@@ -183,8 +186,10 @@ export const DesktopNetworkSettings: React.FC = () => {
     };
   }, [draftValue, isLocalDesktop]);
 
+  const nextPassword = draftPassword.trim();
+  const passwordDirty = nextPassword.length > 0 || removePassword;
   const isDirty = draftValue !== savedValue
-    || draftPassword !== savedPassword
+    || passwordDirty
     || draftMacMenuBarEnabled !== savedMacMenuBarEnabled;
   const currentPort = React.useMemo(() => {
     if (typeof window === 'undefined') {
@@ -202,15 +207,22 @@ export const DesktopNetworkSettings: React.FC = () => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, []);
   const lanUrl = draftValue && lanAccessActive && lanAddress && currentPort ? `http://${lanAddress}:${currentPort}` : null;
-  const lanRequiresPassword = draftValue && !draftPassword.trim();
+  const passwordWillBeSet = nextPassword.length > 0 || (hasSavedPassword && !removePassword);
+  const lanRequiresPassword = draftValue && !passwordWillBeSet;
   const lanBlockedByMissingPassword = savedValue && !lanAccessActive && lanAccessBlockedReason === 'missing-password';
   const saveDisabled = isLoading || isSaving || !isDirty || lanRequiresPassword;
 
   const handlePasswordChange = React.useCallback((value: string) => {
     setDraftPassword(value);
-    if (!value.trim()) {
-      setDraftValue(false);
+    if (value.trim()) {
+      setRemovePassword(false);
     }
+  }, []);
+
+  const handleRemovePassword = React.useCallback(() => {
+    setDraftPassword('');
+    setRemovePassword(true);
+    setDraftValue(false);
   }, []);
 
   const handleLaunchAtLoginToggle = React.useCallback(async () => {
@@ -299,7 +311,8 @@ export const DesktopNetworkSettings: React.FC = () => {
     try {
       const result = await updateDesktopSettings({
         desktopLanAccessEnabled: draftValue,
-        desktopUiPassword: draftPassword,
+        // Omitted when unchanged: the server keeps the password it has.
+        ...(nextPassword ? { desktopUiPassword: nextPassword } : removePassword ? { desktopUiPassword: '' } : {}),
         desktopMacMenuBarEnabled: draftMacMenuBarEnabled,
       });
 
@@ -308,7 +321,13 @@ export const DesktopNetworkSettings: React.FC = () => {
       }
 
       setSavedValue(draftValue);
-      setSavedPassword(draftPassword);
+      if (nextPassword) {
+        setHasSavedPassword(true);
+      } else if (removePassword) {
+        setHasSavedPassword(false);
+      }
+      setDraftPassword('');
+      setRemovePassword(false);
       setSavedMacMenuBarEnabled(draftMacMenuBarEnabled);
 
       const restarted = await restartDesktopApp();
@@ -319,7 +338,7 @@ export const DesktopNetworkSettings: React.FC = () => {
       setError(cause instanceof Error ? cause.message : t('settings.openchamber.desktopNetwork.error.saveFailed'));
       setIsSaving(false);
     }
-  }, [draftMacMenuBarEnabled, draftPassword, draftValue, isDirty, t]);
+  }, [draftMacMenuBarEnabled, draftValue, isDirty, nextPassword, removePassword, t]);
 
   if (!isLocalDesktop) {
     return null;
@@ -404,9 +423,11 @@ export const DesktopNetworkSettings: React.FC = () => {
             className="h-8 min-w-0 flex-1"
             value={draftPassword}
             onChange={(event) => handlePasswordChange(event.target.value)}
-            placeholder={t('settings.openchamber.desktopPassword.field.passwordPlaceholder')}
+            placeholder={t(hasSavedPassword && !removePassword
+              ? 'settings.openchamber.desktopPassword.field.passwordSetPlaceholder'
+              : 'settings.openchamber.desktopPassword.field.passwordPlaceholder')}
             disabled={isLoading || isSaving}
-            required={draftValue}
+            required={draftValue && !passwordWillBeSet}
             aria-invalid={lanRequiresPassword}
           />
           <Button
@@ -420,6 +441,18 @@ export const DesktopNetworkSettings: React.FC = () => {
           >
             <Icon name={showPassword ? 'eye-off' : 'eye'} className="h-4 w-4" />
           </Button>
+          {hasSavedPassword && !removePassword ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={handleRemovePassword}
+              disabled={isLoading || isSaving}
+              className="shrink-0 !font-normal"
+            >
+              {t('settings.openchamber.desktopPassword.actions.removePassword')}
+            </Button>
+          ) : null}
         </SettingsStackedField>
 
         <div className={SETTINGS_OPTION_STACK_CLASS}>

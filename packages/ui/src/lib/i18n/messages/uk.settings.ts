@@ -980,6 +980,8 @@ export const settingsDict = {
   "settings.openchamber.desktopPassword.actions.hidePassword": "Приховати пароль",
   "settings.openchamber.desktopPassword.field.password": "Пароль для десктопного UI",
   "settings.openchamber.desktopPassword.field.passwordPlaceholder": "Пароль не потрібен",
+  "settings.openchamber.desktopPassword.field.passwordSetPlaceholder": "Пароль встановлено. Введіть новий, щоб замінити.",
+  "settings.openchamber.desktopPassword.actions.removePassword": "Видалити пароль",
   "settings.openchamber.desktopPassword.field.passwordDescription": "OpenChamber попросить пароль після перезапуску, а потім коли сесія логіну спливе: через 12 годин або через 7 днів із «Довіряти цьому пристрою». Залиште порожнім, щоб вимкнути логін.",
   "settings.openchamber.desktopNetwork.hint.openAfterRestart": "Після перезавантаження відкрити з іншого пристрою: ",
   "settings.openchamber.desktopNetwork.hint.openNow": "Відкрити з іншого пристрою: ",

@@ -980,6 +980,8 @@ export const settingsDict = {
   "settings.openchamber.desktopPassword.actions.hidePassword": "Ocultar senha",
   "settings.openchamber.desktopPassword.field.password": "Senha da UI do desktop",
   "settings.openchamber.desktopPassword.field.passwordPlaceholder": "Nenhuma senha obrigatória",
+  "settings.openchamber.desktopPassword.field.passwordSetPlaceholder": "Senha definida. Digite uma nova para substituí-la.",
+  "settings.openchamber.desktopPassword.actions.removePassword": "Remover senha",
   "settings.openchamber.desktopPassword.field.passwordDescription": "O OpenChamber pede após reiniciar e depois quando a sessão expira: em 12 horas, ou 7 dias com Confiar neste dispositivo. Deixe vazio para desativar o login.",
   "settings.openchamber.desktopNetwork.hint.openAfterRestart": "Depois do reinício, abra de outro dispositivo: ",
   "settings.openchamber.desktopNetwork.hint.openNow": "Abrir de outro dispositivo: ",

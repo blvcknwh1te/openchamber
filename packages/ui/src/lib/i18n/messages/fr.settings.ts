@@ -898,6 +898,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.actions.hidePassword': 'Masquer le mot de passe',
   'settings.openchamber.desktopPassword.field.password': 'Mot de passe de l\'interface utilisateur du bureau',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'Aucun mot de passe requis',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Mot de passe défini. Saisissez-en un nouveau pour le remplacer.',
+  'settings.openchamber.desktopPassword.actions.removePassword': 'Supprimer le mot de passe',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber demande après le redémarrage, puis quand la session de connexion expire : après 12 heures, ou 7 jours avec Trust this device. Laissez vide pour désactiver la connexion.',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': 'Après redémarrage, ouvrez depuis un autre appareil :',
   'settings.openchamber.desktopNetwork.hint.openNow': 'Ouvrir depuis un autre appareil :',

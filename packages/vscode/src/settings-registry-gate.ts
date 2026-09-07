@@ -11,6 +11,7 @@ type SettingsRegistryGateField = {
   scope: string;
   perSurface?: boolean;
   computed?: boolean;
+  secret?: boolean;
   local?: boolean;
   owner?: string;
 };
@@ -40,6 +41,19 @@ export const filterPersistableSettingsChanges = (
   for (const [key, value] of Object.entries(changes)) {
     if (!Object.prototype.hasOwnProperty.call(fields, key)) continue;
     if (!isPersistableField(fields[key])) continue;
+    next[key] = value;
+  }
+  return next;
+};
+
+/** Drop the keys the registry marks `secret`: accepted on write, never handed back to a webview. */
+export const withoutSecretSettings = (
+  settings: Record<string, unknown>,
+  fields: SettingsRegistryGateFields = SETTINGS_REGISTRY_FIELDS,
+): Record<string, unknown> => {
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (fields[key]?.secret === true) continue;
     next[key] = value;
   }
   return next;

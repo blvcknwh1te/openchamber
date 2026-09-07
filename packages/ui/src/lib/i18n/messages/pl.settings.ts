@@ -793,6 +793,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.actions.hidePassword': 'Ukryj hasło',
   'settings.openchamber.desktopPassword.field.password': 'Hasło UI pulpitu',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'Hasło nie jest wymagane',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Hasło ustawione. Wpisz nowe, aby je zastąpić.',
+  'settings.openchamber.desktopPassword.actions.removePassword': 'Usuń hasło',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber pyta po restarcie, a potem po wygaśnięciu sesji logowania: po 12 godzinach albo po 7 dniach z opcją Zaufaj temu urządzeniu. Zostaw puste, aby wyłączyć logowanie.',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': 'Po restarcie otwórz z innego urządzenia: ',
   'settings.openchamber.desktopNetwork.hint.openNow': 'Otwórz z innego urządzenia: ',

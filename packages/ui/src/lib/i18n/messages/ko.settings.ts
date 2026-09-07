@@ -980,6 +980,8 @@ export const settingsDict = {
   'settings.openchamber.desktopPassword.actions.hidePassword': '비밀번호 숨기기',
   'settings.openchamber.desktopPassword.field.password': 'Desktop UI 비밀번호',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': '비밀번호 필요 없음',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': '비밀번호가 설정되어 있습니다. 바꾸려면 새 비밀번호를 입력하세요.',
+  'settings.openchamber.desktopPassword.actions.removePassword': '비밀번호 제거',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber는 다시 시작 후 비밀번호를 요청하고, 이후 로그인 세션이 만료되면 다시 요청합니다. 기본 12시간, 이 디바이스 신뢰 선택 시 7일입니다. 로그인을 끄려면 비워 두세요.',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': '다시 시작 후 다른 기기에서 열기: ',
   'settings.openchamber.desktopNetwork.hint.openNow': '다른 기기에서 열기: ',

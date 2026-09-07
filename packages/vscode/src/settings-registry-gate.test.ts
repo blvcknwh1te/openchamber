@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SETTINGS_REGISTRY_FIELDS, filterPersistableSettingsChanges, type SettingsRegistryGateFields } from './settings-registry-gate';
+import { SETTINGS_REGISTRY_FIELDS, filterPersistableSettingsChanges, withoutSecretSettings, type SettingsRegistryGateFields } from './settings-registry-gate';
 
 const fields: SettingsRegistryGateFields = {
   themeId: { scope: 'profile' },
@@ -8,7 +8,24 @@ const fields: SettingsRegistryGateFields = {
   hasDesktopSettings: { scope: 'instance', computed: true },
   sidebarWidth: { scope: 'device', local: true },
   windowBounds: { scope: 'instance', owner: 'desktop-shell' },
+  desktopUiPassword: { scope: 'instance', secret: true },
 };
+
+describe('withoutSecretSettings', () => {
+  test('withholds secret keys and keeps everything else', () => {
+    assert.deepEqual(withoutSecretSettings({ desktopUiPassword: 'pw', themeId: 'a' }, fields), { themeId: 'a' });
+  });
+
+  test('the real registry marks the UI password and tunnel tokens secret', () => {
+    const stripped = withoutSecretSettings({
+      desktopUiPassword: 'pw',
+      managedRemoteTunnelToken: 't',
+      managedRemoteTunnelPresetTokens: { a: 't' },
+      themeId: 'a',
+    }, SETTINGS_REGISTRY_FIELDS);
+    assert.deepEqual(stripped, { themeId: 'a' });
+  });
+});
 
 describe('filterPersistableSettingsChanges', () => {
   test('keeps stored shared fields and preserves their values as sent', () => {

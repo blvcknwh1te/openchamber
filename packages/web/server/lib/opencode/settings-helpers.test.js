@@ -832,11 +832,20 @@ describe('settings registry gate', () => {
     const helpers = createTestHelpers();
     const secretKeys = Object.entries(registry.fields).filter(([, field]) => field.secret).map(([key]) => key);
     expect(secretKeys).toContain('managedRemoteTunnelToken');
-    const response = helpers.formatSettingsResponse({ managedRemoteTunnelToken: 'token', themeId: 'x' });
+    expect(secretKeys).toContain('desktopUiPassword');
+    expect(secretKeys).toContain('managedRemoteTunnelPresetTokens');
+    const response = helpers.formatSettingsResponse({
+      managedRemoteTunnelToken: 'token',
+      desktopUiPassword: 'pw',
+      managedRemoteTunnelPresetTokens: { a: 'tok' },
+      themeId: 'x',
+    });
     for (const key of secretKeys) {
       expect(response).not.toHaveProperty(key);
     }
     expect(response.hasManagedRemoteTunnelToken).toBe(true);
+    expect(response.hasDesktopUiPassword).toBe(true);
+    expect(helpers.formatSettingsResponse({ desktopUiPassword: '' }).hasDesktopUiPassword).toBe(false);
   });
 
   it('accepts the newly shared profile fields', () => {

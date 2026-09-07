@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import type { BridgeContext } from './bridge';
-import { filterPersistableSettingsChanges } from './settings-registry-gate';
+import { filterPersistableSettingsChanges, withoutSecretSettings } from './settings-registry-gate';
 import {
   buildPreferencesFields,
   flattenPreferences,
@@ -397,8 +397,10 @@ const readPersistedSettings = (ctx?: BridgeContext): Record<string, unknown> => 
   return { ...fromGlobalState, ...fromDisk };
 };
 
+// Everything the webview may see: the persisted document minus the keys the
+// registry marks `secret` (a UI password, tunnel tokens), which are write-only.
 export const readSettings = (ctx?: BridgeContext): Record<string, unknown> => {
-  const persisted = readPersistedSettings(ctx);
+  const persisted = withoutSecretSettings(readPersistedSettings(ctx));
   const persistedOpencodeBinary =
     typeof persisted.opencodeBinary === 'string' ? String(persisted.opencodeBinary).trim() : '';
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
@@ -475,9 +477,9 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   await writeSharedSettingsToDisk(persistable, [...Object.keys(restChanges), ...keysToClear]);
   await ctx?.context?.globalState.update(SETTINGS_KEY, persistable);
 
-  // Return the same shape as readSettings (with derived fields re-applied).
+  // Return the same shape as readSettings (derived fields re-applied, secrets withheld).
   return {
-    ...persistable,
+    ...withoutSecretSettings(persistable),
     themeVariant: current.themeVariant,
     lastDirectory: current.lastDirectory,
     opencodeBinary:

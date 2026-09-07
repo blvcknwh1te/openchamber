@@ -948,6 +948,8 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.passwordRequiredWarning': 'LAN-Zugriff erfordert ein Desktop-UI-Kennwort. Bis ein Kennwort festgelegt ist, startet die Desktop-App nur lokal.',
   'settings.openchamber.desktopPassword.field.password': 'Desktop-UI-Kennwort',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'Kein Kennwort erforderlich',
+  'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Kennwort gesetzt. Neues eingeben, um es zu ersetzen.',
+  'settings.openchamber.desktopPassword.actions.removePassword': 'Kennwort entfernen',
   'settings.openchamber.desktopPassword.field.passwordDescription': 'OpenChamber fragt nach dem Neustart und dann, wenn die Anmeldesitzung abläuft: nach 12 Stunden oder 7 Tagen mit Vertrauen in dieses Gerät. Leer lassen, um die Anmeldung zu deaktivieren.',
   'settings.openchamber.desktopNetwork.hint.openAfterRestart': 'Nach dem Neustart von einem anderen Gerät aus öffnen: ',
   'settings.openchamber.desktopNetwork.hint.openNow': 'Von einem anderen Gerät aus öffnen: ',

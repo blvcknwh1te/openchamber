@@ -75,7 +75,15 @@
       "scope": "instance",
       "surfaces": [
         "desktop"
-      ]
+      ],
+      "secret": true
+    },
+    "hasDesktopUiPassword": {
+      "scope": "instance",
+      "surfaces": [
+        "desktop"
+      ],
+      "computed": true
     },
     "desktopLanAccessActive": {
       "scope": "instance",
@@ -191,7 +199,8 @@
       "scope": "instance"
     },
     "managedRemoteTunnelPresetTokens": {
-      "scope": "instance"
+      "scope": "instance",
+      "secret": true
     },
     "sidebarProjectDisplayMode": {
       "scope": "profile"
