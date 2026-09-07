@@ -1008,8 +1008,6 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.allowLanAccessDescription': 'Restarts the app so phones, tablets, and other computers on your Wi-Fi can open it.',
   'settings.openchamber.desktopNetwork.field.warning': 'Warning: while enabled, the app is reachable by anyone on the same local network.',
   'settings.openchamber.desktopNetwork.field.passwordRequiredWarning': 'LAN access requires a Desktop UI Password. Until one is set, the desktop app starts local-only.',
-  'settings.openchamber.desktopPassword.actions.showPassword': 'Show password',
-  'settings.openchamber.desktopPassword.actions.hidePassword': 'Hide password',
   'settings.openchamber.desktopPassword.field.password': 'Desktop UI Password',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'No password required',
   'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Password set. Type a new one to replace it.',

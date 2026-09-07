@@ -976,8 +976,6 @@ export const settingsDict = {
   "settings.openchamber.desktopNetwork.field.allowLanAccessDescription": "Reinicia la aplicación para que los teléfonos, tablets y otros ordenadores en tu Wi-Fi puedan abrirla.",
   "settings.openchamber.desktopNetwork.field.warning": "Advertencia: mientras esté habilitado, la aplicación es accesible por cualquiera en la misma red local.",
   "settings.openchamber.desktopNetwork.field.passwordRequiredWarning": "El acceso LAN requiere una contraseña de UI de escritorio. Hasta que se configure, la app de escritorio se inicia solo localmente.",
-  "settings.openchamber.desktopPassword.actions.showPassword": "Mostrar contraseña",
-  "settings.openchamber.desktopPassword.actions.hidePassword": "Ocultar contraseña",
   "settings.openchamber.desktopPassword.field.password": "Contraseña de UI de escritorio",
   "settings.openchamber.desktopPassword.field.passwordPlaceholder": "No se requiere contraseña",
   "settings.openchamber.desktopPassword.field.passwordSetPlaceholder": "Contraseña establecida. Escribe una nueva para reemplazarla.",

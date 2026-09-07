@@ -1009,8 +1009,6 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.allowLanAccessDescription': 'アプリを再起動して、Wi-Fi 上の他のデバイスから開けるようにします。',
   'settings.openchamber.desktopNetwork.field.warning': '警告: 有効にすると、アプリは同じローカルネットワーク上の誰からもアクセス可能になります。',
   'settings.openchamber.desktopNetwork.field.passwordRequiredWarning': 'LAN アクセスには Desktop UI パスワードが必要です。設定されるまで、Desktop アプリはローカルのみで起動します。',
-  'settings.openchamber.desktopPassword.actions.showPassword': 'パスワードを表示',
-  'settings.openchamber.desktopPassword.actions.hidePassword': 'パスワードを非表示',
   'settings.openchamber.desktopPassword.field.password': 'Desktop UI パスワード',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'パスワード不要',
   'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'パスワード設定済み。置き換えるには新しいパスワードを入力してください。',

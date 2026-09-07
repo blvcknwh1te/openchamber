@@ -1,7 +1,6 @@
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/icon/Icon';
 import { Input } from '@/components/ui/input';
 import {
   getDesktopLanAddress,
@@ -23,7 +22,6 @@ import {
   SettingsCheckboxRow,
   SETTINGS_OPTION_STACK_CLASS,
   SettingsStackedField,
-  SETTINGS_ICON_BUTTON_CLASS,
 } from '@/components/sections/shared/SettingsSection';
 
 export const DesktopNetworkSettings: React.FC = () => {
@@ -39,7 +37,6 @@ export const DesktopNetworkSettings: React.FC = () => {
   const [hasSavedPassword, setHasSavedPassword] = React.useState(false);
   const [draftPassword, setDraftPassword] = React.useState('');
   const [removePassword, setRemovePassword] = React.useState(false);
-  const [showPassword, setShowPassword] = React.useState(false);
   const [lanAccessActive, setLanAccessActive] = React.useState(false);
   const [lanAccessBlockedReason, setLanAccessBlockedReason] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -419,7 +416,7 @@ export const DesktopNetworkSettings: React.FC = () => {
         >
           <Input
             id="desktop-ui-password"
-            type={showPassword ? 'text' : 'password'}
+            type="password"
             className="h-8 min-w-0 flex-1"
             value={draftPassword}
             onChange={(event) => handlePasswordChange(event.target.value)}
@@ -430,17 +427,6 @@ export const DesktopNetworkSettings: React.FC = () => {
             required={draftValue && !passwordWillBeSet}
             aria-invalid={lanRequiresPassword}
           />
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={() => setShowPassword((current: boolean) => !current)}
-            className={SETTINGS_ICON_BUTTON_CLASS}
-            aria-label={t(showPassword ? 'settings.openchamber.desktopPassword.actions.hidePassword' : 'settings.openchamber.desktopPassword.actions.showPassword')}
-            aria-pressed={showPassword}
-          >
-            <Icon name={showPassword ? 'eye-off' : 'eye'} className="h-4 w-4" />
-          </Button>
           {hasSavedPassword && !removePassword ? (
             <Button
               type="button"

@@ -976,8 +976,6 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.allowLanAccessDescription': '휴대폰, 태블릿, Wi-Fi의 다른 컴퓨터에서 열 수 있도록 앱을 다시 시작합니다.',
   'settings.openchamber.desktopNetwork.field.warning': '경고: 활성화된 동안 같은 로컬 네트워크의 누구나 앱에 접속할 수 있습니다.',
   'settings.openchamber.desktopNetwork.field.passwordRequiredWarning': 'LAN 접속에는 Desktop UI 비밀번호가 필요합니다. 설정하기 전까지 desktop 앱은 로컬 전용으로 시작됩니다.',
-  'settings.openchamber.desktopPassword.actions.showPassword': '비밀번호 표시',
-  'settings.openchamber.desktopPassword.actions.hidePassword': '비밀번호 숨기기',
   'settings.openchamber.desktopPassword.field.password': 'Desktop UI 비밀번호',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': '비밀번호 필요 없음',
   'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': '비밀번호가 설정되어 있습니다. 바꾸려면 새 비밀번호를 입력하세요.',

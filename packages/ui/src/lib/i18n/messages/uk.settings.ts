@@ -976,8 +976,6 @@ export const settingsDict = {
   "settings.openchamber.desktopNetwork.field.allowLanAccessDescription": "Перезапускає застосунок, щоб телефони, планшети та інші комп’ютери в мережі Wi-Fi могли його відкрити.",
   "settings.openchamber.desktopNetwork.field.warning": "Попередження: якщо це ввімкнено, застосунок доступний усім у тій самій локальній мережі.",
   "settings.openchamber.desktopNetwork.field.passwordRequiredWarning": "Для LAN-доступу потрібен пароль десктопного UI. Доки його не задано, десктопний застосунок запускається лише локально.",
-  "settings.openchamber.desktopPassword.actions.showPassword": "Показати пароль",
-  "settings.openchamber.desktopPassword.actions.hidePassword": "Приховати пароль",
   "settings.openchamber.desktopPassword.field.password": "Пароль для десктопного UI",
   "settings.openchamber.desktopPassword.field.passwordPlaceholder": "Пароль не потрібен",
   "settings.openchamber.desktopPassword.field.passwordSetPlaceholder": "Пароль встановлено. Введіть новий, щоб замінити.",

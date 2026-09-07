@@ -976,8 +976,6 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.allowLanAccessDescription': '会重启应用，以便手机、平板和同一 Wi‑Fi 下的其他电脑访问。',
   'settings.openchamber.desktopNetwork.field.warning': '警告：启用后，同一本地网络中的任何人都可访问此应用。',
   'settings.openchamber.desktopNetwork.field.passwordRequiredWarning': '局域网访问需要桌面 UI 密码。在设置密码之前，桌面应用只会以本机访问模式启动。',
-  'settings.openchamber.desktopPassword.actions.showPassword': '显示密码',
-  'settings.openchamber.desktopPassword.actions.hidePassword': '隐藏密码',
   'settings.openchamber.desktopPassword.field.password': '桌面 UI 密码',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': '不需要密码',
   'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': '已设置密码。输入新密码以替换。',

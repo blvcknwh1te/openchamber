@@ -789,8 +789,6 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.keepAwakeDescription': 'Aby telefony nadal mogły otwierać tę aplikację. Ekran nadal może się wyłączyć.',
   'settings.openchamber.desktopNetwork.field.warning': 'Ostrzeżenie: po włączeniu aplikacja jest dostępna dla każdego w tej samej sieci lokalnej.',
   'settings.openchamber.desktopNetwork.field.passwordRequiredWarning': 'Dostęp LAN wymaga hasła UI pulpitu. Dopóki go nie ustawisz, aplikacja pulpitu uruchamia się tylko lokalnie.',
-  'settings.openchamber.desktopPassword.actions.showPassword': 'Pokaż hasło',
-  'settings.openchamber.desktopPassword.actions.hidePassword': 'Ukryj hasło',
   'settings.openchamber.desktopPassword.field.password': 'Hasło UI pulpitu',
   'settings.openchamber.desktopPassword.field.passwordPlaceholder': 'Hasło nie jest wymagane',
   'settings.openchamber.desktopPassword.field.passwordSetPlaceholder': 'Hasło ustawione. Wpisz nowe, aby je zastąpić.',

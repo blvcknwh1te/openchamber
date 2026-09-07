@@ -2214,8 +2214,6 @@ export const settingsDict = {
   'settings.openchamber.desktopNetwork.field.macMenuBarAria': 'OpenChamber in der macOS-Menüleiste anzeigen',
   'settings.openchamber.desktopNetwork.field.macMenuBar': 'OpenChamber in der Menüleiste anzeigen',
   'settings.openchamber.desktopNetwork.field.macMenuBarDescription': 'Erfordert einen Neustart der App. Wenn deaktiviert, erstellt OpenChamber weder den Menüleisten-Eintrag noch führt es dessen Sitzungs-, Genehmigungs- und Nutzungsaktualisierungen aus.',
-  'settings.openchamber.desktopPassword.actions.showPassword': 'Passwort anzeigen',
-  'settings.openchamber.desktopPassword.actions.hidePassword': 'Passwort verbergen',
   'settings.openchamber.defaults.walkthroughModel.title': 'Walkthrough-Modell ändern',
   'settings.openchamber.defaults.walkthroughModel.description': 'Die KI-Prüfung deiner Änderungen benötigt strukturierten Output und Platz für einen ganzen Diff, den ein günstiges kleines Modell oft nicht liefern kann. Modelle, die der Katalog als nicht in der Lage zu strukturiertem Output meldet, werden in diesem Auswahlfeld ausgeblendet. Lasse es leer, dann wird das kleine Modell verwendet.',
   'settings.openchamber.defaults.walkthroughModel.overrideModel': 'Walkthrough-Modell',
