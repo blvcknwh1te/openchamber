@@ -442,6 +442,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': 'Vom Team geteilt in {path}',
   'settings.projects.shared.commandsFromRepo': 'Laufen zuerst, vom Team geteilt in {path}',
   'settings.projects.shared.invalid': 'Die geteilte Konfiguration in {path} konnte nicht gelesen werden: {reason}',
+  'settings.projects.shared.trusted': 'Auf dieser Instanz vertraut',
+  'settings.projects.shared.resetTrust': 'Vertrauen zurücksetzen',
   'settings.projects.actions.description': 'Projektspezifische Befehle im Header.',
   'settings.projects.actions.validation.fillNameAndCommand': 'Bitte Aktionsname und Befehl ausfüllen.',
   'settings.projects.actions.state.loading': 'Wird geladen...',

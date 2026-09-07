@@ -354,6 +354,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': 'Partagé par l\'équipe dans {path}',
   'settings.projects.shared.commandsFromRepo': 'Exécutées en premier, partagées par l\'équipe dans {path}',
   'settings.projects.shared.invalid': 'La configuration partagée dans {path} n\'a pas pu être lue : {reason}',
+  'settings.projects.shared.trusted': 'Approuvé sur cette instance',
+  'settings.projects.shared.resetTrust': 'Réinitialiser la confiance',
   'settings.projects.actions.description': 'Commandes par projet affichées dans l\'en-tête à côté du nom du projet.',
   'settings.projects.actions.validation.fillNameAndCommand': 'Remplissez le nom de l\'action et la commande avant d\'enregistrer.',
   'settings.projects.actions.state.loading': 'Chargement...',

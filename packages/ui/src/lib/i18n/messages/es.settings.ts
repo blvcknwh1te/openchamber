@@ -431,6 +431,8 @@ export const settingsDict = {
   "settings.projects.shared.actionsFromRepo": "Compartido por el equipo en {path}",
   "settings.projects.shared.commandsFromRepo": "Se ejecutan primero, compartidos por el equipo en {path}",
   "settings.projects.shared.invalid": "No se pudo leer la configuración compartida en {path}: {reason}",
+  "settings.projects.shared.trusted": "De confianza en esta instancia",
+  "settings.projects.shared.resetTrust": "Restablecer confianza",
   "settings.projects.actions.description": "Comandos por proyecto mostrados en el encabezado junto al nombre del proyecto.",
   "settings.projects.actions.validation.fillNameAndCommand": "Completa el nombre de la acción y el comando antes de guardar.",
   "settings.projects.actions.state.loading": "Cargando...",

@@ -13,6 +13,7 @@ mock.module('@/stores/useDesktopSshStore', () => ({
 }));
 mock.module('@/lib/openchamberConfig', () => ({
   getProjectSetup: async () => ({
+    trust: { hash: 'sha256:abc', trusted: true },
     setupWorktree: [],
     setupWorktreeWait: false,
     projectActions: [{ id: 'build', name: 'Build', command: 'echo build', icon: 'build', source: 'personal' }],
@@ -35,9 +36,13 @@ mock.module('@/lib/openchamberConfig', () => ({
       projectActionsPrimaryId: null,
       draftStarters: [],
       hiddenSharedActionIds: [],
+      sharedTrust: { hash: 'sha256:abc', trustedAt: 1 },
     },
   }),
   saveProjectActionsState: async () => true,
+}));
+mock.module('@/lib/sharedTrustConfirmation', () => ({
+  resetSharedSetupTrust: async () => true,
 }));
 
 const { ProjectActionsSection } = await import('./ProjectActionsSection');
@@ -115,7 +120,7 @@ describe('ProjectActionsSection', () => {
     // The shared row is not a collapsible editor: no button carries its name.
     const sharedTrigger = Array.from(host.querySelectorAll('button'))
       .find((button) => button.textContent?.includes('Team dev'));
-    expect(sharedTrigger).toBeUndefined();
+    expect(sharedTrigger).toBe(undefined);
     expect(text.indexOf('Team dev')).toBeLessThan(text.indexOf('Build'));
   });
 });

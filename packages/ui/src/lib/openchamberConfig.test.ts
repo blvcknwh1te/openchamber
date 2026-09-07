@@ -13,6 +13,7 @@ const emptyPersonal = {
   projectActionsPrimaryId: null,
   draftStarters: [],
   hiddenSharedActionIds: [],
+  sharedTrust: null,
 };
 
 const emptyShared = {
@@ -40,6 +41,7 @@ const viewOf = (): Record<string, unknown> => {
   const starters = (personal.draftStarters as Array<Record<string, unknown>>)
     .filter((starter) => starter.type === 'command' || starter.type === 'skill');
   return {
+    trust: { hash: null, trusted: true },
     setupWorktree: [...(shared.setupWorktree as string[]), ...(personal.setupWorktree as string[])],
     setupWorktreeWait: personal.setupWorktreeWait ?? shared.setupWorktreeWait ?? false,
     projectActions: [

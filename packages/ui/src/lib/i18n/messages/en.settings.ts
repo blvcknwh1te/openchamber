@@ -463,6 +463,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': 'Shared by the team in {path}',
   'settings.projects.shared.commandsFromRepo': 'Run first, shared by the team in {path}',
   'settings.projects.shared.invalid': 'The shared config in {path} could not be read: {reason}',
+  'settings.projects.shared.trusted': 'Trusted on this instance',
+  'settings.projects.shared.resetTrust': 'Reset trust',
   'settings.projects.actions.description': 'Per-project commands shown in header next to project name.',
   'settings.projects.actions.validation.fillNameAndCommand': 'Fill action name and command before saving.',
   'settings.projects.actions.state.loading': 'Loading...',

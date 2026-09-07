@@ -1388,6 +1388,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': 'Udostępnione przez zespół w {path}',
   'settings.projects.shared.commandsFromRepo': 'Uruchamiane najpierw, udostępnione przez zespół w {path}',
   'settings.projects.shared.invalid': 'Nie udało się odczytać udostępnionej konfiguracji w {path}: {reason}',
+  'settings.projects.shared.trusted': 'Zaufane w tej instancji',
+  'settings.projects.shared.resetTrust': 'Resetuj zaufanie',
   'settings.projects.actions.toast.saveFailed': 'Nie udało się zapisać akcji',
   'settings.projects.actions.toast.saved': 'Akcje projektu zostały zapisane',
   'settings.projects.actions.validation.fillNameAndCommand': 'Przed zapisaniem uzupełnij nazwę akcji i polecenie.',

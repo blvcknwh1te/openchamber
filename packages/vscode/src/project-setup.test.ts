@@ -14,6 +14,7 @@ import {
   sanitizeDraftStarters,
   sanitizeProjectActions,
   sanitizeSetupCommands,
+  sharedTrustHashOf,
   type PersonalProjectSetup,
 } from './project-setup';
 import { createProjectSetupStore, handleProjectSetupBridgeMessage, projectPathFromId } from './bridge-project-setup-runtime';
@@ -26,6 +27,7 @@ const emptyPersonal: PersonalProjectSetup = {
   projectActionsPrimaryId: null,
   draftStarters: [],
   hiddenSharedActionIds: [],
+  sharedTrust: null,
 };
 
 const projectIdFor = (projectPath: string): string => `path_${Buffer.from(projectPath, 'utf8').toString('base64url')}`;
@@ -72,6 +74,7 @@ describe('project setup sanitizers', () => {
       projectActionsPrimaryId: null,
       draftStarters: [],
       hiddenSharedActionIds: ['dev'],
+      sharedTrust: null,
     });
     assert.deepEqual(personalProjectSetupOf(null), emptyPersonal);
   });
@@ -114,6 +117,19 @@ describe('project setup sanitizers', () => {
     assert.equal(merged.setupWorktreeWait, true);
     assert.deepEqual(merged.projectActions.map((action) => `${action.id}:${action.source}`), ['dev:shared', 'test:personal']);
     assert.deepEqual(merged.draftStarters.map((starter) => `${starter.name}:${starter.source}`), ['both:shared', 'mine:personal']);
+    assert.equal(merged.trust.trusted, false);
+    assert.match(merged.trust.hash ?? '', /^sha256:/);
+  });
+
+  test('trusts only the recorded hash and nothing when nothing executes', () => {
+    const shared = { setupWorktree: ['bun install'], setupWorktreeWait: null, projectActions: [], draftStarters: [], plansDir: null };
+    const hash = sharedTrustHashOf(shared);
+    assert.equal(mergeProjectSetup({ ...emptyPersonal, sharedTrust: { hash: hash ?? '', trustedAt: 1 } }, { status: 'ok', config: shared }).trust.trusted, true);
+    assert.equal(mergeProjectSetup({ ...emptyPersonal, sharedTrust: { hash: 'sha256:old', trustedAt: 1 } }, { status: 'ok', config: shared }).trust.trusted, false);
+    assert.deepEqual(mergeProjectSetup(emptyPersonal, { status: 'missing' }).trust, { hash: null, trusted: true });
+    assert.equal(sharedTrustHashOf({ ...shared, setupWorktree: [] }), null);
+    assert.deepEqual(projectSetupPatchToStored({ sharedTrustHash: null }), { sharedTrust: undefined });
+    assert.throws(() => projectSetupPatchToStored({ sharedTrustHash: '' }), ProjectSetupValidationError);
   });
 
   test('rejects wrongly shaped patch keys', () => {

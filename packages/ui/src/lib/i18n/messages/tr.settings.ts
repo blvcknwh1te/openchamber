@@ -459,6 +459,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': 'Ekip tarafından {path} içinde paylaşıldı',
   'settings.projects.shared.commandsFromRepo': 'Önce çalışır, ekip tarafından {path} içinde paylaşıldı',
   'settings.projects.shared.invalid': '{path} içindeki paylaşılan yapılandırma okunamadı: {reason}',
+  'settings.projects.shared.trusted': 'Bu örnekte güveniliyor',
+  'settings.projects.shared.resetTrust': 'Güveni sıfırla',
   'settings.projects.actions.description': 'Üst bilgide proje adının yanında gösterilen proje bazlı komutlar.',
   'settings.projects.actions.validation.fillNameAndCommand': 'Kaydetmeden önce eylem adını ve komutu doldurun.',
   'settings.projects.actions.state.loading': 'Yükleniyor...',

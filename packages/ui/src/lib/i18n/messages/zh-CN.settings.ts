@@ -431,6 +431,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': '团队在 {path} 中共享',
   'settings.projects.shared.commandsFromRepo': '首先运行，团队在 {path} 中共享',
   'settings.projects.shared.invalid': '无法读取 {path} 中的共享配置：{reason}',
+  'settings.projects.shared.trusted': '已在此实例上信任',
+  'settings.projects.shared.resetTrust': '重置信任',
   'settings.projects.actions.description': '按项目显示在项目名旁边表头中的命令。',
   'settings.projects.actions.validation.fillNameAndCommand': '保存前请填写操作名称和命令。',
   'settings.projects.actions.state.loading': '加载中...',

@@ -464,6 +464,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': '{path} でチームが共有',
   'settings.projects.shared.commandsFromRepo': '最初に実行。{path} でチームが共有',
   'settings.projects.shared.invalid': '{path} の共有設定を読み込めませんでした: {reason}',
+  'settings.projects.shared.trusted': 'このインスタンスで信頼済み',
+  'settings.projects.shared.resetTrust': '信頼をリセット',
   'settings.projects.actions.description': 'ヘッダーのプロジェクト名の横に表示されるプロジェクトごとのコマンド。',
   'settings.projects.actions.validation.fillNameAndCommand': '保存する前にアクション名とコマンドを入力してください。',
   'settings.projects.actions.state.loading': '読み込み中...',

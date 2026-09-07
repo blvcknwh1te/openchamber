@@ -30,6 +30,7 @@ import {
   type OpenChamberProjectAction,
   type ProjectRef,
 } from '@/lib/openchamberConfig';
+import { resetSharedSetupTrust } from '@/lib/sharedTrustConfirmation';
 import {
   buildProjectActionDesktopForwardOptions,
   PROJECT_ACTION_ICON_MAP,
@@ -82,6 +83,8 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
   // file could be read at all (a broken file is shown, never treated as empty).
   const [sharedActions, setSharedActions] = React.useState<OpenChamberProjectAction[]>([]);
   const [sharedState, setSharedState] = React.useState<{ path: string; status: 'missing' | 'ok' | 'invalid'; reason?: string } | null>(null);
+  const [sharedTrusted, setSharedTrusted] = React.useState(false);
+  const [isResettingTrust, setIsResettingTrust] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [initialSnapshot, setInitialSnapshot] = React.useState<string | null>(null);
   const [expandedActions, setExpandedActions] = React.useState<Record<string, boolean>>({});
@@ -110,6 +113,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
         setActions(setup.personal.projectActions);
         setSharedActions(setup.shared.projectActions);
         setSharedState({ path: setup.shared.path, status: setup.shared.status, reason: setup.shared.reason });
+        setSharedTrusted(setup.trust.hash !== null && setup.trust.trusted);
         setInitialSnapshot(JSON.stringify({ actions: setup.personal.projectActions }));
       } catch {
         if (cancelled) {
@@ -118,6 +122,7 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
         setActions([]);
         setSharedActions([]);
         setSharedState(null);
+        setSharedTrusted(false);
         setInitialSnapshot(JSON.stringify({ actions: [] }));
       } finally {
         if (!cancelled) {
@@ -218,6 +223,17 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
     };
   }, [hasChanges, isLoading, validationError]);
 
+  const handleResetTrust = React.useCallback(async () => {
+    setIsResettingTrust(true);
+    try {
+      if (await resetSharedSetupTrust(projectRef)) {
+        setSharedTrusted(false);
+      }
+    } finally {
+      setIsResettingTrust(false);
+    }
+  }, [projectRef]);
+
   const handleAddAction = React.useCallback(() => {
     const nextAction = createEmptyAction();
     setActions((prev) => [...prev, nextAction]);
@@ -260,9 +276,19 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
       ) : null}
       {!isLoading && sharedActions.length > 0 && sharedState ? (
         <div className={cn('space-y-0 pb-1.5', PROJECT_SETTINGS_CONTROL_WIDTH)}>
-          <p className="typography-meta text-muted-foreground">
-            {t('settings.projects.shared.actionsFromRepo', { path: sharedState.path })}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="typography-meta text-muted-foreground">
+              {t('settings.projects.shared.actionsFromRepo', { path: sharedState.path })}
+            </p>
+            {sharedTrusted ? (
+              <>
+                <span className="typography-meta text-muted-foreground">{t('settings.projects.shared.trusted')}</span>
+                <Button type="button" variant="ghost" size="xs" className="!font-normal" disabled={isResettingTrust} onClick={() => void handleResetTrust()}>
+                  {t('settings.projects.shared.resetTrust')}
+                </Button>
+              </>
+            ) : null}
+          </div>
           {sharedActions.map((action) => {
             const sharedIconKey = (action.icon as keyof typeof PROJECT_ACTION_ICON_MAP) || 'play';
             const sharedIconName = PROJECT_ACTION_ICON_MAP[sharedIconKey] || 'play';

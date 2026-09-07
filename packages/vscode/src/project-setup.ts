@@ -7,6 +7,8 @@
 //
 // Kept free of `vscode` imports so it is unit-tested directly.
 
+import crypto from 'node:crypto';
+
 const ACTION_NAME_MAX_LENGTH = 80;
 const ACTION_COMMAND_MAX_LENGTH = 4000;
 const ACTION_OPEN_URL_MAX_LENGTH = 2000;
@@ -42,6 +44,8 @@ export type PersonalProjectSetup = {
   projectActionsPrimaryId: string | null;
   draftStarters: DraftStarter[];
   hiddenSharedActionIds: string[];
+  /** The recorded answer to the trust prompt: which shared commands were trusted, and when. */
+  sharedTrust: { hash: string; trustedAt: number } | null;
 };
 
 export type SharedProjectConfig = {
@@ -61,6 +65,8 @@ export type ProjectSetupSource = 'shared' | 'personal';
 
 /** The merged view every client sees; see `mergeProjectSetup` for the rules. */
 export type ProjectSetupView = {
+  /** Nothing to trust when `hash` is null; otherwise trusted only for the recorded hash. */
+  trust: { hash: string | null; trusted: boolean };
   setupWorktree: string[];
   setupWorktreeWait: boolean;
   projectActions: Array<ProjectAction & { source: ProjectSetupSource }>;
@@ -71,7 +77,7 @@ export type ProjectSetupView = {
 };
 
 export const SHARED_CONFIG_RELATIVE_PATH = '.openchamber/project.json';
-export const SHARED_CONFIG_VERSION = 1;
+const SHARED_CONFIG_VERSION = 1;
 
 /**
  * The on-disk keys this module owns inside the personal config document, as
@@ -85,6 +91,7 @@ export type StoredProjectSetupPatch = {
   projectActionsPrimaryId?: string | undefined;
   draftStarters?: DraftStarter[];
   hiddenSharedActionIds?: string[];
+  sharedTrust?: { hash: string; trustedAt: number } | undefined;
   projectPath?: string;
 };
 
@@ -193,7 +200,34 @@ export const personalProjectSetupOf = (raw: unknown): PersonalProjectSetup => {
     projectActionsPrimaryId: primaryRaw && projectActions.some((action) => action.id === primaryRaw) ? primaryRaw : null,
     draftStarters: sanitizeDraftStarters(document.draftStarters),
     hiddenSharedActionIds: sanitizeIdList(document.hiddenSharedActionIds),
+    sharedTrust: sharedTrustOf(document.sharedTrust),
   };
+};
+
+const sharedTrustOf = (value: unknown): PersonalProjectSetup['sharedTrust'] => {
+  if (!isObjectRecord(value)) return null;
+  const hash = trimmedString(value.hash);
+  if (!hash) return null;
+  const trustedAt = value.trustedAt;
+  return { hash, trustedAt: typeof trustedAt === 'number' && Number.isFinite(trustedAt) ? trustedAt : 0 };
+};
+
+/**
+ * What a trust answer covers: the shared setup commands and the shared
+ * actions' commands, canonical order, hashed; `null` when nothing executes.
+ */
+export const sharedTrustHashOf = (shared: SharedProjectConfig): string | null => {
+  const commands = shared.setupWorktree;
+  const actions = shared.projectActions
+    .map((action) => {
+      const executable: { id: string; command: string; runIn?: 'parent' } = { id: action.id, command: action.command };
+      if (action.runIn) executable.runIn = action.runIn;
+      return executable;
+    })
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  if (commands.length === 0 && actions.length === 0) return null;
+  const digest = crypto.createHash('sha256').update(JSON.stringify({ setupWorktree: commands, projectActions: actions })).digest('hex');
+  return `sha256:${digest}`;
 };
 
 /**
@@ -268,7 +302,9 @@ export const mergeProjectSetup = (personal: PersonalProjectSetup, sharedRead: Sh
   const sharedActions = shared.projectActions.filter((action) => !hidden.has(action.id) && !personalIds.has(action.id));
   const starterKeys = new Set(shared.draftStarters.map((starter) => `${starter.type}:${starter.name}`));
   const personalStarters = personal.draftStarters.filter((starter) => !starterKeys.has(`${starter.type}:${starter.name}`));
+  const trustHash = sharedTrustHashOf(shared);
   return {
+    trust: { hash: trustHash, trusted: trustHash === null || personal.sharedTrust?.hash === trustHash },
     setupWorktree: personal.setupWorktreeMode === 'replace'
       ? personal.setupWorktree
       : [...shared.setupWorktree, ...personal.setupWorktree],
@@ -278,14 +314,15 @@ export const mergeProjectSetup = (personal: PersonalProjectSetup, sharedRead: Sh
     projectActions: [...withSource(sharedActions, 'shared'), ...withSource(personal.projectActions, 'personal')],
     projectActionsPrimaryId: personal.projectActionsPrimaryId,
     draftStarters: [...withSource(shared.draftStarters, 'shared'), ...withSource(personalStarters, 'personal')],
-    shared: {
-      status: sharedRead.status,
-      ...(sharedRead.status === 'invalid' ? { reason: sharedRead.reason } : {}),
-      path: SHARED_CONFIG_RELATIVE_PATH,
-      ...shared,
-    },
+    shared: sharedBlockOf(sharedRead, shared),
     personal,
   };
+};
+
+const sharedBlockOf = (sharedRead: SharedProjectConfigRead, shared: SharedProjectConfig): ProjectSetupView['shared'] => {
+  const block: ProjectSetupView['shared'] = { status: sharedRead.status, path: SHARED_CONFIG_RELATIVE_PATH, ...shared };
+  if (sharedRead.status === 'invalid') block.reason = sharedRead.reason;
+  return block;
 };
 
 /**
@@ -329,6 +366,13 @@ export const projectSetupPatchToStored = (patch: unknown): StoredProjectSetupPat
       throw new ProjectSetupValidationError('setupWorktreeMode must be "append" or "replace"');
     }
     stored.setupWorktreeMode = patch.setupWorktreeMode;
+  }
+  if ('sharedTrustHash' in patch) {
+    const hash = patch.sharedTrustHash;
+    if (hash !== null && (typeof hash !== 'string' || !hash.trim())) {
+      throw new ProjectSetupValidationError('sharedTrustHash must be a non-empty string or null');
+    }
+    stored.sharedTrust = hash === null ? undefined : { hash: hash.trim(), trustedAt: Date.now() };
   }
   if ('projectPath' in patch) {
     if (typeof patch.projectPath !== 'string') throw new ProjectSetupValidationError('projectPath must be a string');

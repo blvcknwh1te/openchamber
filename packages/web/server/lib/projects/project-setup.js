@@ -12,6 +12,8 @@
 // this file) use the same code paths so a value reads back the same on every
 // surface.
 
+import crypto from 'node:crypto';
+
 const ACTION_NAME_MAX_LENGTH = 80;
 const ACTION_COMMAND_MAX_LENGTH = 4000;
 const ACTION_OPEN_URL_MAX_LENGTH = 2000;
@@ -135,7 +137,16 @@ export const projectSetupViewOf = (raw) => {
     projectActionsPrimaryId: primaryRaw && projectActions.some((action) => action.id === primaryRaw) ? primaryRaw : null,
     draftStarters: sanitizeDraftStarters(document.draftStarters),
     hiddenSharedActionIds: sanitizeIdList(document.hiddenSharedActionIds),
+    sharedTrust: sharedTrustOf(document.sharedTrust),
   };
+};
+
+/** The recorded answer to the trust prompt: which shared commands were trusted, and when. */
+const sharedTrustOf = (value) => {
+  if (!isObjectRecord(value)) return null;
+  const hash = trimmedString(value.hash);
+  if (!hash) return null;
+  return { hash, trustedAt: Number.isFinite(value.trustedAt) ? value.trustedAt : 0 };
 };
 
 /**
@@ -178,6 +189,11 @@ export const projectSetupPatchToStored = (patch) => {
     if (!SETUP_WORKTREE_MODES.has(patch.setupWorktreeMode)) throw new Error('setupWorktreeMode must be "append" or "replace"');
     stored.setupWorktreeMode = patch.setupWorktreeMode;
   }
+  if ('sharedTrustHash' in patch) {
+    const hash = patch.sharedTrustHash;
+    if (hash !== null && (typeof hash !== 'string' || !hash.trim())) throw new Error('sharedTrustHash must be a non-empty string or null');
+    stored.sharedTrust = hash === null ? undefined : { hash: hash.trim(), trustedAt: Date.now() };
+  }
   if ('projectPath' in patch) {
     if (typeof patch.projectPath !== 'string') throw new Error('projectPath must be a string');
     const projectPath = patch.projectPath.trim();
@@ -189,7 +205,7 @@ export const projectSetupPatchToStored = (patch) => {
 // ── Shared file ──
 
 export const SHARED_CONFIG_RELATIVE_PATH = '.openchamber/project.json';
-export const SHARED_CONFIG_VERSION = 1;
+const SHARED_CONFIG_VERSION = 1;
 
 /**
  * A `plansDir` is a relative path inside the repo: no absolute paths, no
@@ -252,6 +268,26 @@ export const parseSharedProjectConfig = (raw) => {
 const withSource = (entries, source) => entries.map((entry) => ({ ...entry, source }));
 
 /**
+ * What a trust answer covers: the shared setup commands and the shared
+ * actions' commands, in a canonical order, hashed. A pull that changes any
+ * of them changes the hash, so the prompt returns for the new commands.
+ * `null` when the shared config has nothing that executes.
+ */
+export const sharedTrustHashOf = (shared) => {
+  const commands = shared.setupWorktree;
+  const actions = shared.projectActions
+    .map((action) => {
+      const executable = { id: action.id, command: action.command };
+      if (action.runIn) executable.runIn = action.runIn;
+      return executable;
+    })
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  if (commands.length === 0 && actions.length === 0) return null;
+  const digest = crypto.createHash('sha256').update(JSON.stringify({ setupWorktree: commands, projectActions: actions })).digest('hex');
+  return `sha256:${digest}`;
+};
+
+/**
  * One merged view from the personal view and the shared read. Rules:
  * - setup commands: shared first, then personal; personal `setupWorktreeMode`
  *   `replace` uses only the personal list;
@@ -270,7 +306,11 @@ export const mergeProjectSetup = (personal, sharedRead) => {
   const sharedActions = shared.projectActions.filter((action) => !hidden.has(action.id) && !personalIds.has(action.id));
   const starterKeys = new Set(shared.draftStarters.map((starter) => `${starter.type}:${starter.name}`));
   const personalStarters = personal.draftStarters.filter((starter) => !starterKeys.has(`${starter.type}:${starter.name}`));
+  const trustHash = sharedTrustHashOf(shared);
   return {
+    // Nothing executable in the shared file means nothing to trust; otherwise
+    // the recorded answer must match the current commands exactly.
+    trust: { hash: trustHash, trusted: trustHash === null || personal.sharedTrust?.hash === trustHash },
     setupWorktree: personal.setupWorktreeMode === 'replace'
       ? personal.setupWorktree
       : [...shared.setupWorktree, ...personal.setupWorktree],
@@ -280,14 +320,15 @@ export const mergeProjectSetup = (personal, sharedRead) => {
     projectActions: [...withSource(sharedActions, 'shared'), ...withSource(personal.projectActions, 'personal')],
     projectActionsPrimaryId: personal.projectActionsPrimaryId,
     draftStarters: [...withSource(shared.draftStarters, 'shared'), ...withSource(personalStarters, 'personal')],
-    shared: {
-      status: sharedRead.status,
-      ...(sharedRead.status === 'invalid' ? { reason: sharedRead.reason } : {}),
-      path: SHARED_CONFIG_RELATIVE_PATH,
-      ...shared,
-    },
+    shared: sharedBlockOf(sharedRead, shared),
     personal,
   };
+};
+
+const sharedBlockOf = (sharedRead, shared) => {
+  const block = { status: sharedRead.status, path: SHARED_CONFIG_RELATIVE_PATH, ...shared };
+  if (sharedRead.status === 'invalid') block.reason = sharedRead.reason;
+  return block;
 };
 
 export const isProjectSetupValidationError = (error) => {

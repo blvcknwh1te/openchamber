@@ -431,6 +431,8 @@ export const settingsDict = {
   'settings.projects.shared.actionsFromRepo': '{path}에서 팀이 공유함',
   'settings.projects.shared.commandsFromRepo': '먼저 실행됨, {path}에서 팀이 공유함',
   'settings.projects.shared.invalid': '{path}의 공유 설정을 읽을 수 없습니다: {reason}',
+  'settings.projects.shared.trusted': '이 인스턴스에서 신뢰됨',
+  'settings.projects.shared.resetTrust': '신뢰 초기화',
   'settings.projects.actions.description': '프로젝트 이름 옆 헤더에 표시할 프로젝트별 명령어입니다.',
   'settings.projects.actions.validation.fillNameAndCommand': '저장하기 전에 작업 이름과 명령을 입력하세요.',
   'settings.projects.actions.state.loading': '로딩 중...',

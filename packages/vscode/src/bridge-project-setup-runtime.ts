@@ -144,4 +144,3 @@ export async function handleProjectSetupBridgeMessage(
   }
 }
 
-export const isProjectSetupValidationError = (error: unknown): boolean => error instanceof ProjectSetupValidationError;

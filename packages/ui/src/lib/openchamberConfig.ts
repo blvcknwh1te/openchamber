@@ -94,9 +94,12 @@ const personalSchema = z.object({
   projectActionsPrimaryId: z.string().nullable(),
   draftStarters: starterRefsSchema,
   hiddenSharedActionIds: z.array(z.string()),
+  sharedTrust: z.object({ hash: z.string(), trustedAt: z.number() }).nullable(),
 });
 
 const projectSetupSchema = z.object({
+  /** Nothing to trust when `hash` is null; otherwise trusted only for the recorded hash. */
+  trust: z.object({ hash: z.string().nullable(), trusted: z.boolean() }),
   setupWorktree: z.array(z.string()),
   setupWorktreeWait: z.boolean(),
   projectActions: z.array(projectActionSchema.extend({ source: sourceSchema })),
@@ -107,7 +110,6 @@ const projectSetupSchema = z.object({
 });
 
 export type ProjectSetup = z.infer<typeof projectSetupSchema>;
-export type PersonalProjectSetup = ProjectSetup['personal'];
 export type SharedProjectSetup = ProjectSetup['shared'];
 
 /** What a client may change: the personal file only. */
@@ -119,9 +121,12 @@ export type ProjectSetupPatch = Partial<{
   projectActionsPrimaryId: string | null;
   draftStarters: DraftStarterRef[];
   hiddenSharedActionIds: string[];
+  /** The trust answer for the shared commands with this hash; `null` forgets it. */
+  sharedTrustHash: string | null;
 }>;
 
-export const EMPTY_PROJECT_SETUP: ProjectSetup = {
+const EMPTY_PROJECT_SETUP: ProjectSetup = {
+  trust: { hash: null, trusted: true },
   setupWorktree: [],
   setupWorktreeWait: false,
   projectActions: [],
@@ -144,6 +149,7 @@ export const EMPTY_PROJECT_SETUP: ProjectSetup = {
     projectActionsPrimaryId: null,
     draftStarters: [],
     hiddenSharedActionIds: [],
+    sharedTrust: null,
   },
 };
 
@@ -208,7 +214,12 @@ export async function updateProjectSetup(project: ProjectRef, patch: ProjectSetu
   }
 }
 
-/** The commands a new worktree runs: shared first, then personal (or personal only in replace mode). */
+/**
+ * The commands a new worktree runs: shared first, then personal (or personal
+ * only in replace mode). Code that is about to run them goes through
+ * `resolveWorktreeSetupCommands` in `lib/sharedTrustConfirmation.ts` instead,
+ * which asks for trust the first time the shared ones would run.
+ */
 export async function getWorktreeSetupCommands(project: ProjectRef): Promise<string[]> {
   return (await getProjectSetup(project)).setupWorktree;
 }

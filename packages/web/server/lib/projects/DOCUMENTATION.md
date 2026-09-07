@@ -34,6 +34,19 @@ A shared file that exists but cannot be parsed (or names a `plansDir` outside th
 repo) is `shared.status: "invalid"` with a `reason`; the personal setup is still
 served. It is never treated as "no shared setup".
 
+### Trust
+
+Shared setup commands and shared actions run on the machine of whoever pulls
+the repo, so they run only after the user has seen them. The view carries
+`trust: { hash, trusted }`: `hash` is `sharedTrustHashOf(shared)`, a SHA-256
+over the executable parts (`setupWorktree` and each action's `id`, `command`,
+`runIn`, actions sorted by id; names and icons do not count), or `null` when
+nothing executes. `trusted` is true when nothing executes or the personal
+file's `sharedTrust.hash` equals the current hash, so a pull that changes a
+command brings the prompt back. The client records an answer with a PUT of
+`sharedTrustHash` (`null` forgets it). The prompt itself lives in the shared
+UI (`packages/ui/src/lib/sharedTrustConfirmation.ts`).
+
 ## Modules
 
 - `project-id.js` — `createProjectIdFromPath` / `projectPathFromId`: the path-derived id (`path_<base64url>`) that names the file, and the checkout path back from it. The shared UI derives the same id (`packages/ui/src/lib/projectId.ts`); both sides must agree.
