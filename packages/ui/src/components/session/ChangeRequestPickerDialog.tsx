@@ -257,6 +257,7 @@ export function ChangeRequestPickerDialog({
           <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={t('session.changeRequestPicker.searchPlaceholder')}
+            aria-label={t('session.changeRequestPicker.searchPlaceholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9 w-full"
@@ -304,11 +305,17 @@ export function ChangeRequestPickerDialog({
           ) : null}
 
           {error ? (
-            <div className="text-center text-muted-foreground py-8 break-words">{error}</div>
+            <div className="text-center text-muted-foreground py-8 space-y-3">
+              <div className="break-words">{error}</div>
+              {binding.error ? (
+                <div className="flex justify-center">
+                  <Button size="sm" variant="outline" onClick={() => void binding.retry()} disabled={isResolvingTarget}>
+                    {t('settings.sourceControl.transport.retry')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
-          {binding.error ? <Button size="sm" variant="outline" onClick={() => void binding.retry()} disabled={isResolvingTarget}>
-            {t('settings.sourceControl.transport.retry')}
-          </Button> : null}
 
           {directNumber && directory && target && authState.connected ? (
             <button

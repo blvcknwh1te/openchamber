@@ -261,10 +261,18 @@ export function IssuePickerDialog({
           </div>
         ) : null}
 
-        {error ? <div className="text-center text-muted-foreground py-8 break-words">{error}</div> : null}
-        {binding.error ? <Button size="sm" variant="outline" onClick={() => void binding.retry()} disabled={isResolvingTarget}>
-          {t('settings.sourceControl.transport.retry')}
-        </Button> : null}
+        {error ? (
+          <div className="text-center text-muted-foreground py-8 space-y-3">
+            <div className="break-words">{error}</div>
+            {binding.error ? (
+              <div className="flex justify-center">
+                <Button size="sm" variant="outline" onClick={() => void binding.retry()} disabled={isResolvingTarget}>
+                  {t('settings.sourceControl.transport.retry')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {directReference && directory && target && authState.connected ? (
           <button
@@ -339,17 +347,24 @@ export function IssuePickerDialog({
 
         {hasMore && authState.connected && target && directory ? (
           <div className="py-2 flex justify-center">
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="sm"
               onClick={() => void loadMore()}
               disabled={isLoadingMore || Boolean(loadingIssueNumber)}
+              className={cn(
+                'typography-meta text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4',
+                (isLoadingMore || Boolean(loadingIssueNumber)) && 'opacity-50 cursor-not-allowed hover:text-muted-foreground',
+              )}
             >
               {isLoadingMore ? (
-                <><Icon name="loader-4" className="h-4 w-4 animate-spin" />{t('session.githubIssuePicker.loading.more')}</>
-              ) : t('session.githubIssuePicker.actions.loadMore')}
-            </Button>
+                <span className="inline-flex items-center gap-2">
+                  <Icon name="loader-4" className="h-4 w-4 animate-spin" />
+                  {t('session.githubIssuePicker.loading.more')}
+                </span>
+              ) : (
+                t('session.githubIssuePicker.actions.loadMore')
+              )}
+            </button>
           </div>
         ) : null}
       </div>

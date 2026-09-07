@@ -363,12 +363,14 @@ export function GitHubIntegrationDialog({
   // Content for the dialog (shared between mobile and desktop)
   const dialogContent = (
     <>
-      {binding.error ? <div className="space-y-2 text-[var(--status-error)]">
-        <p>{t('session.githubIntegration.error.loadDataFailed')}</p>
-        <Button size="sm" variant="outline" onClick={() => void binding.retry()} disabled={resolvingIssueContext}>
-          {t('settings.sourceControl.transport.retry')}
-        </Button>
-      </div> : null}
+      {binding.error ? (
+        <div className="flex flex-col items-center gap-3 p-8 text-center">
+          <p className="typography-meta text-muted-foreground">{t('session.githubIntegration.error.loadDataFailed')}</p>
+          <Button size="sm" variant="outline" onClick={() => void binding.retry()} disabled={resolvingIssueContext}>
+            {t('settings.sourceControl.transport.retry')}
+          </Button>
+        </div>
+      ) : null}
       {!isConnected ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
           <Icon name="github" className="h-12 w-12 text-muted-foreground" />
