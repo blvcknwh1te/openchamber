@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': '主机密钥已无法导入。请重新查找主机密钥。',
   'settings.sourceControl.ssh.inventoryFull': '托管 SSH 密钥存储已达到上限。请先移除未使用的密钥再导入其他密钥。',
   'settings.sourceControl.ssh.operationFailed': '托管 SSH 请求失败。请重试此操作。',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': '始终显示滚动条',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': '即使指针位于可滚动区域之外，也保持滚动条可见。仅在此设备上生效。',
   'settings.providers.page.openCodeGo.title': 'OpenCode Go 用量跟踪',
   'settings.providers.page.openCodeGo.description': '连接 OpenCode Go 控制面板以显示滚动、每周和每月配额。',
   'settings.providers.page.openCodeGo.workspaceId': '工作区 ID',

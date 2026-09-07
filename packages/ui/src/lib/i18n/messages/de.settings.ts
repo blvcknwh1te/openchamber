@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'Der Hostschlüssel ist nicht mehr für den Import verfügbar. Suche erneut nach Hostschlüsseln.',
   'settings.sourceControl.ssh.inventoryFull': 'Der Speicher für verwaltete SSH-Schlüssel hat sein Limit erreicht. Entferne vor einem weiteren Import einen nicht verwendeten Schlüssel.',
   'settings.sourceControl.ssh.operationFailed': 'Die Anfrage für verwaltetes SSH ist fehlgeschlagen. Wiederhole den Vorgang.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'Bildlaufleisten immer anzeigen',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'Bildlaufleisten bleiben sichtbar, auch wenn sich der Mauszeiger außerhalb des scrollbaren Bereichs befindet. Gilt nur auf diesem Gerät.',
   'settings.providers.page.openCodeGo.title': 'OpenCode Go Nutzungsverfolgung',
   'settings.providers.page.openCodeGo.description': 'Verbinden Sie das OpenCode Go Dashboard, um rollierenden, wöchentlichen und monatlichen Verbrauch anzuzeigen.',
   'settings.providers.page.openCodeGo.workspaceId': 'Workspace-ID',

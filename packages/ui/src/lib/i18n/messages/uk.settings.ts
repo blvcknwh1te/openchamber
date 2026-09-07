@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'Ключ хоста більше недоступний для імпорту. Знайдіть ключі хоста ще раз.',
   'settings.sourceControl.ssh.inventoryFull': 'Сховище керованих ключів SSH досягло ліміту. Видаліть невикористовуваний ключ перед імпортом іншого.',
   'settings.sourceControl.ssh.operationFailed': 'Запит керованого SSH завершився помилкою. Повторіть операцію.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'Завжди показувати смуги прокручування',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'Залишати смуги прокручування видимими, навіть коли курсор поза областю прокручування. Лише на цьому пристрої.',
   'settings.providers.page.openCodeGo.title': 'Відстеження використання OpenCode Go',
   'settings.providers.page.openCodeGo.description': 'Підключіть панель OpenCode Go, щоб бачити ковзну, тижневу та місячну квоту.',
   'settings.providers.page.openCodeGo.workspaceId': 'ID робочого простору',

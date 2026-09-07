@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'Klucz hosta nie jest już dostępny do importu. Ponownie wyszukaj klucze hosta.',
   'settings.sourceControl.ssh.inventoryFull': 'Magazyn zarządzanych kluczy SSH osiągnął limit. Usuń nieużywany klucz przed importem kolejnego.',
   'settings.sourceControl.ssh.operationFailed': 'Żądanie zarządzanego SSH nie powiodło się. Spróbuj ponownie.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'Zawsze pokazuj paski przewijania',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'Paski przewijania pozostają widoczne nawet wtedy, gdy wskaźnik znajduje się poza przewijanym obszarem. Dotyczy tylko tego urządzenia.',
   'settings.providers.page.openCodeGo.title': 'Śledzenie użycia OpenCode Go',
   'settings.providers.page.openCodeGo.description': 'Połącz panel OpenCode Go, aby wyświetlać limity kroczące, tygodniowe i miesięczne.',
   'settings.providers.page.openCodeGo.workspaceId': 'ID przestrzeni roboczej',

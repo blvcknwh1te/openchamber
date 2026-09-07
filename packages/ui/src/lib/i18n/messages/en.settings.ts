@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'The host key is no longer available for import. Discover host keys again.',
   'settings.sourceControl.ssh.inventoryFull': 'The managed SSH key store reached its limit. Remove an unused key before importing another.',
   'settings.sourceControl.ssh.operationFailed': 'The managed SSH request failed. Retry the operation.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'Always show scrollbars',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'Keep scrollbars visible even when the pointer is outside the scrollable area. Applies on this device only.',
   'settings.providers.page.openCodeGo.title': 'OpenCode Go usage tracking',
   'settings.providers.page.openCodeGo.description': 'Connect the OpenCode Go dashboard to show rolling, weekly, and monthly quota.',
   'settings.providers.page.openCodeGo.workspaceId': 'Workspace ID',

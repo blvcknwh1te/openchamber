@@ -43,7 +43,7 @@ import {
   invokeActiveSelectionAddToChat,
 } from '@/lib/addSelectionToChat';
 import { isIMECompositionEvent } from '@/lib/ime';
-import { hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
+import { hasActiveBtwComposer, hasOpenDropdown, isEditableEventTarget, shouldStopDropdownImeEscape } from './keyboard-shortcut-dom';
 
 const dropdownTargetSelector = [
   '[data-slot="dropdown-menu-content"]', '[data-slot="select-content"]', '[role="combobox"]',
@@ -228,6 +228,7 @@ export const useKeyboardShortcuts = () => {
       focusChatInput();
     },
     cycle_agent: (event) => {
+      if (hasActiveBtwComposer()) return false;
       const state = useUIStore.getState();
       const hasOverlay = state.isSettingsDialogOpen
         || state.isCommandPaletteOpen
@@ -259,6 +260,7 @@ export const useKeyboardShortcuts = () => {
       return toggleTerminalSurfaceExpanded();
     },
     open_model_selector: () => {
+      if (hasActiveBtwComposer()) return false;
       const state = useUIStore.getState();
       const hasOverlay = state.isCommandPaletteOpen
         || state.isHelpDialogOpen
@@ -268,6 +270,7 @@ export const useKeyboardShortcuts = () => {
       state.setModelSelectorOpen(!state.isModelSelectorOpen);
     },
     cycle_thinking_variant: () => {
+      if (hasActiveBtwComposer()) return false;
       const state = useUIStore.getState();
       const hasOverlay = state.isCommandPaletteOpen
         || state.isHelpDialogOpen
@@ -292,10 +295,12 @@ export const useKeyboardShortcuts = () => {
     cycle_favorite_model_forward: () => cycleFavoriteModel(1),
     cycle_favorite_model_backward: () => cycleFavoriteModel(-1),
     expand_input: () => {
+      if (hasActiveBtwComposer()) return false;
       if (useUIStore.getState().isMobile) return false;
       useUIStore.getState().toggleExpandedInput();
     },
     toggle_dictation: () => {
+      if (hasActiveBtwComposer()) return false;
       const state = useUIStore.getState();
       if (
         state.isCommandPaletteOpen
@@ -314,6 +319,7 @@ export const useKeyboardShortcuts = () => {
   });
 
   function cycleFavoriteModel(delta: number): boolean | void {
+    if (hasActiveBtwComposer()) return false;
     const state = useUIStore.getState();
     const hasOverlay = state.isCommandPaletteOpen
       || state.isHelpDialogOpen
@@ -401,6 +407,7 @@ export const useKeyboardShortcuts = () => {
       }
       if (
         target?.closest('[role="dialog"]')
+        || target?.closest('[data-btw-composer="true"]')
         || isTerminalEventTarget(target)
         || dropdownOpen
       ) {

@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'La clave del host ya no está disponible para importar. Vuelve a buscar claves del host.',
   'settings.sourceControl.ssh.inventoryFull': 'El almacén de claves SSH administradas alcanzó su límite. Elimina una clave sin usar antes de importar otra.',
   'settings.sourceControl.ssh.operationFailed': 'La solicitud de SSH administrado falló. Vuelve a intentar la operación.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'Mostrar siempre las barras de desplazamiento',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'Mantén las barras de desplazamiento visibles incluso cuando el puntero esté fuera del área desplazable. Solo se aplica en este dispositivo.',
   'settings.providers.page.openCodeGo.title': 'Seguimiento de uso de OpenCode Go',
   'settings.providers.page.openCodeGo.description': 'Conecta el panel de OpenCode Go para ver las cuotas móvil, semanal y mensual.',
   'settings.providers.page.openCodeGo.workspaceId': 'ID del espacio de trabajo',

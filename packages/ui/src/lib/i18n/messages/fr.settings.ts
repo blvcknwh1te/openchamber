@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'La clé de l’hôte n’est plus disponible pour l’importation. Recherchez à nouveau les clés de l’hôte.',
   'settings.sourceControl.ssh.inventoryFull': 'Le stockage de clés SSH gérées a atteint sa limite. Supprimez une clé inutilisée avant d’en importer une autre.',
   'settings.sourceControl.ssh.operationFailed': 'La requête SSH gérée a échoué. Réessayez l’opération.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'Toujours afficher les barres de défilement',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'Gardez les barres de défilement visibles même lorsque le pointeur se trouve hors de la zone défilante. Uniquement sur cet appareil.',
   'settings.providers.page.openCodeGo.title': 'Suivi de l’utilisation d’OpenCode Go',
   'settings.providers.page.openCodeGo.description': 'Connectez le tableau de bord OpenCode Go pour afficher les quotas glissant, hebdomadaire et mensuel.',
   'settings.providers.page.openCodeGo.workspaceId': 'ID de l’espace de travail',

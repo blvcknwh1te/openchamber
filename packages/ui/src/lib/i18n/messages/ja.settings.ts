@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': 'ホストの鍵をインポートできなくなりました。ホストの鍵をもう一度検索してください。',
   'settings.sourceControl.ssh.inventoryFull': '管理対象 SSH 鍵ストアが上限に達しました。別の鍵をインポートする前に未使用の鍵を削除してください。',
   'settings.sourceControl.ssh.operationFailed': '管理対象 SSH のリクエストに失敗しました。操作を再試行してください。',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': 'スクロールバーを常に表示',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': 'ポインターがスクロール領域の外にあるときも、スクロールバーを表示します。このデバイスにのみ適用されます。',
   'settings.providers.page.openCodeGo.title': 'OpenCode Go 使用量追跡',
   'settings.providers.page.openCodeGo.description': 'OpenCode Go ダッシュボードを接続して、ローリング、週間、月間のクォータを表示します。',
   'settings.providers.page.openCodeGo.workspaceId': 'ワークスペース ID',

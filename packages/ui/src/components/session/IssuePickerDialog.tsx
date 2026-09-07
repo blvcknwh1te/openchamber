@@ -1,4 +1,5 @@
 import React from 'react';
+import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { getSourceControlProviderLabel } from '@/lib/source-control/identity';
 import {
   Dialog,
@@ -238,7 +239,7 @@ export function IssuePickerDialog({
         />
       </div>
 
-      <div className={cn(isMobile ? 'min-h-0 mt-2' : 'min-h-0 flex-1 overflow-y-auto mt-2')}>
+      <ScrollableOverlay outerClassName={cn('min-h-0 mt-2', !isMobile && 'flex-1')} disableHorizontal>
         {!directory ? (
           <div className="text-center text-muted-foreground py-8">{t('session.githubIssuePicker.empty.noActiveProject')}</div>
         ) : null}
@@ -367,7 +368,7 @@ export function IssuePickerDialog({
             </button>
           </div>
         ) : null}
-      </div>
+      </ScrollableOverlay>
     </>
   );
 

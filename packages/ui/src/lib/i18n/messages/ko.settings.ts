@@ -20,6 +20,8 @@ export const settingsDict = {
   'settings.sourceControl.ssh.candidateUnavailable': '호스트 키를 더 이상 가져올 수 없습니다. 호스트 키를 다시 검색하세요.',
   'settings.sourceControl.ssh.inventoryFull': '관리형 SSH 키 저장소가 한도에 도달했습니다. 다른 키를 가져오기 전에 사용하지 않는 키를 제거하세요.',
   'settings.sourceControl.ssh.operationFailed': '관리형 SSH 요청에 실패했습니다. 작업을 다시 시도하세요.',
+  'settings.openchamber.visual.field.alwaysShowScrollbars': '스크롤바 항상 표시',
+  'settings.openchamber.visual.field.alwaysShowScrollbarsHint': '포인터가 스크롤 영역 밖에 있어도 스크롤바를 표시합니다. 이 기기에만 적용됩니다.',
   'settings.providers.page.openCodeGo.title': 'OpenCode Go 사용량 추적',
   'settings.providers.page.openCodeGo.description': 'OpenCode Go 대시보드를 연결하여 롤링, 주간 및 월간 할당량을 표시합니다.',
   'settings.providers.page.openCodeGo.workspaceId': '워크스페이스 ID',
