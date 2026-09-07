@@ -31,24 +31,60 @@ export type ProjectAction = {
 
 export type DraftStarter = { type: 'command' | 'skill'; name: string };
 
-export type ProjectSetupView = {
+export type SetupWorktreeMode = 'append' | 'replace';
+
+/** The personal file's part of the setup; the wait flag is `null` when the file does not set it. */
+export type PersonalProjectSetup = {
   setupWorktree: string[];
-  setupWorktreeWait: boolean;
+  setupWorktreeWait: boolean | null;
+  setupWorktreeMode: SetupWorktreeMode;
   projectActions: ProjectAction[];
   projectActionsPrimaryId: string | null;
   draftStarters: DraftStarter[];
+  hiddenSharedActionIds: string[];
 };
 
+export type SharedProjectConfig = {
+  setupWorktree: string[];
+  setupWorktreeWait: boolean | null;
+  projectActions: ProjectAction[];
+  draftStarters: DraftStarter[];
+  plansDir: string | null;
+};
+
+export type SharedProjectConfigRead =
+  | { status: 'missing' }
+  | { status: 'ok'; config: SharedProjectConfig }
+  | { status: 'invalid'; reason: string };
+
+export type ProjectSetupSource = 'shared' | 'personal';
+
+/** The merged view every client sees; see `mergeProjectSetup` for the rules. */
+export type ProjectSetupView = {
+  setupWorktree: string[];
+  setupWorktreeWait: boolean;
+  projectActions: Array<ProjectAction & { source: ProjectSetupSource }>;
+  projectActionsPrimaryId: string | null;
+  draftStarters: Array<DraftStarter & { source: ProjectSetupSource }>;
+  shared: SharedProjectConfig & { status: SharedProjectConfigRead['status']; reason?: string; path: string };
+  personal: PersonalProjectSetup;
+};
+
+export const SHARED_CONFIG_RELATIVE_PATH = '.openchamber/project.json';
+export const SHARED_CONFIG_VERSION = 1;
+
 /**
- * The on-disk keys this module owns inside the project config document, as a
- * patch: a key set to `undefined` is removed from the document.
+ * The on-disk keys this module owns inside the personal config document, as
+ * a patch: a key set to `undefined` is removed from the document.
  */
 export type StoredProjectSetupPatch = {
   'setup-worktree'?: string[];
   'setup-worktree-wait'?: boolean;
+  setupWorktreeMode?: SetupWorktreeMode;
   projectActions?: ProjectAction[];
   projectActionsPrimaryId?: string | undefined;
   draftStarters?: DraftStarter[];
+  hiddenSharedActionIds?: string[];
   projectPath?: string;
 };
 
@@ -131,16 +167,124 @@ export const sanitizeDraftStarters = (value: unknown): DraftStarter[] => {
   return starters;
 };
 
-export const projectSetupViewOf = (raw: unknown): ProjectSetupView => {
+const sanitizeIdList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const ids: string[] = [];
+  for (const entry of value) {
+    const id = trimmedString(entry);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+};
+
+const setupWorktreeModeOf = (value: unknown): SetupWorktreeMode => (value === 'replace' ? 'replace' : 'append');
+
+/** The personal part of the view, straight from the personal file. */
+export const personalProjectSetupOf = (raw: unknown): PersonalProjectSetup => {
   const document = isObjectRecord(raw) ? raw : {};
   const projectActions = sanitizeProjectActions(document.projectActions);
   const primaryRaw = trimmedString(document.projectActionsPrimaryId);
+  const wait = document['setup-worktree-wait'];
   return {
     setupWorktree: sanitizeSetupCommands(document['setup-worktree']),
-    setupWorktreeWait: document['setup-worktree-wait'] === true,
+    setupWorktreeWait: typeof wait === 'boolean' ? wait : null,
+    setupWorktreeMode: setupWorktreeModeOf(document.setupWorktreeMode),
     projectActions,
     projectActionsPrimaryId: primaryRaw && projectActions.some((action) => action.id === primaryRaw) ? primaryRaw : null,
     draftStarters: sanitizeDraftStarters(document.draftStarters),
+    hiddenSharedActionIds: sanitizeIdList(document.hiddenSharedActionIds),
+  };
+};
+
+/**
+ * A `plansDir` is a relative path inside the repo: no absolute paths, no
+ * drive letters, no `..` segments, forward slashes.
+ */
+export const normalizePlansDir = (value: unknown): string | null => {
+  const raw = trimmedString(value).replace(/\\/g, '/');
+  if (!raw) return null;
+  if (raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) return null;
+  const segments = raw.split('/').filter((segment) => segment.length > 0 && segment !== '.');
+  if (segments.length === 0 || segments.some((segment) => segment === '..')) return null;
+  return segments.join('/');
+};
+
+const EMPTY_SHARED: SharedProjectConfig = {
+  setupWorktree: [],
+  setupWorktreeWait: null,
+  projectActions: [],
+  draftStarters: [],
+  plansDir: null,
+};
+
+/**
+ * Parse the text of a shared file. Anything that is not a version-1 object
+ * is `invalid` with a reason, never an empty config.
+ */
+export const parseSharedProjectConfig = (raw: string): SharedProjectConfigRead => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return { status: 'invalid', reason: `invalid JSON: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  if (!isObjectRecord(parsed)) return { status: 'invalid', reason: 'not an object' };
+  if (parsed.version !== SHARED_CONFIG_VERSION) return { status: 'invalid', reason: `unsupported version ${JSON.stringify(parsed.version)}` };
+  if ('setupWorktree' in parsed && !Array.isArray(parsed.setupWorktree)) return { status: 'invalid', reason: 'setupWorktree must be an array' };
+  if ('setupWorktreeWait' in parsed && typeof parsed.setupWorktreeWait !== 'boolean') return { status: 'invalid', reason: 'setupWorktreeWait must be a boolean' };
+  if ('projectActions' in parsed && !Array.isArray(parsed.projectActions)) return { status: 'invalid', reason: 'projectActions must be an array' };
+  if ('draftStarters' in parsed && !Array.isArray(parsed.draftStarters)) return { status: 'invalid', reason: 'draftStarters must be an array' };
+  let plansDir: string | null = null;
+  if ('plansDir' in parsed && parsed.plansDir !== null) {
+    plansDir = normalizePlansDir(parsed.plansDir);
+    if (!plansDir) return { status: 'invalid', reason: 'plansDir must be a relative path inside the repository' };
+  }
+  const wait = parsed.setupWorktreeWait;
+  return {
+    status: 'ok',
+    config: {
+      setupWorktree: sanitizeSetupCommands(parsed.setupWorktree),
+      setupWorktreeWait: typeof wait === 'boolean' ? wait : null,
+      projectActions: sanitizeProjectActions(parsed.projectActions),
+      draftStarters: sanitizeDraftStarters(parsed.draftStarters),
+      plansDir,
+    },
+  };
+};
+
+const withSource = <T,>(entries: T[], source: ProjectSetupSource): Array<T & { source: ProjectSetupSource }> =>
+  entries.map((entry) => ({ ...entry, source }));
+
+/**
+ * One merged view from the personal part and the shared read. Same rules as
+ * the server: shared setup commands first (unless personal replaces), the
+ * personal wait flag wins when set, actions union by id with personal
+ * replacing shared and hidden shared ids dropped, starters union by key.
+ */
+export const mergeProjectSetup = (personal: PersonalProjectSetup, sharedRead: SharedProjectConfigRead): ProjectSetupView => {
+  const shared = sharedRead.status === 'ok' ? sharedRead.config : EMPTY_SHARED;
+  const hidden = new Set(personal.hiddenSharedActionIds);
+  const personalIds = new Set(personal.projectActions.map((action) => action.id));
+  const sharedActions = shared.projectActions.filter((action) => !hidden.has(action.id) && !personalIds.has(action.id));
+  const starterKeys = new Set(shared.draftStarters.map((starter) => `${starter.type}:${starter.name}`));
+  const personalStarters = personal.draftStarters.filter((starter) => !starterKeys.has(`${starter.type}:${starter.name}`));
+  return {
+    setupWorktree: personal.setupWorktreeMode === 'replace'
+      ? personal.setupWorktree
+      : [...shared.setupWorktree, ...personal.setupWorktree],
+    setupWorktreeWait: personal.setupWorktreeWait !== null
+      ? personal.setupWorktreeWait
+      : shared.setupWorktreeWait === true,
+    projectActions: [...withSource(sharedActions, 'shared'), ...withSource(personal.projectActions, 'personal')],
+    projectActionsPrimaryId: personal.projectActionsPrimaryId,
+    draftStarters: [...withSource(shared.draftStarters, 'shared'), ...withSource(personalStarters, 'personal')],
+    shared: {
+      status: sharedRead.status,
+      ...(sharedRead.status === 'invalid' ? { reason: sharedRead.reason } : {}),
+      path: SHARED_CONFIG_RELATIVE_PATH,
+      ...shared,
+    },
+    personal,
   };
 };
 
@@ -175,6 +319,16 @@ export const projectSetupPatchToStored = (patch: unknown): StoredProjectSetupPat
   if ('draftStarters' in patch) {
     if (!Array.isArray(patch.draftStarters)) throw new ProjectSetupValidationError('draftStarters must be an array');
     stored.draftStarters = sanitizeDraftStarters(patch.draftStarters);
+  }
+  if ('hiddenSharedActionIds' in patch) {
+    if (!Array.isArray(patch.hiddenSharedActionIds)) throw new ProjectSetupValidationError('hiddenSharedActionIds must be an array');
+    stored.hiddenSharedActionIds = sanitizeIdList(patch.hiddenSharedActionIds);
+  }
+  if ('setupWorktreeMode' in patch) {
+    if (patch.setupWorktreeMode !== 'append' && patch.setupWorktreeMode !== 'replace') {
+      throw new ProjectSetupValidationError('setupWorktreeMode must be "append" or "replace"');
+    }
+    stored.setupWorktreeMode = patch.setupWorktreeMode;
   }
   if ('projectPath' in patch) {
     if (typeof patch.projectPath !== 'string') throw new ProjectSetupValidationError('projectPath must be a string');

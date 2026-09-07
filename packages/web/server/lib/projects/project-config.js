@@ -1,7 +1,14 @@
 import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
 
-import { projectSetupPatchToStored, projectSetupViewOf } from './project-setup.js';
+import { projectPathFromId } from './project-id.js';
+import {
+  SHARED_CONFIG_RELATIVE_PATH,
+  mergeProjectSetup,
+  parseSharedProjectConfig,
+  projectSetupPatchToStored,
+  projectSetupViewOf,
+} from './project-setup.js';
 
 const PROJECT_CONFIG_VERSION = 1;
 export const MAX_TASK_NAME_LENGTH = 80;
@@ -915,7 +922,29 @@ export const createProjectConfigRuntime = (deps) => {
   // starters); see `project-setup.js`. Reads are lock-free like task lists;
   // an update merges the sanitized patch over the raw document under the same
   // cross-process lock the task writers use, so neither side clobbers the other.
-  const readProjectSetup = async (projectID) => projectSetupViewOf(await readRawProjectConfigFromDisk(projectID));
+  // The shared file lives in the project's checkout. The checkout path comes
+  // from the id itself (`path_<base64url>`), with the personal file's
+  // `projectPath` as the fallback for ids of another form. A missing file is
+  // the normal case; an unreadable or unparsable one is reported as invalid,
+  // never as "no shared setup".
+  const readSharedProjectConfig = async (projectID, personalRaw) => {
+    const projectPath = projectPathFromId(projectID) || (typeof personalRaw.projectPath === 'string' ? personalRaw.projectPath.trim() : '');
+    if (!projectPath) return { status: 'missing' };
+    let raw;
+    try {
+      raw = await fsPromises.readFile(path.join(projectPath, ...SHARED_CONFIG_RELATIVE_PATH.split('/')), 'utf8');
+    } catch (error) {
+      if (error && typeof error === 'object' && error.code === 'ENOENT') return { status: 'missing' };
+      return { status: 'invalid', reason: error instanceof Error ? error.message : String(error) };
+    }
+    return parseSharedProjectConfig(raw);
+  };
+
+  const mergedProjectSetupOf = async (projectID, personalRaw) => (
+    mergeProjectSetup(projectSetupViewOf(personalRaw), await readSharedProjectConfig(projectID, personalRaw))
+  );
+
+  const readProjectSetup = async (projectID) => mergedProjectSetupOf(projectID, await readRawProjectConfigFromDisk(projectID));
 
   const updateProjectSetup = async (projectID, patch) => {
     const stored = projectSetupPatchToStored(patch);
@@ -926,7 +955,7 @@ export const createProjectConfigRuntime = (deps) => {
         if (value === undefined) delete merged[key];
       }
       await writeRawProjectConfigToDisk(projectID, merged);
-      return projectSetupViewOf(merged);
+      return mergedProjectSetupOf(projectID, merged);
     });
   };
 

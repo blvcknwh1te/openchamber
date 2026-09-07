@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import os from 'os';
 import path from 'path';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 
 import { createProjectConfigRuntime } from './project-config.js';
+import { createProjectIdFromPath, projectPathFromId } from './project-id.js';
 import {
+  mergeProjectSetup,
+  normalizePlansDir,
+  parseSharedProjectConfig,
   projectSetupPatchToStored,
   projectSetupViewOf,
   sanitizeDraftStarters,
@@ -12,18 +16,28 @@ import {
   sanitizeSetupCommands,
 } from './project-setup.js';
 
+const emptyPersonal = {
+  setupWorktree: [],
+  setupWorktreeWait: null,
+  setupWorktreeMode: 'append',
+  projectActions: [],
+  projectActionsPrimaryId: null,
+  draftStarters: [],
+  hiddenSharedActionIds: [],
+};
+
 const createRuntime = async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'oc-project-setup-'));
   const runtime = createProjectConfigRuntime({
     fsPromises: await import('fs/promises'),
     path,
-    projectsDirPath: tempRoot,
+    projectsDirPath: path.join(tempRoot, 'projects'),
     createTaskID: () => 'task-fixed-id',
   });
   return {
     runtime,
     tempRoot,
-    readRaw: async (projectId) => JSON.parse(await readFile(path.join(tempRoot, `${projectId}.json`), 'utf8')),
+    readRaw: async (projectId) => JSON.parse(await readFile(path.join(tempRoot, 'projects', `${projectId}.json`), 'utf8')),
     cleanup: () => rm(tempRoot, { recursive: true, force: true }),
   };
 };
@@ -85,55 +99,173 @@ describe('project setup sanitizers', () => {
     ])).toEqual([{ type: 'skill', name: 'triage-prs' }, { type: 'command', name: 'explore' }]);
   });
 
-  it('builds the view from the on-disk keys and nulls a dangling primary action', () => {
+  it('builds the personal view from the on-disk keys and nulls a dangling primary action', () => {
     expect(projectSetupViewOf({
       'setup-worktree': ['bun install'],
       'setup-worktree-wait': true,
+      setupWorktreeMode: 'replace',
       projectActions: [{ id: 'a', name: 'A', command: 'x' }],
       projectActionsPrimaryId: 'missing',
       draftStarters: [{ type: 'skill', name: 's' }],
+      hiddenSharedActionIds: ['dev', '', 'dev', 7],
       scheduledTasks: [{ id: 't' }],
     })).toEqual({
       setupWorktree: ['bun install'],
       setupWorktreeWait: true,
+      setupWorktreeMode: 'replace',
       projectActions: [{ id: 'a', name: 'A', command: 'x', icon: null }],
       projectActionsPrimaryId: null,
       draftStarters: [{ type: 'skill', name: 's' }],
+      hiddenSharedActionIds: ['dev'],
     });
-    expect(projectSetupViewOf(null)).toEqual({
-      setupWorktree: [],
-      setupWorktreeWait: false,
-      projectActions: [],
-      projectActionsPrimaryId: null,
-      draftStarters: [],
-    });
+    expect(projectSetupViewOf(null)).toEqual(emptyPersonal);
   });
 
   it('maps a patch to the stored keys it names and rejects wrong shapes', () => {
-    expect(projectSetupPatchToStored({ setupWorktree: ['a'], projectActionsPrimaryId: null })).toEqual({
+    expect(projectSetupPatchToStored({
+      setupWorktree: ['a'],
+      projectActionsPrimaryId: null,
+      hiddenSharedActionIds: ['x'],
+      setupWorktreeMode: 'replace',
+    })).toEqual({
       'setup-worktree': ['a'],
       projectActionsPrimaryId: undefined,
+      hiddenSharedActionIds: ['x'],
+      setupWorktreeMode: 'replace',
     });
     expect(projectSetupPatchToStored({})).toEqual({});
     expect(() => projectSetupPatchToStored({ setupWorktree: 'a' })).toThrow('setupWorktree must be');
     expect(() => projectSetupPatchToStored({ setupWorktreeWait: 'yes' })).toThrow('setupWorktreeWait must be');
     expect(() => projectSetupPatchToStored({ projectActions: {} })).toThrow('projectActions must be');
     expect(() => projectSetupPatchToStored({ draftStarters: null })).toThrow('draftStarters must be');
+    expect(() => projectSetupPatchToStored({ hiddenSharedActionIds: 'dev' })).toThrow('hiddenSharedActionIds must be');
+    expect(() => projectSetupPatchToStored({ setupWorktreeMode: 'merge' })).toThrow('setupWorktreeMode must be');
     expect(() => projectSetupPatchToStored([])).toThrow('patch must be');
   });
 });
 
+describe('shared project config', () => {
+  it('accepts a relative plansDir inside the repo only', () => {
+    expect(normalizePlansDir(' docs/plans/ ')).toBe('docs/plans');
+    expect(normalizePlansDir('./.openchamber/plans')).toBe('.openchamber/plans');
+    expect(normalizePlansDir('docs\\plans')).toBe('docs/plans');
+    expect(normalizePlansDir('/etc')).toBeNull();
+    expect(normalizePlansDir('C:/plans')).toBeNull();
+    expect(normalizePlansDir('../sibling/plans')).toBeNull();
+    expect(normalizePlansDir('docs/../../x')).toBeNull();
+    expect(normalizePlansDir('')).toBeNull();
+  });
+
+  it('parses a version-1 file and sanitizes its lists', () => {
+    expect(parseSharedProjectConfig(JSON.stringify({
+      version: 1,
+      setupWorktree: ['bun install', ''],
+      setupWorktreeWait: true,
+      projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }, { id: '', name: 'x', command: 'y' }],
+      draftStarters: [{ type: 'skill', name: 's' }],
+      plansDir: 'docs/plans',
+    }))).toEqual({
+      status: 'ok',
+      config: {
+        setupWorktree: ['bun install'],
+        setupWorktreeWait: true,
+        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev', icon: null }],
+        draftStarters: [{ type: 'skill', name: 's' }],
+        plansDir: 'docs/plans',
+      },
+    });
+    expect(parseSharedProjectConfig('{"version":1}')).toEqual({
+      status: 'ok',
+      config: { setupWorktree: [], setupWorktreeWait: null, projectActions: [], draftStarters: [], plansDir: null },
+    });
+  });
+
+  it('reports a broken file as invalid with a reason, never as empty', () => {
+    expect(parseSharedProjectConfig('{ nope').status).toBe('invalid');
+    expect(parseSharedProjectConfig('[]')).toEqual({ status: 'invalid', reason: 'not an object' });
+    expect(parseSharedProjectConfig('{"version":2}').reason).toMatch(/unsupported version/);
+    expect(parseSharedProjectConfig('{"version":1,"setupWorktree":"bun install"}').reason).toMatch(/setupWorktree must be/);
+    expect(parseSharedProjectConfig('{"version":1,"plansDir":"/etc"}').reason).toMatch(/plansDir/);
+  });
+
+  it('merges shared and personal by the agreed rules', () => {
+    const shared = {
+      status: 'ok',
+      config: {
+        setupWorktree: ['bun install'],
+        setupWorktreeWait: true,
+        projectActions: [
+          { id: 'dev', name: 'Dev', command: 'bun run dev', icon: null },
+          { id: 'test', name: 'Test', command: 'bun test', icon: null },
+          { id: 'lint', name: 'Lint', command: 'bun lint', icon: null },
+        ],
+        draftStarters: [{ type: 'skill', name: 'shared-skill' }, { type: 'command', name: 'both' }],
+        plansDir: 'docs/plans',
+      },
+    };
+    const personal = {
+      ...emptyPersonal,
+      setupWorktree: ['cp .env.example .env'],
+      projectActions: [{ id: 'test', name: 'My test', command: 'bun test --watch', icon: null }],
+      projectActionsPrimaryId: 'test',
+      draftStarters: [{ type: 'command', name: 'both' }, { type: 'command', name: 'mine' }],
+      hiddenSharedActionIds: ['lint'],
+    };
+
+    const merged = mergeProjectSetup(personal, shared);
+    expect(merged.setupWorktree).toEqual(['bun install', 'cp .env.example .env']);
+    expect(merged.setupWorktreeWait).toBe(true);
+    expect(merged.projectActions).toEqual([
+      { id: 'dev', name: 'Dev', command: 'bun run dev', icon: null, source: 'shared' },
+      { id: 'test', name: 'My test', command: 'bun test --watch', icon: null, source: 'personal' },
+    ]);
+    expect(merged.projectActionsPrimaryId).toBe('test');
+    expect(merged.draftStarters).toEqual([
+      { type: 'skill', name: 'shared-skill', source: 'shared' },
+      { type: 'command', name: 'both', source: 'shared' },
+      { type: 'command', name: 'mine', source: 'personal' },
+    ]);
+    expect(merged.shared).toEqual({ status: 'ok', path: '.openchamber/project.json', ...shared.config });
+    expect(merged.personal).toBe(personal);
+  });
+
+  it('lets the personal wait flag and replace mode win over shared', () => {
+    const shared = { status: 'ok', config: { setupWorktree: ['bun install'], setupWorktreeWait: true, projectActions: [], draftStarters: [], plansDir: null } };
+    const merged = mergeProjectSetup({ ...emptyPersonal, setupWorktree: ['mine'], setupWorktreeWait: false, setupWorktreeMode: 'replace' }, shared);
+    expect(merged.setupWorktree).toEqual(['mine']);
+    expect(merged.setupWorktreeWait).toBe(false);
+  });
+
+  it('carries an invalid shared read through with its reason and merges nothing from it', () => {
+    const merged = mergeProjectSetup({ ...emptyPersonal, setupWorktree: ['mine'] }, { status: 'invalid', reason: 'invalid JSON: x' });
+    expect(merged.setupWorktree).toEqual(['mine']);
+    expect(merged.shared.status).toBe('invalid');
+    expect(merged.shared.reason).toBe('invalid JSON: x');
+    expect(merged.shared.projectActions).toEqual([]);
+  });
+});
+
+describe('project id', () => {
+  it('round-trips a path through the id', () => {
+    const id = createProjectIdFromPath('/Users/me/projects/repo/');
+    expect(id.startsWith('path_')).toBe(true);
+    expect(projectPathFromId(id)).toBe('/Users/me/projects/repo');
+    expect(projectPathFromId('project-test')).toBe('');
+    expect(projectPathFromId('path_')).toBe('');
+  });
+});
+
 describe('project setup runtime', () => {
-  it('reads an empty view for a project without a file', async () => {
+  it('reads an empty merged view for a project without files', async () => {
     const { runtime, cleanup } = await createRuntime();
     try {
-      expect(await runtime.readProjectSetup('project-a')).toEqual({
-        setupWorktree: [],
-        setupWorktreeWait: false,
-        projectActions: [],
-        projectActionsPrimaryId: null,
-        draftStarters: [],
-      });
+      const view = await runtime.readProjectSetup('project-a');
+      expect(view.setupWorktree).toEqual([]);
+      expect(view.setupWorktreeWait).toBe(false);
+      expect(view.projectActions).toEqual([]);
+      expect(view.draftStarters).toEqual([]);
+      expect(view.shared.status).toBe('missing');
+      expect(view.personal).toEqual(emptyPersonal);
     } finally {
       await cleanup();
     }
@@ -142,7 +274,8 @@ describe('project setup runtime', () => {
   it('round-trips a patch and preserves server-owned and unknown keys', async () => {
     const { runtime, tempRoot, readRaw, cleanup } = await createRuntime();
     try {
-      await writeFile(path.join(tempRoot, 'project-a.json'), JSON.stringify({
+      await mkdir(path.join(tempRoot, 'projects'), { recursive: true });
+      await writeFile(path.join(tempRoot, 'projects', 'project-a.json'), JSON.stringify({
         version: 1,
         scheduledTasks: [{ id: 'task', name: 'Keep me' }],
         futureKey: { from: 'a newer build' },
@@ -151,22 +284,21 @@ describe('project setup runtime', () => {
 
       const view = await runtime.updateProjectSetup('project-a', {
         setupWorktree: ['bun install', ''],
+        setupWorktreeWait: true,
         projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }],
         projectActionsPrimaryId: 'dev',
         projectPath: '/repo/a',
       });
-      expect(view).toEqual({
-        setupWorktree: ['bun install'],
-        setupWorktreeWait: false,
-        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev', icon: null }],
-        projectActionsPrimaryId: 'dev',
-        draftStarters: [],
-      });
+      expect(view.setupWorktree).toEqual(['bun install']);
+      expect(view.setupWorktreeWait).toBe(true);
+      expect(view.projectActions).toEqual([{ id: 'dev', name: 'Dev', command: 'bun run dev', icon: null, source: 'personal' }]);
+      expect(view.projectActionsPrimaryId).toBe('dev');
 
       const raw = await readRaw('project-a');
       expect(raw.scheduledTasks).toEqual([{ id: 'task', name: 'Keep me' }]);
       expect(raw.futureKey).toEqual({ from: 'a newer build' });
       expect(raw['setup-worktree']).toEqual(['bun install']);
+      expect(raw['setup-worktree-wait']).toBe(true);
       expect(raw.projectPath).toBe('/repo/a');
       expect(await runtime.readProjectSetup('project-a')).toEqual(view);
     } finally {
@@ -193,7 +325,7 @@ describe('project setup runtime', () => {
     const { runtime, tempRoot, cleanup } = await createRuntime();
     try {
       await expect(runtime.updateProjectSetup('project-a', { setupWorktree: 'nope' })).rejects.toThrow('setupWorktree must be');
-      await expect(readFile(path.join(tempRoot, 'project-a.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(path.join(tempRoot, 'projects', 'project-a.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await cleanup();
     }
@@ -216,6 +348,58 @@ describe('project setup runtime', () => {
       expect(raw.scheduledTasks).toHaveLength(1);
       expect(raw['setup-worktree']).toEqual(['bun install']);
       expect(raw.draftStarters).toEqual([{ type: 'skill', name: 's' }]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reads the shared file from the checkout the id names and merges it', async () => {
+    const { runtime, tempRoot, cleanup } = await createRuntime();
+    try {
+      const repo = path.join(tempRoot, 'repo');
+      await mkdir(path.join(repo, '.openchamber'), { recursive: true });
+      await writeFile(path.join(repo, '.openchamber', 'project.json'), JSON.stringify({
+        version: 1,
+        setupWorktree: ['bun install'],
+        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }, { id: 'lint', name: 'Lint', command: 'bun lint' }],
+        draftStarters: [{ type: 'skill', name: 'triage' }],
+        plansDir: 'docs/plans',
+      }));
+      const projectId = createProjectIdFromPath(repo);
+
+      const fresh = await runtime.readProjectSetup(projectId);
+      expect(fresh.shared.status).toBe('ok');
+      expect(fresh.shared.plansDir).toBe('docs/plans');
+      expect(fresh.setupWorktree).toEqual(['bun install']);
+      expect(fresh.projectActions.map((action) => `${action.id}:${action.source}`)).toEqual(['dev:shared', 'lint:shared']);
+
+      const view = await runtime.updateProjectSetup(projectId, {
+        setupWorktree: ['cp .env.example .env'],
+        hiddenSharedActionIds: ['lint'],
+        projectActions: [{ id: 'mine', name: 'Mine', command: 'x' }],
+      });
+      expect(view.setupWorktree).toEqual(['bun install', 'cp .env.example .env']);
+      expect(view.projectActions.map((action) => `${action.id}:${action.source}`)).toEqual(['dev:shared', 'mine:personal']);
+      expect(view.draftStarters).toEqual([{ type: 'skill', name: 'triage', source: 'shared' }]);
+      expect(view.personal.hiddenSharedActionIds).toEqual(['lint']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports a broken shared file as invalid and still serves the personal setup', async () => {
+    const { runtime, tempRoot, cleanup } = await createRuntime();
+    try {
+      const repo = path.join(tempRoot, 'repo');
+      await mkdir(path.join(repo, '.openchamber'), { recursive: true });
+      await writeFile(path.join(repo, '.openchamber', 'project.json'), '{ broken');
+      const projectId = createProjectIdFromPath(repo);
+      await runtime.updateProjectSetup(projectId, { setupWorktree: ['mine'] });
+
+      const view = await runtime.readProjectSetup(projectId);
+      expect(view.shared.status).toBe('invalid');
+      expect(view.shared.reason).toMatch(/invalid JSON/);
+      expect(view.setupWorktree).toEqual(['mine']);
     } finally {
       await cleanup();
     }

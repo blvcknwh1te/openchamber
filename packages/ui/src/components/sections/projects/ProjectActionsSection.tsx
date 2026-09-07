@@ -25,7 +25,7 @@ import { Icon } from '@/components/icon/Icon';
 import { useDesktopSshStore } from '@/stores/useDesktopSshStore';
 import { isDesktopShell } from '@/lib/desktop';
 import {
-  getProjectActionsState,
+  getProjectSetup,
   saveProjectActionsState,
   type OpenChamberProjectAction,
   type ProjectRef,
@@ -78,6 +78,10 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
   const loadDesktopSsh = useDesktopSshStore((state) => state.load);
 
   const [actions, setActions] = React.useState<EditableProjectAction[]>([]);
+  // Read-only here: the team's actions from the repo file, and whether that
+  // file could be read at all (a broken file is shown, never treated as empty).
+  const [sharedActions, setSharedActions] = React.useState<OpenChamberProjectAction[]>([]);
+  const [sharedState, setSharedState] = React.useState<{ path: string; status: 'missing' | 'ok' | 'invalid'; reason?: string } | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [initialSnapshot, setInitialSnapshot] = React.useState<string | null>(null);
   const [expandedActions, setExpandedActions] = React.useState<Record<string, boolean>>({});
@@ -97,17 +101,23 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
 
     (async () => {
       try {
-        const state = await getProjectActionsState(projectRef);
+        // The page edits the user's own actions; a teammate's shared actions
+        // are read from the repo and must never be copied into the personal file.
+        const setup = await getProjectSetup(projectRef);
         if (cancelled) {
           return;
         }
-        setActions(state.actions);
-        setInitialSnapshot(JSON.stringify({ actions: state.actions }));
+        setActions(setup.personal.projectActions);
+        setSharedActions(setup.shared.projectActions);
+        setSharedState({ path: setup.shared.path, status: setup.shared.status, reason: setup.shared.reason });
+        setInitialSnapshot(JSON.stringify({ actions: setup.personal.projectActions }));
       } catch {
         if (cancelled) {
           return;
         }
         setActions([]);
+        setSharedActions([]);
+        setSharedState(null);
         setInitialSnapshot(JSON.stringify({ actions: [] }));
       } finally {
         if (!cancelled) {
@@ -243,11 +253,37 @@ export const ProjectActionsSection: React.FC<ProjectActionsSectionProps> = ({ pr
       )}
       contentClassName="space-y-0"
     >
+      {!isLoading && sharedState?.status === 'invalid' ? (
+        <p className="typography-meta text-[var(--status-warning)]">
+          {t('settings.projects.shared.invalid', { path: sharedState.path, reason: sharedState.reason ?? '' })}
+        </p>
+      ) : null}
+      {!isLoading && sharedActions.length > 0 && sharedState ? (
+        <div className={cn('space-y-0 pb-1.5', PROJECT_SETTINGS_CONTROL_WIDTH)}>
+          <p className="typography-meta text-muted-foreground">
+            {t('settings.projects.shared.actionsFromRepo', { path: sharedState.path })}
+          </p>
+          {sharedActions.map((action) => {
+            const sharedIconKey = (action.icon as keyof typeof PROJECT_ACTION_ICON_MAP) || 'play';
+            const sharedIconName = PROJECT_ACTION_ICON_MAP[sharedIconKey] || 'play';
+            return (
+              <div key={action.id} className="flex items-center gap-2 py-1">
+                <Icon name={sharedIconName} className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="typography-ui-label text-foreground truncate">{action.name}</span>
+                <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
+                  {t('settings.projects.shared.badge')}
+                </span>
+                <span className="typography-meta font-mono text-muted-foreground truncate">{action.command}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       {isLoading ? (
         <p className="typography-meta text-muted-foreground">{t('settings.projects.actions.state.loading')}</p>
-      ) : actions.length === 0 ? (
+      ) : actions.length === 0 && sharedActions.length === 0 ? (
         <p className="typography-meta text-muted-foreground">{t('settings.projects.actions.state.empty')}</p>
-      ) : (
+      ) : actions.length === 0 ? null : (
         <div className={cn('space-y-0', PROJECT_SETTINGS_CONTROL_WIDTH)}>
           {actions.map((action) => {
             const selectedIconKey = (action.icon as keyof typeof PROJECT_ACTION_ICON_MAP) || 'play';

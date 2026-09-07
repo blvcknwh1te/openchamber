@@ -1174,6 +1174,11 @@ export const ProjectActionsButton = ({
                 >
                   <Icon name={iconName} className="h-4 w-4" />
                   <span className="typography-ui-label text-foreground truncate">{entry.name}</span>
+                  {entry.source === 'shared' ? (
+                    <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
+                      {t('projectActions.menu.sharedBadge')}
+                    </span>
+                  ) : null}
                   {isStopping || runState?.status === 'waiting-for-preview'
                     ? <Icon name="loader-4" className="ml-auto h-4 w-4 animate-spin text-[var(--status-warning)]" />
                     : isRunning
@@ -1284,6 +1289,11 @@ export const ProjectActionsButton = ({
               >
                 <Icon name={iconName} className="h-4 w-4" />
                 <span className="typography-ui-label text-foreground truncate">{entry.name}</span>
+                {entry.source === 'shared' ? (
+                  <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
+                    {t('projectActions.menu.sharedBadge')}
+                  </span>
+                ) : null}
                 {isStopping || runState?.status === 'waiting-for-preview'
                   ? <Icon name="loader-4" className="ml-auto h-4 w-4 animate-spin text-[var(--status-warning)]" />
                   : isRunning

@@ -14,8 +14,7 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useDeviceInfo } from '@/lib/device';
 import { checkIsGitRepository } from '@/lib/gitApi';
 import {
-  getWorktreeSetupCommands,
-  getWorktreeSetupWaitEnabled,
+  getProjectSetup,
   saveWorktreeSetupCommands,
   saveWorktreeSetupWaitEnabled,
 } from '@/lib/openchamberConfig';
@@ -54,6 +53,8 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
 
   const [setupCommands, setSetupCommands] = React.useState<string[]>([]);
+  const [sharedSetupCommands, setSharedSetupCommands] = React.useState<string[]>([]);
+  const [sharedConfigPath, setSharedConfigPath] = React.useState('');
   const [waitForSetupCommands, setWaitForSetupCommands] = React.useState(false);
   const [isLoadingCommands, setIsLoadingCommands] = React.useState(false);
   const [commandsSnapshot, setCommandsSnapshot] = React.useState<string | null>(null);
@@ -148,19 +149,22 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
 
     (async () => {
       try {
-        const [commands, waitForSetup] = await Promise.all([
-          getWorktreeSetupCommands(projectRef),
-          getWorktreeSetupWaitEnabled(projectRef),
-        ]);
+        // The page edits the user's own commands; the team's shared commands
+        // come from the repo, run first, and are never copied into the personal file.
+        const setup = await getProjectSetup(projectRef);
         if (!cancelled) {
+          const commands = setup.personal.setupWorktree;
           const nextCommands = commands.length > 0 ? commands : [''];
           setSetupCommands(nextCommands);
+          setSharedSetupCommands(setup.shared.setupWorktree);
+          setSharedConfigPath(setup.shared.path);
           setCommandsSnapshot(JSON.stringify(nextCommands));
-          setWaitForSetupCommands(waitForSetup);
+          setWaitForSetupCommands(setup.setupWorktreeWait);
         }
       } catch {
         if (!cancelled) {
           setSetupCommands(['']);
+          setSharedSetupCommands([]);
           setCommandsSnapshot(JSON.stringify(['']));
           setWaitForSetupCommands(false);
         }
@@ -385,6 +389,21 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
           <p className="typography-meta text-muted-foreground">{t('settings.openchamber.worktrees.setup.loading')}</p>
         ) : (
           <div className={cn('space-y-2', PROJECT_SETTINGS_CONTROL_WIDTH)}>
+            {sharedSetupCommands.length > 0 ? (
+              <div className="space-y-1 pb-1">
+                <p className="typography-meta text-muted-foreground">
+                  {t('settings.projects.shared.commandsFromRepo', { path: sharedConfigPath })}
+                </p>
+                {sharedSetupCommands.map((command, index) => (
+                  <div key={`shared-${index}`} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{command}</span>
+                    <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
+                      {t('settings.projects.shared.badge')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {setupCommands.map((command, index) => (
               <div key={index} className="flex w-full gap-2">
                 <Input

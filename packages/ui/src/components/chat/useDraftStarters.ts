@@ -6,7 +6,7 @@ import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { updateDesktopSettings } from '@/lib/persistence';
-import { getProjectDraftStarters, saveProjectDraftStarters } from '@/lib/openchamberConfig';
+import { getProjectDraftStarters, saveProjectDraftStarters, type ProjectDraftStarter } from '@/lib/openchamberConfig';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import type { IconName } from '@/components/icon/icons';
 import {
@@ -31,6 +31,8 @@ export type ResolvedStarter = {
     label: string;
     icon: IconName;
     submitText: string;
+    /** Pinned by the team in the repo's shared config; not removable here. */
+    shared: boolean;
 };
 
 export type PinnableSection = 'built-in' | 'command' | 'skill';
@@ -73,7 +75,13 @@ export function useDraftStarters(): UseDraftStartersResult {
         return { id: found.id, path: found.path };
     }, [activeProjectId, projects]);
 
-    const [projectStarters, setProjectStarters] = React.useState<DraftStarterRef[]>([]);
+    // Merged: the team's shared starters first, then the user's own. Only the
+    // personal ones are ever written back.
+    const [projectStarters, setProjectStarters] = React.useState<ProjectDraftStarter[]>([]);
+    const personalProjectStarters = React.useMemo<DraftStarterRef[]>(
+        () => projectStarters.filter((r) => r.source === 'personal').map(({ type, name }) => ({ type, name })),
+        [projectStarters],
+    );
 
     React.useEffect(() => {
         let cancelled = false;
@@ -106,18 +114,19 @@ export function useDraftStarters(): UseDraftStartersResult {
     const commandNames = React.useMemo(() => new Set(commands.map((c) => c.name)), [commands]);
     const skillNames = React.useMemo(() => new Set(skills.map((s) => s.name)), [skills]);
 
-    const resolve = React.useCallback((ref: DraftStarterRef, group: StarterGroup): ResolvedStarter | null => {
+    const resolve = React.useCallback((ref: DraftStarterRef, group: StarterGroup, shared = false): ResolvedStarter | null => {
         if (isVSCode && ref.type === 'command' && (ref.name === 'craft-goal' || ref.name === 'schedule-task')) return null;
+        const plain: DraftStarterRef = { type: ref.type, name: ref.name };
         if (ref.type === 'command') {
             const builtin = getBuiltInStarter(ref.name);
             if (builtin) {
-                return { id: chipId(group, ref), ref, group, label: t(builtin.labelKey), icon: builtin.icon, submitText: builtin.command };
+                return { id: chipId(group, plain), ref: plain, group, label: t(builtin.labelKey), icon: builtin.icon, submitText: builtin.command, shared };
             }
             if (!commandNames.has(ref.name)) return null;
-            return { id: chipId(group, ref), ref, group, label: normalizeStarterLabel(ref.name), icon: COMMAND_FALLBACK_ICON, submitText: `/${ref.name}` };
+            return { id: chipId(group, plain), ref: plain, group, label: normalizeStarterLabel(ref.name), icon: COMMAND_FALLBACK_ICON, submitText: `/${ref.name}`, shared };
         }
         if (!skillNames.has(ref.name)) return null;
-        return { id: chipId(group, ref), ref, group, label: normalizeStarterLabel(ref.name), icon: SKILL_FALLBACK_ICON, submitText: `/${ref.name}` };
+        return { id: chipId(group, plain), ref: plain, group, label: normalizeStarterLabel(ref.name), icon: SKILL_FALLBACK_ICON, submitText: `/${ref.name}`, shared };
     }, [t, commandNames, skillNames, isVSCode]);
 
     const globalRefs = React.useMemo<readonly DraftStarterRef[]>(
@@ -130,7 +139,7 @@ export function useDraftStarters(): UseDraftStartersResult {
         [globalRefs, resolve],
     );
     const project = React.useMemo(
-        () => projectStarters.map((r) => resolve(r, 'project')).filter((x): x is ResolvedStarter => x !== null),
+        () => projectStarters.map((r) => resolve(r, 'project', r.source === 'shared')).filter((x): x is ResolvedStarter => x !== null),
         [projectStarters, resolve],
     );
 
@@ -170,8 +179,12 @@ export function useDraftStarters(): UseDraftStartersResult {
         });
     }, []);
 
+    // `next` is the user's own list; the shared ones stay in front, untouched.
     const persistProject = React.useCallback((next: DraftStarterRef[]) => {
-        setProjectStarters(next);
+        setProjectStarters((current) => [
+            ...current.filter((r) => r.source === 'shared'),
+            ...next.map((r) => ({ ...r, source: 'personal' as const })),
+        ]);
         if (projectRef) void saveProjectDraftStarters(projectRef, next);
     }, [projectRef]);
 
@@ -179,31 +192,34 @@ export function useDraftStarters(): UseDraftStartersResult {
         const ref: DraftStarterRef = { type: item.type, name: item.name };
         if (item.scope === 'project') {
             if (!projectRef || projectStarters.some((r) => sameStarter(r, ref))) return;
-            persistProject([...projectStarters, ref]);
+            persistProject([...personalProjectStarters, ref]);
         } else {
             const base = globalRaw ?? DEFAULT_GLOBAL_STARTERS;
             if (base.some((r) => sameStarter(r, ref))) return;
             persistGlobal([...base, ref]);
         }
-    }, [projectRef, projectStarters, globalRaw, persistProject, persistGlobal]);
+    }, [projectRef, projectStarters, personalProjectStarters, globalRaw, persistProject, persistGlobal]);
 
     const removeStarter = React.useCallback((group: StarterGroup, ref: DraftStarterRef) => {
         if (group === 'project') {
-            persistProject(projectStarters.filter((r) => !sameStarter(r, ref)));
+            // A shared starter is the team's; it leaves only through the repo file.
+            if (!personalProjectStarters.some((r) => sameStarter(r, ref))) return;
+            persistProject(personalProjectStarters.filter((r) => !sameStarter(r, ref)));
         } else {
             const base = globalRaw ?? DEFAULT_GLOBAL_STARTERS;
             persistGlobal(base.filter((r) => !sameStarter(r, ref)));
         }
-    }, [projectStarters, globalRaw, persistProject, persistGlobal]);
+    }, [personalProjectStarters, globalRaw, persistProject, persistGlobal]);
 
     const reorder = React.useCallback((group: StarterGroup, fromId: string, toId: string) => {
-        const base = group === 'project' ? projectStarters : (globalRaw ?? DEFAULT_GLOBAL_STARTERS);
+        // Project chips reorder among the user's own; shared ones keep their place in front.
+        const base = group === 'project' ? personalProjectStarters : (globalRaw ?? DEFAULT_GLOBAL_STARTERS);
         const from = base.findIndex((r) => chipId(group, r) === fromId);
         const to = base.findIndex((r) => chipId(group, r) === toId);
         if (from < 0 || to < 0 || from === to) return;
         const next = arrayMove([...base], from, to);
         if (group === 'project') persistProject(next); else persistGlobal(next);
-    }, [projectStarters, globalRaw, persistProject, persistGlobal]);
+    }, [personalProjectStarters, globalRaw, persistProject, persistGlobal]);
 
     return { global, project, pinnable, hasProject: !!projectRef, ensureLoaded, addStarter, removeStarter, reorder };
 }

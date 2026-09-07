@@ -12,9 +12,13 @@ import path from 'node:path';
 
 import {
   ProjectSetupValidationError,
+  SHARED_CONFIG_RELATIVE_PATH,
+  mergeProjectSetup,
+  parseSharedProjectConfig,
+  personalProjectSetupOf,
   projectSetupPatchToStored,
-  projectSetupViewOf,
   type ProjectSetupView,
+  type SharedProjectConfigRead,
 } from './project-setup';
 
 export type ProjectSetupBridgeMessage = { id: string; type: string; payload?: unknown };
@@ -26,6 +30,14 @@ export type ProjectSetupStore = {
 };
 
 const PROJECT_ID_PATTERN = /^[a-zA-Z0-9._:-]+$/;
+
+/** The checkout a `path_<base64url>` id names, or `''` for ids of another form. */
+export const projectPathFromId = (projectId: string): string => {
+  if (!projectId.startsWith('path_')) return '';
+  const encoded = projectId.slice('path_'.length);
+  if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded)) return '';
+  return Buffer.from(encoded, 'base64url').toString('utf8');
+};
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -70,7 +82,27 @@ export const createProjectSetupStore = (
   // interleave their read-modify-write.
   const writeChains = new Map<string, Promise<unknown>>();
 
-  const read = async (projectId: string): Promise<ProjectSetupView> => projectSetupViewOf(await readJsonDocument(filePathFor(projectId)));
+  // The shared file lives in the checkout the id names (the personal file's
+  // `projectPath` is the fallback). A missing file is the normal case; an
+  // unreadable or unparsable one is reported, never treated as empty.
+  const readShared = async (projectId: string, personalRaw: Record<string, unknown>): Promise<SharedProjectConfigRead> => {
+    const storedPath = personalRaw.projectPath;
+    const projectPath = projectPathFromId(projectId) || (typeof storedPath === 'string' ? storedPath.trim() : '');
+    if (!projectPath) return { status: 'missing' };
+    let raw: string;
+    try {
+      raw = await fs.promises.readFile(path.join(projectPath, ...SHARED_CONFIG_RELATIVE_PATH.split('/')), 'utf8');
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { status: 'missing' };
+      return { status: 'invalid', reason: error instanceof Error ? error.message : String(error) };
+    }
+    return parseSharedProjectConfig(raw);
+  };
+
+  const mergedViewOf = async (projectId: string, personalRaw: Record<string, unknown>): Promise<ProjectSetupView> =>
+    mergeProjectSetup(personalProjectSetupOf(personalRaw), await readShared(projectId, personalRaw));
+
+  const read = async (projectId: string): Promise<ProjectSetupView> => mergedViewOf(projectId, await readJsonDocument(filePathFor(projectId)));
 
   const update = async (projectId: string, patch: unknown): Promise<ProjectSetupView> => {
     const filePath = filePathFor(projectId);
@@ -83,7 +115,7 @@ export const createProjectSetupStore = (
         if (value === undefined) delete merged[key];
       }
       await writeJsonAtomic(filePath, JSON.stringify(merged, null, 2));
-      return projectSetupViewOf(merged);
+      return mergedViewOf(projectId, merged);
     });
     writeChains.set(filePath, next.catch(() => undefined));
     return next;

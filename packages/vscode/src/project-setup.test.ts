@@ -6,13 +6,29 @@ import path from 'node:path';
 
 import {
   ProjectSetupValidationError,
+  mergeProjectSetup,
+  normalizePlansDir,
+  parseSharedProjectConfig,
+  personalProjectSetupOf,
   projectSetupPatchToStored,
-  projectSetupViewOf,
   sanitizeDraftStarters,
   sanitizeProjectActions,
   sanitizeSetupCommands,
+  type PersonalProjectSetup,
 } from './project-setup';
-import { createProjectSetupStore, handleProjectSetupBridgeMessage } from './bridge-project-setup-runtime';
+import { createProjectSetupStore, handleProjectSetupBridgeMessage, projectPathFromId } from './bridge-project-setup-runtime';
+
+const emptyPersonal: PersonalProjectSetup = {
+  setupWorktree: [],
+  setupWorktreeWait: null,
+  setupWorktreeMode: 'append',
+  projectActions: [],
+  projectActionsPrimaryId: null,
+  draftStarters: [],
+  hiddenSharedActionIds: [],
+};
+
+const projectIdFor = (projectPath: string): string => `path_${Buffer.from(projectPath, 'utf8').toString('base64url')}`;
 
 describe('project setup sanitizers', () => {
   test('keeps only non-empty trimmed setup commands', () => {
@@ -40,19 +56,64 @@ describe('project setup sanitizers', () => {
     ]), [{ type: 'skill', name: 'triage-prs' }]);
   });
 
-  test('builds the view from on-disk keys and nulls a dangling primary action', () => {
-    assert.deepEqual(projectSetupViewOf({
+  test('builds the personal view from on-disk keys and nulls a dangling primary action', () => {
+    assert.deepEqual(personalProjectSetupOf({
       'setup-worktree': ['bun install'],
       'setup-worktree-wait': true,
+      setupWorktreeMode: 'replace',
       projectActions: [{ id: 'a', name: 'A', command: 'x' }],
       projectActionsPrimaryId: 'missing',
+      hiddenSharedActionIds: ['dev', 'dev', 3],
     }), {
       setupWorktree: ['bun install'],
       setupWorktreeWait: true,
+      setupWorktreeMode: 'replace',
       projectActions: [{ id: 'a', name: 'A', command: 'x', icon: null }],
       projectActionsPrimaryId: null,
       draftStarters: [],
+      hiddenSharedActionIds: ['dev'],
     });
+    assert.deepEqual(personalProjectSetupOf(null), emptyPersonal);
+  });
+
+  test('parses a shared file and refuses a broken one', () => {
+    const ok = parseSharedProjectConfig(JSON.stringify({ version: 1, setupWorktree: ['bun install'], plansDir: 'docs/plans' }));
+    assert.equal(ok.status, 'ok');
+    if (ok.status === 'ok') {
+      assert.deepEqual(ok.config, { setupWorktree: ['bun install'], setupWorktreeWait: null, projectActions: [], draftStarters: [], plansDir: 'docs/plans' });
+    }
+    assert.equal(parseSharedProjectConfig('{ nope').status, 'invalid');
+    assert.equal(parseSharedProjectConfig('{"version":2}').status, 'invalid');
+    assert.equal(parseSharedProjectConfig('{"version":1,"plansDir":"../x"}').status, 'invalid');
+    assert.equal(normalizePlansDir('./docs/plans/'), 'docs/plans');
+    assert.equal(normalizePlansDir('/abs'), null);
+  });
+
+  test('merges shared and personal by the agreed rules', () => {
+    const merged = mergeProjectSetup({
+      ...emptyPersonal,
+      setupWorktree: ['mine'],
+      projectActions: [{ id: 'test', name: 'My test', command: 'x', icon: null }],
+      hiddenSharedActionIds: ['lint'],
+      draftStarters: [{ type: 'command', name: 'both' }, { type: 'command', name: 'mine' }],
+    }, {
+      status: 'ok',
+      config: {
+        setupWorktree: ['bun install'],
+        setupWorktreeWait: true,
+        projectActions: [
+          { id: 'dev', name: 'Dev', command: 'd', icon: null },
+          { id: 'test', name: 'Test', command: 't', icon: null },
+          { id: 'lint', name: 'Lint', command: 'l', icon: null },
+        ],
+        draftStarters: [{ type: 'command', name: 'both' }],
+        plansDir: null,
+      },
+    });
+    assert.deepEqual(merged.setupWorktree, ['bun install', 'mine']);
+    assert.equal(merged.setupWorktreeWait, true);
+    assert.deepEqual(merged.projectActions.map((action) => `${action.id}:${action.source}`), ['dev:shared', 'test:personal']);
+    assert.deepEqual(merged.draftStarters.map((starter) => `${starter.name}:${starter.source}`), ['both:shared', 'mine:personal']);
   });
 
   test('rejects wrongly shaped patch keys', () => {
@@ -85,13 +146,10 @@ describe('project setup bridge', () => {
         store,
       );
       assert.equal(updated?.success, true);
-      assert.deepEqual(updated?.data, {
-        setupWorktree: ['bun install'],
-        setupWorktreeWait: false,
-        projectActions: [],
-        projectActionsPrimaryId: null,
-        draftStarters: [],
-      });
+      const view = updated?.data as { setupWorktree: string[]; setupWorktreeWait: boolean; shared: { status: string } };
+      assert.deepEqual(view.setupWorktree, ['bun install']);
+      assert.equal(view.setupWorktreeWait, false);
+      assert.equal(view.shared.status, 'missing');
 
       const raw = JSON.parse(await fs.promises.readFile(path.join(dir, 'project-a.json'), 'utf8'));
       assert.deepEqual(raw.scheduledTasks, [{ id: 'keep' }]);
@@ -115,6 +173,28 @@ describe('project setup bridge', () => {
       assert.equal(badId?.success, false);
 
       assert.equal(await handleProjectSetupBridgeMessage({ id: '3', type: 'api:fs:read', payload: {} }, store), null);
+    });
+  });
+
+  test('reads the shared file from the checkout the id names', async () => {
+    await withStore(async (store, dir) => {
+      const repo = path.join(dir, 'repo');
+      await fs.promises.mkdir(path.join(repo, '.openchamber'), { recursive: true });
+      await fs.promises.writeFile(path.join(repo, '.openchamber', 'project.json'), JSON.stringify({
+        version: 1,
+        setupWorktree: ['bun install'],
+        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }],
+      }));
+      const projectId = projectIdFor(repo);
+      assert.equal(projectPathFromId(projectId), repo);
+      const view = await store.update(projectId, { setupWorktree: ['mine'], hiddenSharedActionIds: ['dev'] });
+      assert.equal(view.shared.status, 'ok');
+      assert.deepEqual(view.setupWorktree, ['bun install', 'mine']);
+      assert.deepEqual(view.projectActions, []);
+      await fs.promises.writeFile(path.join(repo, '.openchamber', 'project.json'), '{ broken');
+      const broken = await store.read(projectId);
+      assert.equal(broken.shared.status, 'invalid');
+      assert.deepEqual(broken.setupWorktree, ['mine']);
     });
   });
 
