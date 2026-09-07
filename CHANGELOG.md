@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **Git transport you choose per repository.** Each repository remote now says how OpenChamber reaches it: your system Git credentials (shown honestly as unverified, and requiring a one-time confirmation before the first push), a connected GitHub or GitLab account over HTTPS, a managed SSH key, or anonymous read-only HTTPS. The Git panel shows the current provider, transport and author at a glance, and the Configure dialog is where you set or remove them.
+- **Managed SSH keys.** Settings can discover unencrypted private keys in your server user's `~/.ssh`, import the ones you pick, and show only their public fingerprints. Passphrase-protected and agent-only keys are called out with a pointer to System transport instead of failing silently.
+- **Git operations survive a reload.** Push, pull, fetch, sync and remote-branch deletion run as tracked operations, so an interrupted transfer is reported as an unknown outcome you can refresh rather than silently reported as success. The Git panel shows the operation's state and lets you refresh or cancel it.
+- **Clone with an explicit identity.** Cloning asks which transport and author to use before it starts, instead of relying on whatever ambient Git credentials the host happens to have.
+- Removed: the legacy unauthenticated `POST /api/git/{push,pull,fetch}` and `DELETE /api/git/remote-branches` HTTP routes, and the `GET /api/github/*` read and mutation routes. Both were superseded by the tracked operation API and the `/api/source-control/*` routes; external callers get an explicit status instead of a silent behavior change.
+- **GitLab:** connect GitLab.com or a self-managed instance to browse and attach issues and merge requests, track merge-request status and CI, and create, edit, ready, or merge requests from the Git view. Merge requests keep GitLab's `!` numbering in the Git view, sidebar, and work status, and draft requests use GitLab's title prefix.
 - **Chat context attachments:** everything you attach to a message — diff/file/plan comments, terminal selections, browser annotations, PR comments and failed checks, linked issues and PRs — now shows up in the conversation as a compact context card: a header naming the source, the captured content behind an expander, and your comment below it. Previously most of these arrived as a wall of raw text inside your message.
 - **Chat: comment on a reply.** Select text in a chat message and choose Comment to attach that quote with your note to the next message. The selection stays highlighted while you type, and the selection menu itself was restyled — Add to chat is now Add to input.
 - **Diff: comment like a review.** Hovering a line shows a + button in the gutter; clicking it, clicking a line, or dragging across lines opens the comment editor for that line or range. The comment editor and saved-comment cards now match the chat's comment style.
@@ -25,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - UI: sidebar item tooltips no longer appear instantly on passing hover.
 - Sessions: headers now find archived sessions too, so an archived session's title no longer goes missing.
 - UI: the timeline dialog now fits small screens instead of squeezing the message list to a couple of rows (thanks to @gaojunran).
+- UI: in Safari and the iOS apps, a dialog taller than the screen no longer draws its title and description over the first field; the header keeps its height and the body scrolls beneath it.
 - UI: the btw panel's shadow is lighter, matching the composer.
 - Devices: re-pairing a phone (or logging in again) keeps the device's existing name in Connected Devices instead of resetting it to "OpenChamber Mobile".
 - Relay: paired devices no longer get logged out when the app restarts (for example during an update) while another local OpenChamber process is running — the restarted app keeps serving them instead of a bystander process taking over.
