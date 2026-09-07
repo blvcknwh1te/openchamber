@@ -1017,10 +1017,21 @@ export const createProjectConfigRuntime = (deps) => {
     })
   );
 
+  /** The absolute shared plans folder of a project (`plansDir` in the shared file), or null. */
+  const resolveSharedPlansDir = async (projectID) => {
+    const personalRaw = await readRawProjectConfigFromDisk(projectID);
+    const projectPath = projectPathOf(projectID, personalRaw);
+    if (!projectPath) return null;
+    const shared = await readSharedProjectConfig(projectID, personalRaw);
+    if (shared.status !== 'ok' || !shared.config.plansDir) return null;
+    return path.join(projectPath, ...shared.config.plansDir.split('/'));
+  };
+
   return {
     readProjectSetup,
     updateProjectSetup,
     updateSharedProjectSetup,
+    resolveSharedPlansDir,
     listScheduledTasks,
     upsertScheduledTask,
     deleteScheduledTask,

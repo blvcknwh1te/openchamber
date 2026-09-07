@@ -491,6 +491,7 @@ const projectContextRuntime = createProjectContextRuntime({
   fsPromises,
   path,
   projectsDirPath: OPENCHAMBER_PROJECTS_CONFIG_DIR,
+  resolveSharedPlansDir: (projectId) => projectConfigRuntime.resolveSharedPlansDir(projectId),
 });
 
 const agentMemoryRuntime = createAgentMemoryRuntime({

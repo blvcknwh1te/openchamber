@@ -35,6 +35,29 @@ export const PlansSection: React.FC<{
   const [deletingPlanId, setDeletingPlanId] = React.useState<string | null>(null);
   const createPlan = useProjectContextStore((state) => state.createPlan);
   const removePlan = useProjectContextStore((state) => state.deletePlan);
+  const movePlan = useProjectContextStore((state) => state.movePlan);
+  const sharedPlansDir = useProjectContextStore((state) => state.getEntry(projectRef).sharedPlansDir);
+  const [movingPlanId, setMovingPlanId] = React.useState<string | null>(null);
+
+  // A plan changes id when it moves between the two folders; the list reloads
+  // from the returned context, so nothing here tracks the new id.
+  const handleMovePlan = React.useCallback(
+    async (plan: ProjectPlanLink) => {
+      if (movingPlanId) return;
+      const direction = plan.source === 'shared' ? 'unshare' : 'share';
+      setMovingPlanId(plan.id);
+      try {
+        const ok = await movePlan(projectRef, plan.id, direction);
+        if (!ok) {
+          const detail = useProjectContextStore.getState().getEntry(projectRef).error;
+          toast.error(t('rightSidebar.contextNotesTodo.toast.movePlanFailed'), detail ? { description: detail } : undefined);
+        }
+      } finally {
+        setMovingPlanId(null);
+      }
+    },
+    [movePlan, movingPlanId, projectRef, t],
+  );
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
 
@@ -220,9 +243,28 @@ export const PlansSection: React.FC<{
                   className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-md px-1.5 py-1 text-left hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                 >
                   <span className="min-w-0 truncate typography-ui-label text-foreground">{plan.title}</span>
+                  {plan.source === 'shared' ? (
+                    <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
+                      {t('rightSidebar.contextNotesTodo.plans.sharedBadge')}
+                    </span>
+                  ) : null}
                   <span className="flex-shrink-0 typography-micro text-muted-foreground">
                     {new Date(plan.createdAt).toLocaleDateString(getCurrentIntlLocale())}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleMovePlan(plan)}
+                  disabled={movingPlanId === plan.id || (plan.source !== 'shared' && !sharedPlansDir)}
+                  className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={plan.source === 'shared'
+                    ? t('rightSidebar.contextNotesTodo.plans.makePersonal')
+                    : sharedPlansDir ? t('rightSidebar.contextNotesTodo.plans.share') : t('rightSidebar.contextNotesTodo.plans.shareNeedsFolder')}
+                  aria-label={plan.source === 'shared'
+                    ? t('rightSidebar.contextNotesTodo.plans.makePersonal')
+                    : t('rightSidebar.contextNotesTodo.plans.share')}
+                >
+                  <Icon name={plan.source === 'shared' ? 'user' : 'team'} className="h-3.5 w-3.5" />
                 </button>
                 <button
                   type="button"

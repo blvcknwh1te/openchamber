@@ -12,6 +12,7 @@ The managed Chats root (`~/.config/openchamber/chats`) is also one context owner
 | `<projectsDir>/<projectId>.json` | `packages/web/server/lib/projects` (`project-setup.js` for the client-owned keys behind `/api/projects/:projectId/config`; `project-config.js` for `version` / `scheduledTasks`), one write lock for both | worktree setup, draft starters, project actions, scheduled tasks |
 | `<projectsDir>/<projectId>/context.json` | **this module, exclusively** | notes, todos, plan manifest |
 | `<projectsDir>/<projectId>/plans/*.md` | **this module, exclusively** | plan bodies |
+| `<repo>/<plansDir>/*.md` | this module (read, edit, delete, move) when the team config names a `plansDir`; the folder is the team's, any tool may write there | shared plan bodies |
 
 The split is the point. Both files were previously one, written by the client
 with a whole-file read-modify-write. Adding a server writer to that file would
@@ -58,6 +59,23 @@ denormalized into the manifest so listing plans costs one read rather than one
 read per plan; `readPlan` returns the title parsed from the file, which wins if
 the two ever disagree.
 
+## Shared plans
+
+When the project's team config (`<repo>/.openchamber/project.json`, see
+`packages/web/server/lib/projects`) names a `plansDir`, every `.md` file in
+that folder is a plan too. `readContext` appends them after the personal ones,
+each marked `source: "shared"` (personal ones get `source: "personal"`), and
+reports the folder as `sharedPlansDir`. A shared plan is addressed as
+`shared:<file>`; it has no manifest entry, so its title is parsed from the file
+on every list, and `readPlan` / `updatePlan` / `deletePlan` work on the file
+directly (an update writes the raw document verbatim, so a plan another tool
+wrote keeps its shape). `setPlanPinned` is `404` for a shared plan. `sharePlan`
+moves a personal plan's file into the folder (markdown first, then the manifest
+entry goes) and `unsharePlan` moves it back under a new id; a name collision
+gets a numeric suffix. Sharing without a `plansDir` is a validation error.
+Session-knowledge attachments reference plan ids, so an attached plan that
+moves has to be attached again.
+
 ## Routes
 
 | Method | Route | Notes |
@@ -72,6 +90,8 @@ the two ever disagree.
 | POST | `/api/project-context/:projectId/plans` | `201`; takes `{title, body}`, never a path |
 | PUT | `/api/project-context/:projectId/plans/:planId` | takes the whole `{raw}` document; `404` when the link or its markdown is gone |
 | DELETE | `/api/project-context/:projectId/plans/:planId` | `404` when unknown |
+| POST | `/api/project-context/:projectId/plans/:planId/share` | moves the plan into the shared folder; `400` without one, `404` when unknown |
+| POST | `/api/project-context/:projectId/plans/:planId/unshare` | moves a `shared:` plan back; `404` when unknown |
 
 **Body parsing is attached per route.** This server has no global JSON parser:
 `core-routes` parses only an allowlist of `/api` path prefixes so the generic
