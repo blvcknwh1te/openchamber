@@ -6,8 +6,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { createProjectConfigRuntime } from './project-config.js';
 import { createProjectIdFromPath, projectPathFromId } from './project-id.js';
 import {
+  applySharedProjectSetupPatch,
+  isSharedProjectConfigEmpty,
   mergeProjectSetup,
   normalizePlansDir,
+  serializeSharedProjectConfig,
   parseSharedProjectConfig,
   sharedTrustHashOf,
   projectSetupPatchToStored,
@@ -277,6 +280,44 @@ describe('shared project config', () => {
   });
 });
 
+describe('shared project config writes', () => {
+  const empty = { setupWorktree: [], setupWorktreeWait: null, projectActions: [], draftStarters: [], plansDir: null };
+
+  it('applies a patch over the current config and refuses wrong shapes', () => {
+    const next = applySharedProjectSetupPatch({ ...empty, setupWorktree: ['old'] }, {
+      projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev', source: 'personal', icon: '' }],
+      plansDir: './docs/plans/',
+    });
+    expect(next.setupWorktree).toEqual(['old']);
+    expect(next.projectActions).toEqual([{ id: 'dev', name: 'Dev', command: 'bun run dev', icon: null }]);
+    expect(next.plansDir).toBe('docs/plans');
+    expect(applySharedProjectSetupPatch(next, { plansDir: '' }).plansDir).toBeNull();
+    expect(() => applySharedProjectSetupPatch(empty, { plansDir: '/etc' })).toThrow('plansDir must be');
+    expect(() => applySharedProjectSetupPatch(empty, { setupWorktree: 'x' })).toThrow('setupWorktree must be');
+    expect(() => applySharedProjectSetupPatch(empty, { setupWorktreeWait: 'yes' })).toThrow('setupWorktreeWait must be');
+  });
+
+  it('serializes version first, only the keys that carry something, without source marks', () => {
+    expect(serializeSharedProjectConfig({ ...empty, projectActions: [{ id: 'dev', name: 'Dev', command: 'x', icon: null, source: 'personal' }], plansDir: 'docs/plans' })).toBe([
+      '{',
+      '  "version": 1,',
+      '  "projectActions": [',
+      '    {',
+      '      "id": "dev",',
+      '      "name": "Dev",',
+      '      "command": "x",',
+      '      "icon": null',
+      '    }',
+      '  ],',
+      '  "plansDir": "docs/plans"',
+      '}',
+      '',
+    ].join('\n'));
+    expect(isSharedProjectConfigEmpty(empty)).toBe(true);
+    expect(isSharedProjectConfigEmpty({ ...empty, setupWorktreeWait: false })).toBe(false);
+  });
+});
+
 describe('project id', () => {
   it('round-trips a path through the id', () => {
     const id = createProjectIdFromPath('/Users/me/projects/repo/');
@@ -424,6 +465,59 @@ describe('project setup runtime', () => {
       expect((await runtime.readProjectSetup(projectId)).trust.trusted).toBe(false);
       const reset = await runtime.updateProjectSetup(projectId, { sharedTrustHash: null });
       expect(reset.personal.sharedTrust).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('writes the shared file into the checkout, trusts it for the writer, and removes it when emptied', async () => {
+    const { runtime, tempRoot, readRaw, cleanup } = await createRuntime();
+    try {
+      const repo = path.join(tempRoot, 'repo');
+      await mkdir(repo, { recursive: true });
+      const projectId = createProjectIdFromPath(repo);
+      const sharedPath = path.join(repo, '.openchamber', 'project.json');
+
+      const shared = await runtime.updateSharedProjectSetup(projectId, {
+        setupWorktree: ['bun install'],
+        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }],
+      });
+      expect(JSON.parse(await readFile(sharedPath, 'utf8'))).toEqual({
+        version: 1,
+        setupWorktree: ['bun install'],
+        projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev', icon: null }],
+      });
+      expect(shared.shared.status).toBe('ok');
+      expect(shared.projectActions.map((action) => `${action.id}:${action.source}`)).toEqual(['dev:shared']);
+      // The writer has seen what it shared: trusted here, prompt stays for teammates.
+      expect(shared.trust.trusted).toBe(true);
+      expect((await readRaw(projectId)).sharedTrust.hash).toBe(shared.trust.hash);
+
+      // A second patch replaces only the keys it names.
+      const withPlans = await runtime.updateSharedProjectSetup(projectId, { plansDir: 'docs/plans' });
+      expect(withPlans.shared.plansDir).toBe('docs/plans');
+      expect(withPlans.shared.setupWorktree).toEqual(['bun install']);
+
+      const emptied = await runtime.updateSharedProjectSetup(projectId, { setupWorktree: [], projectActions: [], plansDir: null });
+      expect(emptied.shared.status).toBe('missing');
+      await expect(readFile(sharedPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(path.join(repo, '.openchamber'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await readRaw(projectId)).sharedTrust).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('refuses to write the shared file for a checkout that does not exist and on a bad patch', async () => {
+    const { runtime, tempRoot, cleanup } = await createRuntime();
+    try {
+      const projectId = createProjectIdFromPath(path.join(tempRoot, 'missing-repo'));
+      await expect(runtime.updateSharedProjectSetup(projectId, { setupWorktree: ['x'] })).rejects.toThrow('project checkout not found');
+      await expect(runtime.updateSharedProjectSetup('project-test', { setupWorktree: ['x'] })).rejects.toThrow('project checkout not found');
+      const repo = path.join(tempRoot, 'repo');
+      await mkdir(repo, { recursive: true });
+      await expect(runtime.updateSharedProjectSetup(createProjectIdFromPath(repo), { plansDir: '../x' })).rejects.toThrow('plansDir must be');
+      await expect(readFile(path.join(repo, '.openchamber', 'project.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await cleanup();
     }

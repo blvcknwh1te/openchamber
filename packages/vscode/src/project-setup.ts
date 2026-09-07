@@ -83,7 +83,7 @@ const SHARED_CONFIG_VERSION = 1;
  * The on-disk keys this module owns inside the personal config document, as
  * a patch: a key set to `undefined` is removed from the document.
  */
-export type StoredProjectSetupPatch = {
+type StoredProjectSetupPatch = {
   'setup-worktree'?: string[];
   'setup-worktree-wait'?: boolean;
   setupWorktreeMode?: SetupWorktreeMode;
@@ -323,6 +323,62 @@ const sharedBlockOf = (sharedRead: SharedProjectConfigRead, shared: SharedProjec
   const block: ProjectSetupView['shared'] = { status: sharedRead.status, path: SHARED_CONFIG_RELATIVE_PATH, ...shared };
   if (sharedRead.status === 'invalid') block.reason = sharedRead.reason;
   return block;
+};
+
+/** True when the shared config carries nothing: the file should not exist. */
+export const isSharedProjectConfigEmpty = (config: SharedProjectConfig): boolean => (
+  config.setupWorktree.length === 0
+  && config.setupWorktreeWait === null
+  && config.projectActions.length === 0
+  && config.draftStarters.length === 0
+  && config.plansDir === null
+);
+
+/** The bytes of a shared file: version first, only the keys that carry something, pretty-printed. */
+export const serializeSharedProjectConfig = (config: SharedProjectConfig): string => {
+  const document: Record<string, unknown> = { version: SHARED_CONFIG_VERSION };
+  if (config.setupWorktree.length > 0) document.setupWorktree = config.setupWorktree;
+  if (config.setupWorktreeWait !== null) document.setupWorktreeWait = config.setupWorktreeWait;
+  if (config.projectActions.length > 0) document.projectActions = sanitizeProjectActions(config.projectActions);
+  if (config.draftStarters.length > 0) document.draftStarters = config.draftStarters;
+  if (config.plansDir !== null) document.plansDir = config.plansDir;
+  return `${JSON.stringify(document, null, 2)}\n`;
+};
+
+export const EMPTY_SHARED_PROJECT_CONFIG: SharedProjectConfig = EMPTY_SHARED;
+
+/** The next shared config after a client patch over the current one; wrong shapes are validation errors. */
+export const applySharedProjectSetupPatch = (current: SharedProjectConfig, patch: unknown): SharedProjectConfig => {
+  if (!isObjectRecord(patch)) throw new ProjectSetupValidationError('patch must be an object');
+  const next: SharedProjectConfig = { ...current };
+  if ('setupWorktree' in patch) {
+    if (!Array.isArray(patch.setupWorktree)) throw new ProjectSetupValidationError('setupWorktree must be an array of commands');
+    next.setupWorktree = sanitizeSetupCommands(patch.setupWorktree);
+  }
+  if ('setupWorktreeWait' in patch) {
+    const wait = patch.setupWorktreeWait;
+    if (wait !== null && typeof wait !== 'boolean') throw new ProjectSetupValidationError('setupWorktreeWait must be a boolean or null');
+    next.setupWorktreeWait = wait;
+  }
+  if ('projectActions' in patch) {
+    if (!Array.isArray(patch.projectActions)) throw new ProjectSetupValidationError('projectActions must be an array');
+    next.projectActions = sanitizeProjectActions(patch.projectActions);
+  }
+  if ('draftStarters' in patch) {
+    if (!Array.isArray(patch.draftStarters)) throw new ProjectSetupValidationError('draftStarters must be an array');
+    next.draftStarters = sanitizeDraftStarters(patch.draftStarters);
+  }
+  if ('plansDir' in patch) {
+    const raw = patch.plansDir;
+    if (raw === null || (typeof raw === 'string' && !raw.trim())) {
+      next.plansDir = null;
+    } else {
+      const plansDir = normalizePlansDir(raw);
+      if (!plansDir) throw new ProjectSetupValidationError('plansDir must be a relative path inside the repository');
+      next.plansDir = plansDir;
+    }
+  }
+  return next;
 };
 
 /**

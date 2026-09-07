@@ -2083,6 +2083,8 @@ export const dict = {
   'chat.draftStarters.sectionSkills': 'Skill\'ler',
   'chat.draftStarters.remove': 'Kaldır',
   'chat.draftStarters.sharedTitle': 'Ekip tarafından sabitlendi; depoda değiştirin',
+  'chat.draftStarters.share': 'Ekiple paylaş',
+  'chat.draftStarters.makePersonal': 'Kişisel yap',
   'chat.scrollToBottom.aria': 'En alta kaydır',
   'chat.promptNavigator.aria': 'Prompt gezinmesi',
   'chat.promptNavigator.currentPrompt': 'Mevcut prompt',

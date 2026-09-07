@@ -110,7 +110,6 @@ const projectSetupSchema = z.object({
 });
 
 export type ProjectSetup = z.infer<typeof projectSetupSchema>;
-export type SharedProjectSetup = ProjectSetup['shared'];
 
 /** What a client may change: the personal file only. */
 export type ProjectSetupPatch = Partial<{
@@ -211,6 +210,42 @@ export async function updateProjectSetup(project: ProjectRef, patch: ProjectSetu
   } catch (error) {
     console.warn('Failed to save project config:', error);
     return false;
+  }
+}
+
+/** What a client may change in the team's shared file; every named key replaces the current value. */
+export type SharedProjectSetupPatch = Partial<{
+  setupWorktree: string[];
+  setupWorktreeWait: boolean | null;
+  projectActions: OpenChamberProjectAction[];
+  draftStarters: DraftStarterRef[];
+  plansDir: string | null;
+}>;
+
+/**
+ * Change the team's shared file in the checkout (`<repo>/.openchamber/project.json`).
+ * The server removes the file when nothing is left in it, and records trust
+ * for the commands this instance just shared. Resolves the merged view, or
+ * `null` on failure so a caller can tell "saved nothing" from "saved and empty".
+ */
+export async function updateSharedProjectSetup(project: ProjectRef, patch: SharedProjectSetupPatch): Promise<ProjectSetup | null> {
+  const projectId = resolveProjectSetupId(project);
+  if (!projectId) return null;
+  const body: SharedProjectSetupPatch = { ...patch };
+  if (patch.projectActions) body.projectActions = patch.projectActions.map(withoutSource);
+  try {
+    const response = await runtimeFetch(`${endpointFor(projectId)}/shared`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await parseSetupResponse(response);
+  } catch (error) {
+    console.warn('Failed to save the shared project config:', error);
+    return null;
   }
 }
 

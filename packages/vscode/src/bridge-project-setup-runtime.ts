@@ -11,12 +11,17 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  EMPTY_SHARED_PROJECT_CONFIG,
   ProjectSetupValidationError,
   SHARED_CONFIG_RELATIVE_PATH,
+  applySharedProjectSetupPatch,
+  isSharedProjectConfigEmpty,
   mergeProjectSetup,
   parseSharedProjectConfig,
   personalProjectSetupOf,
   projectSetupPatchToStored,
+  serializeSharedProjectConfig,
+  sharedTrustHashOf,
   type ProjectSetupView,
   type SharedProjectConfigRead,
 } from './project-setup';
@@ -27,6 +32,7 @@ export type ProjectSetupBridgeResponse = { id: string; type: string; success: bo
 export type ProjectSetupStore = {
   read: (projectId: string) => Promise<ProjectSetupView>;
   update: (projectId: string, patch: unknown) => Promise<ProjectSetupView>;
+  updateShared: (projectId: string, patch: unknown) => Promise<ProjectSetupView>;
 };
 
 const PROJECT_ID_PATTERN = /^[a-zA-Z0-9._:-]+$/;
@@ -85,13 +91,18 @@ export const createProjectSetupStore = (
   // The shared file lives in the checkout the id names (the personal file's
   // `projectPath` is the fallback). A missing file is the normal case; an
   // unreadable or unparsable one is reported, never treated as empty.
-  const readShared = async (projectId: string, personalRaw: Record<string, unknown>): Promise<SharedProjectConfigRead> => {
+  const projectPathOf = (projectId: string, personalRaw: Record<string, unknown>): string => {
     const storedPath = personalRaw.projectPath;
-    const projectPath = projectPathFromId(projectId) || (typeof storedPath === 'string' ? storedPath.trim() : '');
+    return projectPathFromId(projectId) || (typeof storedPath === 'string' ? storedPath.trim() : '');
+  };
+  const sharedConfigPathOf = (projectPath: string): string => path.join(projectPath, ...SHARED_CONFIG_RELATIVE_PATH.split('/'));
+
+  const readShared = async (projectId: string, personalRaw: Record<string, unknown>): Promise<SharedProjectConfigRead> => {
+    const projectPath = projectPathOf(projectId, personalRaw);
     if (!projectPath) return { status: 'missing' };
     let raw: string;
     try {
-      raw = await fs.promises.readFile(path.join(projectPath, ...SHARED_CONFIG_RELATIVE_PATH.split('/')), 'utf8');
+      raw = await fs.promises.readFile(sharedConfigPathOf(projectPath), 'utf8');
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return { status: 'missing' };
       return { status: 'invalid', reason: error instanceof Error ? error.message : String(error) };
@@ -121,7 +132,40 @@ export const createProjectSetupStore = (
     return next;
   };
 
-  return { read, update };
+  // The team's shared file in the checkout; same rules as the server: a
+  // broken file counts as empty, an empty result removes the file, and the
+  // writer's own trust record is set to the new hash.
+  const updateShared = async (projectId: string, patch: unknown): Promise<ProjectSetupView> => {
+    const filePath = filePathFor(projectId);
+    const previous = writeChains.get(filePath) ?? Promise.resolve();
+    const next = previous.then(async () => {
+      const personalRaw = await readJsonDocument(filePath);
+      const projectPath = projectPathOf(projectId, personalRaw);
+      if (!projectPath) throw new ProjectSetupValidationError('project checkout not found');
+      const isDirectory = await fs.promises.stat(projectPath).then((stat) => stat.isDirectory()).catch(() => false);
+      if (!isDirectory) throw new ProjectSetupValidationError('project checkout not found');
+      const currentRead = await readShared(projectId, personalRaw);
+      const current = currentRead.status === 'ok' ? currentRead.config : EMPTY_SHARED_PROJECT_CONFIG;
+      const nextShared = applySharedProjectSetupPatch(current, patch);
+      const sharedPath = sharedConfigPathOf(projectPath);
+      if (isSharedProjectConfigEmpty(nextShared)) {
+        await fs.promises.rm(sharedPath, { force: true });
+        await fs.promises.rmdir(path.dirname(sharedPath)).catch(() => {});
+      } else {
+        await writeJsonAtomic(sharedPath, serializeSharedProjectConfig(nextShared));
+      }
+      const hash = sharedTrustHashOf(nextShared);
+      const personalNext: Record<string, unknown> = { ...personalRaw };
+      if (hash) personalNext.sharedTrust = { hash, trustedAt: Date.now() };
+      else delete personalNext.sharedTrust;
+      await writeJsonAtomic(filePath, JSON.stringify(personalNext, null, 2));
+      return mergedViewOf(projectId, personalNext);
+    });
+    writeChains.set(filePath, next.catch(() => undefined));
+    return next;
+  };
+
+  return { read, update, updateShared };
 };
 
 export async function handleProjectSetupBridgeMessage(
@@ -129,14 +173,16 @@ export async function handleProjectSetupBridgeMessage(
   store: ProjectSetupStore,
 ): Promise<ProjectSetupBridgeResponse | null> {
   const { id, type, payload } = message;
-  if (type !== 'api:project-setup:get' && type !== 'api:project-setup:update') return null;
+  if (type !== 'api:project-setup:get' && type !== 'api:project-setup:update' && type !== 'api:project-setup:update-shared') return null;
 
   try {
     const request = isObjectRecord(payload) ? payload : {};
     const projectId = sanitizeProjectId(request.projectId);
     const data = type === 'api:project-setup:get'
       ? await store.read(projectId)
-      : await store.update(projectId, request.patch);
+      : type === 'api:project-setup:update'
+        ? await store.update(projectId, request.patch)
+        : await store.updateShared(projectId, request.patch);
     return { id, type, success: true, data };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Project config request failed';

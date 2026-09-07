@@ -2125,6 +2125,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.draftStarters.sectionSkills': 'Skills',
   'chat.draftStarters.remove': 'Remove',
   'chat.draftStarters.sharedTitle': '팀이 고정함. 저장소에서 변경하세요',
+  'chat.draftStarters.share': '팀과 공유',
+  'chat.draftStarters.makePersonal': '개인용으로 전환',
   'chat.scrollToBottom.aria': '맨 아래로 스크롤',
   'chat.promptNavigator.aria': '프롬프트 탐색',
   'chat.promptNavigator.currentPrompt': '현재 프롬프트',

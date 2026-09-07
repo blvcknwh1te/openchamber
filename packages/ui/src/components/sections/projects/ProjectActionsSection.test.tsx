@@ -40,9 +40,8 @@ mock.module('@/lib/openchamberConfig', () => ({
     },
   }),
   saveProjectActionsState: async () => true,
-}));
-mock.module('@/lib/sharedTrustConfirmation', () => ({
-  resetSharedSetupTrust: async () => true,
+  updateProjectSetup: async () => true,
+  updateSharedProjectSetup: async () => null,
 }));
 
 const { ProjectActionsSection } = await import('./ProjectActionsSection');

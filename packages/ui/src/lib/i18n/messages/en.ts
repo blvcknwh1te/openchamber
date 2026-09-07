@@ -2123,6 +2123,8 @@ export const dict = {
   'chat.draftStarters.sectionSkills': 'Skills',
   'chat.draftStarters.remove': 'Remove',
   'chat.draftStarters.sharedTitle': 'Pinned by the team; change it in the repository',
+  'chat.draftStarters.share': 'Share with team',
+  'chat.draftStarters.makePersonal': 'Make personal',
   'chat.scrollToBottom.aria': 'Scroll to bottom',
   'chat.promptNavigator.aria': 'Prompt navigation',
   'chat.promptNavigator.currentPrompt': 'Current prompt',

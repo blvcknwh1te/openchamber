@@ -401,14 +401,17 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
   // Project setup (worktree setup commands, project actions, draft starters)
   // lives in the user's OpenChamber config dir; the extension host owns the
   // file the way the OpenChamber server does elsewhere.
-  const projectSetupMatch = normalizedPathname.match(/^\/api\/projects\/([^/]+)\/config$/);
-  if (projectSetupMatch && (method === 'GET' || method === 'PUT')) {
+  const projectSetupMatch = normalizedPathname.match(/^\/api\/projects\/([^/]+)\/config(\/shared)?$/);
+  if (projectSetupMatch && (method === 'GET' || method === 'PUT') && !(method === 'GET' && projectSetupMatch[2])) {
     const projectId = decodeURIComponent(projectSetupMatch[1]);
     const payload = method === 'GET'
       ? { projectId }
       : { projectId, patch: await extractJsonBody(input, init, method) };
+    const bridgeType = method === 'GET'
+      ? 'api:project-setup:get'
+      : projectSetupMatch[2] ? 'api:project-setup:update-shared' : 'api:project-setup:update';
     try {
-      const data = await sendBridgeMessage(method === 'GET' ? 'api:project-setup:get' : 'api:project-setup:update', payload);
+      const data = await sendBridgeMessage(bridgeType, payload);
       return jsonResponse(data, 200);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Project config request failed';

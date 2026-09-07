@@ -34,6 +34,18 @@ export const registerProjectSetupRoutes = (app, dependencies) => {
     }
   });
 
+  // The team's shared file in the checkout; see `updateSharedProjectSetup`.
+  app.put('/api/projects/:projectId/config/shared', async (req, res) => {
+    if (!isObjectRecord(req.body)) {
+      return res.status(400).json({ error: 'Body must be an object' });
+    }
+    try {
+      return res.json(await projectConfigRuntime.updateSharedProjectSetup(req.params.projectId, req.body));
+    } catch (error) {
+      return respondWithError(res, error, 'Failed to save the shared project config');
+    }
+  });
+
   app.put('/api/projects/:projectId/config', async (req, res) => {
     if (!isObjectRecord(req.body)) {
       return res.status(400).json({ error: 'Body must be an object' });

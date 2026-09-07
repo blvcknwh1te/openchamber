@@ -2089,6 +2089,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.draftStarters.sectionSkills': 'Skills',
   'chat.draftStarters.remove': 'Remove',
   'chat.draftStarters.sharedTitle': '由团队固定；请在仓库中修改',
+  'chat.draftStarters.share': '与团队共享',
+  'chat.draftStarters.makePersonal': '设为个人',
   'chat.scrollToBottom.aria': '滚动到底部',
   'chat.promptNavigator.aria': '提示词导航',
   'chat.promptNavigator.currentPrompt': '当前提示',

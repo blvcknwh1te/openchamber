@@ -6,7 +6,7 @@ import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { updateDesktopSettings } from '@/lib/persistence';
-import { getProjectDraftStarters, saveProjectDraftStarters, type ProjectDraftStarter } from '@/lib/openchamberConfig';
+import { getProjectDraftStarters, saveProjectDraftStarters, updateSharedProjectSetup, type ProjectDraftStarter } from '@/lib/openchamberConfig';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import type { IconName } from '@/components/icon/icons';
 import {
@@ -57,6 +57,10 @@ export type UseDraftStartersResult = {
     addStarter: (item: PinnableItem) => void;
     removeStarter: (group: StarterGroup, ref: DraftStarterRef) => void;
     reorder: (group: StarterGroup, fromId: string, toId: string) => void;
+    /** Move one of the user's project starters into the repo's shared file. */
+    shareStarter: (ref: DraftStarterRef) => void;
+    /** Move a shared project starter back into the user's own list. */
+    unshareStarter: (ref: DraftStarterRef) => void;
 };
 
 export function useDraftStarters(): UseDraftStartersResult {
@@ -211,6 +215,35 @@ export function useDraftStarters(): UseDraftStartersResult {
         }
     }, [personalProjectStarters, globalRaw, persistProject, persistGlobal]);
 
+    // Sharing moves a starter between the two files: into the repo file first,
+    // then out of the personal list; the merged list is reloaded from the server.
+    const reloadProjectStarters = React.useCallback(() => {
+        if (!projectRef) return;
+        void getProjectDraftStarters(projectRef).then(setProjectStarters).catch(() => undefined);
+    }, [projectRef]);
+
+    const shareStarter = React.useCallback((ref: DraftStarterRef) => {
+        if (!projectRef) return;
+        const shared = projectStarters.filter((r) => r.source === 'shared').map(({ type, name }) => ({ type, name }));
+        if (shared.some((r) => sameStarter(r, ref))) return;
+        void (async () => {
+            if (!(await updateSharedProjectSetup(projectRef, { draftStarters: [...shared, ref] }))) return;
+            await saveProjectDraftStarters(projectRef, personalProjectStarters.filter((r) => !sameStarter(r, ref)));
+            reloadProjectStarters();
+        })();
+    }, [personalProjectStarters, projectRef, projectStarters, reloadProjectStarters]);
+
+    const unshareStarter = React.useCallback((ref: DraftStarterRef) => {
+        if (!projectRef) return;
+        const shared = projectStarters.filter((r) => r.source === 'shared').map(({ type, name }) => ({ type, name }));
+        if (!shared.some((r) => sameStarter(r, ref))) return;
+        void (async () => {
+            if (!(await updateSharedProjectSetup(projectRef, { draftStarters: shared.filter((r) => !sameStarter(r, ref)) }))) return;
+            await saveProjectDraftStarters(projectRef, [...personalProjectStarters.filter((r) => !sameStarter(r, ref)), ref]);
+            reloadProjectStarters();
+        })();
+    }, [personalProjectStarters, projectRef, projectStarters, reloadProjectStarters]);
+
     const reorder = React.useCallback((group: StarterGroup, fromId: string, toId: string) => {
         // Project chips reorder among the user's own; shared ones keep their place in front.
         const base = group === 'project' ? personalProjectStarters : (globalRaw ?? DEFAULT_GLOBAL_STARTERS);
@@ -221,5 +254,5 @@ export function useDraftStarters(): UseDraftStartersResult {
         if (group === 'project') persistProject(next); else persistGlobal(next);
     }, [personalProjectStarters, globalRaw, persistProject, persistGlobal]);
 
-    return { global, project, pinnable, hasProject: !!projectRef, ensureLoaded, addStarter, removeStarter, reorder };
+    return { global, project, pinnable, hasProject: !!projectRef, ensureLoaded, addStarter, removeStarter, reorder, shareStarter, unshareStarter };
 }

@@ -214,6 +214,36 @@ describe('project setup bridge', () => {
     });
   });
 
+  test('writes and removes the shared file through the bridge, trusting the writer', async () => {
+    await withStore(async (store, dir) => {
+      const repo = path.join(dir, 'repo');
+      await fs.promises.mkdir(repo, { recursive: true });
+      const projectId = projectIdFor(repo);
+      const shared = await handleProjectSetupBridgeMessage(
+        { id: '1', type: 'api:project-setup:update-shared', payload: { projectId, patch: { setupWorktree: ['bun install'], plansDir: 'docs/plans' } } },
+        store,
+      );
+      assert.equal(shared?.success, true);
+      const view = shared?.data as { trust: { trusted: boolean }; shared: { status: string; plansDir: string | null } };
+      assert.equal(view.shared.status, 'ok');
+      assert.equal(view.shared.plansDir, 'docs/plans');
+      assert.equal(view.trust.trusted, true);
+      const raw = JSON.parse(await fs.promises.readFile(path.join(repo, '.openchamber', 'project.json'), 'utf8'));
+      assert.deepEqual(raw, { version: 1, setupWorktree: ['bun install'], plansDir: 'docs/plans' });
+
+      const emptied = await store.updateShared(projectId, { setupWorktree: [], plansDir: null });
+      assert.equal(emptied.shared.status, 'missing');
+      assert.equal(fs.existsSync(path.join(repo, '.openchamber')), false);
+
+      const missing = await handleProjectSetupBridgeMessage(
+        { id: '2', type: 'api:project-setup:update-shared', payload: { projectId: projectIdFor(path.join(dir, 'nope')), patch: {} } },
+        store,
+      );
+      assert.equal(missing?.success, false);
+      assert.match(missing?.error ?? '', /checkout not found/);
+    });
+  });
+
   test('serializes two quick updates to one file', async () => {
     await withStore(async (store, dir) => {
       await Promise.all([

@@ -2119,6 +2119,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.draftStarters.sectionSkills': 'スキル',
   'chat.draftStarters.remove': '削除',
   'chat.draftStarters.sharedTitle': 'チームがピン留め。リポジトリで変更してください',
+  'chat.draftStarters.share': 'チームと共有',
+  'chat.draftStarters.makePersonal': '個人用にする',
   'chat.scrollToBottom.aria': '一番下にスクロール',
   'chat.promptNavigator.aria': 'プロンプトナビゲーション',
   'chat.promptNavigator.currentPrompt': '現在のプロンプト',

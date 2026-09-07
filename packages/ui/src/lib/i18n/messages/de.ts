@@ -1918,6 +1918,8 @@ export const dict = {
   'chat.draftStarters.sectionSkills': 'Fähigkeiten',
   'chat.draftStarters.remove': 'Entfernen',
   'chat.draftStarters.sharedTitle': 'Vom Team angeheftet; im Repository ändern',
+  'chat.draftStarters.share': 'Mit Team teilen',
+  'chat.draftStarters.makePersonal': 'Persönlich machen',
   'chat.scrollToBottom.aria': 'Zum Ende scrollen',
   'chat.promptNavigator.aria': 'Prompt-Navigation',
   'chat.promptNavigator.currentPrompt': 'Aktueller Prompt',

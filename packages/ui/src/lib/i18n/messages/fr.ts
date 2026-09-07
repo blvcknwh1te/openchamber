@@ -3160,6 +3160,8 @@ export const dict = {
   'chat.draftStarters.sectionSkills': 'Skills',
   'chat.draftStarters.remove': 'Retirer',
   'chat.draftStarters.sharedTitle': 'Épinglé par l\'équipe ; à modifier dans le dépôt',
+  'chat.draftStarters.share': 'Partager avec l\'équipe',
+  'chat.draftStarters.makePersonal': 'Rendre personnel',
   'chat.commandAutocomplete.command.handoffReviewDescription': 'Créer ou réutiliser une session de revue séparée à partir d’un handoff généré.',
   'chat.commandAutocomplete.command.featurePlanDescription': 'Lancer une session guidée et interactive de planification pour une nouvelle fonctionnalité.',
   'chat.commandAutocomplete.command.craftGoalDescription': 'Transformer une idée ou une tâche en Goal clair et vérifiable.',

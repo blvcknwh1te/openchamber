@@ -2101,6 +2101,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.draftStarters.sectionSkills": "Skills",
   "chat.draftStarters.remove": "Remove",
   "chat.draftStarters.sharedTitle": "Fijado por el equipo; cámbialo en el repositorio",
+  "chat.draftStarters.share": "Compartir con el equipo",
+  "chat.draftStarters.makePersonal": "Hacer personal",
   "chat.scrollToBottom.aria": "Ir al final",
   "chat.promptNavigator.aria": "Navegación de prompts",
   "chat.promptNavigator.currentPrompt": "Prompt actual",

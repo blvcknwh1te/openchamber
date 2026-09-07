@@ -778,6 +778,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.draftStarters.sectionSkills': 'Skills',
   'chat.draftStarters.remove': 'Remove',
   'chat.draftStarters.sharedTitle': 'Przypięte przez zespół; zmień to w repozytorium',
+  'chat.draftStarters.share': 'Udostępnij zespołowi',
+  'chat.draftStarters.makePersonal': 'Zrób osobistym',
   'chat.scrollToBottom.aria': 'Przewiń na dół',
   'chat.promptNavigator.aria': 'Nawigacja promptów',
   'chat.promptNavigator.currentPrompt': 'Bieżący prompt',

@@ -17,6 +17,8 @@ import {
   getProjectSetup,
   saveWorktreeSetupCommands,
   saveWorktreeSetupWaitEnabled,
+  updateProjectSetup,
+  updateSharedProjectSetup,
 } from '@/lib/openchamberConfig';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -55,6 +57,9 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
   const [setupCommands, setSetupCommands] = React.useState<string[]>([]);
   const [sharedSetupCommands, setSharedSetupCommands] = React.useState<string[]>([]);
   const [sharedConfigPath, setSharedConfigPath] = React.useState('');
+  const [replaceSharedCommands, setReplaceSharedCommands] = React.useState(false);
+  const [isSharing, setIsSharing] = React.useState(false);
+  const [reloadCounter, setReloadCounter] = React.useState(0);
   const [waitForSetupCommands, setWaitForSetupCommands] = React.useState(false);
   const [isLoadingCommands, setIsLoadingCommands] = React.useState(false);
   const [commandsSnapshot, setCommandsSnapshot] = React.useState<string | null>(null);
@@ -158,6 +163,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
           setSetupCommands(nextCommands);
           setSharedSetupCommands(setup.shared.setupWorktree);
           setSharedConfigPath(setup.shared.path);
+          setReplaceSharedCommands(setup.personal.setupWorktreeMode === 'replace');
           setCommandsSnapshot(JSON.stringify(nextCommands));
           setWaitForSetupCommands(setup.setupWorktreeWait);
         }
@@ -178,7 +184,58 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
     return () => {
       cancelled = true;
     };
-  }, [projectRef]);
+  }, [projectRef, reloadCounter]);
+
+  const reload = React.useCallback(() => setReloadCounter((count) => count + 1), []);
+
+  // Sharing moves a command between the two files: into the repo file first,
+  // then out of the personal list; the lists reload from disk afterwards.
+  const shareCommand = React.useCallback(async (index: number) => {
+    if (!projectRef || isSharing) return;
+    const command = setupCommands[index]?.trim();
+    if (!command) return;
+    setIsSharing(true);
+    try {
+      const shared = await updateSharedProjectSetup(projectRef, {
+        setupWorktree: [...sharedSetupCommands.filter((entry) => entry !== command), command],
+      });
+      if (!shared) {
+        toast.error(t('settings.projects.shared.toast.shareFailed'));
+        return;
+      }
+      await saveWorktreeSetupCommands(projectRef, setupCommands.filter((_entry, position) => position !== index));
+      reload();
+    } finally {
+      setIsSharing(false);
+    }
+  }, [isSharing, projectRef, reload, setupCommands, sharedSetupCommands, t]);
+
+  const makeCommandPersonal = React.useCallback(async (command: string) => {
+    if (!projectRef || isSharing) return;
+    setIsSharing(true);
+    try {
+      const shared = await updateSharedProjectSetup(projectRef, {
+        setupWorktree: sharedSetupCommands.filter((entry) => entry !== command),
+      });
+      if (!shared) {
+        toast.error(t('settings.projects.shared.toast.shareFailed'));
+        return;
+      }
+      await saveWorktreeSetupCommands(projectRef, [...setupCommands.filter((entry) => entry.trim().length > 0), command]);
+      reload();
+    } finally {
+      setIsSharing(false);
+    }
+  }, [isSharing, projectRef, reload, setupCommands, sharedSetupCommands, t]);
+
+  const handleReplaceSharedCommandsChange = React.useCallback(async (next: boolean) => {
+    if (!projectRef) return;
+    setReplaceSharedCommands(next);
+    if (!(await updateProjectSetup(projectRef, { setupWorktreeMode: next ? 'replace' : 'append' }))) {
+      toast.error(t('settings.openchamber.worktrees.setup.toast.saveFailed'));
+      setReplaceSharedCommands(!next);
+    }
+  }, [projectRef, t]);
 
   const persistSetupCommands = React.useCallback(async (commands: string[]): Promise<boolean> => {
     if (!projectRef) {
@@ -396,12 +453,28 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                 </p>
                 {sharedSetupCommands.map((command, index) => (
                   <div key={`shared-${index}`} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{command}</span>
+                    <span className={cn('min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground', replaceSharedCommands && 'line-through opacity-60')}>{command}</span>
                     <span className="shrink-0 typography-micro px-1 rounded leading-none pb-px text-muted-foreground bg-[var(--surface-subtle)]">
                       {t('settings.projects.shared.badge')}
                     </span>
+                    <Button type="button" variant="ghost" size="xs" className="!font-normal shrink-0" disabled={isSharing} onClick={() => void makeCommandPersonal(command)}>
+                      {t('settings.projects.shared.actions.makePersonal')}
+                    </Button>
                   </div>
                 ))}
+                <label
+                  data-settings-item="projects.worktree.setup.replace"
+                  className="flex cursor-pointer items-center gap-2 py-1"
+                >
+                  <Checkbox
+                    checked={replaceSharedCommands}
+                    onChange={(next) => void handleReplaceSharedCommandsChange(next)}
+                    ariaLabel={t('settings.projects.shared.replaceModeAria')}
+                  />
+                  <span className={cn('typography-ui-label font-normal', replaceSharedCommands ? 'text-foreground' : 'text-foreground/60')}>
+                    {t('settings.projects.shared.replaceMode')}
+                  </span>
+                </label>
               </div>
             ) : null}
             {setupCommands.map((command, index) => (
@@ -413,6 +486,18 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                   placeholder={t('settings.openchamber.worktrees.setup.commandPlaceholder')}
                   className="h-7 min-w-0 flex-1 font-mono text-xs"
                 />
+                {command.trim() && !commandsHaveChanges ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    className="!font-normal h-7 shrink-0"
+                    disabled={isSharing}
+                    onClick={() => void shareCommand(index)}
+                  >
+                    {t('settings.projects.shared.actions.share')}
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"

@@ -17,7 +17,7 @@ Notes, todos, and plans moved out of this file to `packages/web/server/lib/proje
 A second, optional source is the team's shared file, `<repo>/.openchamber/project.json`
 (`version: 1`; `setupWorktree`, `setupWorktreeWait`, `projectActions`, `draftStarters`,
 `plansDir`). The server reads it from the checkout the project id names
-(`projectPathFromId`) and never writes it in this phase. `GET /api/projects/:projectId/config`
+(`projectPathFromId`). `GET /api/projects/:projectId/config`
 returns one merged view: what runs at the top level, plus `shared` and `personal`
 blocks so a page can edit the personal file without copying a teammate's entry into it.
 
@@ -33,6 +33,20 @@ blocks so a page can edit the personal file without copying a teammate's entry i
 A shared file that exists but cannot be parsed (or names a `plansDir` outside the
 repo) is `shared.status: "invalid"` with a `reason`; the personal setup is still
 served. It is never treated as "no shared setup".
+
+### Writing the shared file
+
+`PUT /api/projects/:projectId/config/shared` (`updateSharedProjectSetup`) is
+the only writer. The patch replaces the keys it names over the current file
+(a broken file counts as empty, so a write repairs it); the result is written
+pretty-printed with `version` first and only the keys that carry something
+(`serializeSharedProjectConfig`), because the file is committed and reviewed.
+A result with nothing in it removes the file and the `.openchamber` folder
+when that leaves it empty, so unsharing the last item leaves no trace. The
+write refuses a checkout that does not exist and a `plansDir` outside the
+repo. The writer has seen what it shared, so its personal trust record is set
+to the new hash; teammates still get the prompt. The shared UI composes
+"share" and "make personal" as a shared write followed by a personal write.
 
 ### Trust
 

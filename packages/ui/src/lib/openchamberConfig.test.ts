@@ -68,7 +68,9 @@ mock.module('@/lib/runtime-fetch', () => ({
     if (failWith !== null) {
       return new Response(JSON.stringify({ error: 'nope' }), { status: failWith });
     }
-    if (method === 'PUT') {
+    if (method === 'PUT' && url.endsWith('/shared')) {
+      sharedOverride = { ...(sharedOverride ?? {}), status: 'ok', ...(body as Record<string, unknown>) };
+    } else if (method === 'PUT') {
       const patch = { ...(body as Record<string, unknown>) };
       delete patch.projectPath;
       stored = { ...stored, ...patch };
@@ -85,6 +87,7 @@ const {
   getWorktreeSetupWaitEnabled,
   saveProjectActionsState,
   saveWorktreeSetupCommands,
+  updateSharedProjectSetup,
 } = await import('./openchamberConfig');
 
 describe('project config client', () => {
@@ -156,6 +159,22 @@ describe('project config client', () => {
   test('parses the personal starters defensively from the response', async () => {
     stored = { ...emptyPersonal, draftStarters: [{ type: 'skill', name: 'triage-prs' }, { type: 'bogus', name: 'x' }] };
     expect((await getProjectSetup(project)).personal.draftStarters).toEqual([{ type: 'skill', name: 'triage-prs' }]);
+  });
+
+  test('writes the shared file through its own route without source marks and returns the view', async () => {
+    const view = await updateSharedProjectSetup(project, {
+      projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev', source: 'personal' }],
+      plansDir: 'docs/plans',
+    });
+    expect(requests[0]).toEqual({
+      url: `${endpoint}/shared`,
+      method: 'PUT',
+      body: { projectActions: [{ id: 'dev', name: 'Dev', command: 'bun run dev' }], plansDir: 'docs/plans' },
+    });
+    expect(view?.shared.plansDir).toBe('docs/plans');
+    expect(view?.projectActions).toEqual([{ id: 'dev', name: 'Dev', command: 'bun run dev', source: 'shared' }]);
+    failWith = 500;
+    expect(await updateSharedProjectSetup(project, { plansDir: null })).toBeNull();
   });
 
   test('a failed read resolves to the empty value and a failed write to false', async () => {

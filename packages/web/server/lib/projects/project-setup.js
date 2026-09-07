@@ -331,7 +331,70 @@ const sharedBlockOf = (sharedRead, shared) => {
   return block;
 };
 
+/** True when the shared config carries nothing: the file should not exist. */
+export const isSharedProjectConfigEmpty = (config) => (
+  config.setupWorktree.length === 0
+  && config.setupWorktreeWait === null
+  && config.projectActions.length === 0
+  && config.draftStarters.length === 0
+  && config.plansDir === null
+);
+
+/**
+ * The bytes of a shared file: version first, then only the keys that carry
+ * something, in a fixed order, pretty-printed — the file is committed and
+ * reviewed, so its diffs must stay readable. Actions lose their `source`
+ * mark and keep only the fields the user set.
+ */
+export const serializeSharedProjectConfig = (config) => {
+  const document = { version: SHARED_CONFIG_VERSION };
+  if (config.setupWorktree.length > 0) document.setupWorktree = config.setupWorktree;
+  if (config.setupWorktreeWait !== null) document.setupWorktreeWait = config.setupWorktreeWait;
+  if (config.projectActions.length > 0) document.projectActions = sanitizeProjectActions(config.projectActions);
+  if (config.draftStarters.length > 0) document.draftStarters = config.draftStarters;
+  if (config.plansDir !== null) document.plansDir = config.plansDir;
+  return `${JSON.stringify(document, null, 2)}\n`;
+};
+
+/**
+ * The next shared config after a client patch over the current one. Every
+ * named key replaces the current value; a wrongly shaped key is a validation
+ * error, and a `plansDir` outside the repo is refused rather than stored.
+ */
+export const applySharedProjectSetupPatch = (current, patch) => {
+  if (!isObjectRecord(patch)) throw new Error('patch must be an object');
+  const next = { ...current };
+  if ('setupWorktree' in patch) {
+    if (!Array.isArray(patch.setupWorktree)) throw new Error('setupWorktree must be an array of commands');
+    next.setupWorktree = sanitizeSetupCommands(patch.setupWorktree);
+  }
+  if ('setupWorktreeWait' in patch) {
+    if (patch.setupWorktreeWait !== null && typeof patch.setupWorktreeWait !== 'boolean') throw new Error('setupWorktreeWait must be a boolean or null');
+    next.setupWorktreeWait = patch.setupWorktreeWait;
+  }
+  if ('projectActions' in patch) {
+    if (!Array.isArray(patch.projectActions)) throw new Error('projectActions must be an array');
+    next.projectActions = sanitizeProjectActions(patch.projectActions);
+  }
+  if ('draftStarters' in patch) {
+    if (!Array.isArray(patch.draftStarters)) throw new Error('draftStarters must be an array');
+    next.draftStarters = sanitizeDraftStarters(patch.draftStarters);
+  }
+  if ('plansDir' in patch) {
+    if (patch.plansDir === null || (typeof patch.plansDir === 'string' && !patch.plansDir.trim())) {
+      next.plansDir = null;
+    } else {
+      const plansDir = normalizePlansDir(patch.plansDir);
+      if (!plansDir) throw new Error('plansDir must be a relative path inside the repository');
+      next.plansDir = plansDir;
+    }
+  }
+  return next;
+};
+
+export const EMPTY_SHARED_PROJECT_CONFIG = EMPTY_SHARED;
+
 export const isProjectSetupValidationError = (error) => {
   const message = error instanceof Error ? error.message : '';
-  return message.includes('must be') || message.includes('is required') || message.includes('unsupported characters');
+  return message.includes('must be') || message.includes('is required') || message.includes('unsupported characters') || message.includes('not found');
 };

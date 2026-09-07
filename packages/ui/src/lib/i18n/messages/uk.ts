@@ -2101,6 +2101,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.draftStarters.sectionSkills": "Скіли",
   "chat.draftStarters.remove": "Прибрати",
   "chat.draftStarters.sharedTitle": "Закріплено командою; змінюйте в репозиторії",
+  "chat.draftStarters.share": "Поділитись із командою",
+  "chat.draftStarters.makePersonal": "Зробити особистим",
   "chat.scrollToBottom.aria": "Прокрутити вниз",
   "chat.promptNavigator.aria": "Навігація за промптами",
   "chat.promptNavigator.currentPrompt": "Поточний промпт",
