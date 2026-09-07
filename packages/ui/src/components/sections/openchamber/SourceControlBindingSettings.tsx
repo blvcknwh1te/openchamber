@@ -11,6 +11,7 @@ import type { GitIdentityProfile, GitIdentitySummary, SourceControlRepositoryBin
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { repositoryBindingOwner, useRepositoryBinding } from '@/lib/source-control/repository-binding';
 import { useUIStore } from '@/stores/useUIStore';
+import { getSourceControlAuthKey, useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import { useGitStore } from '@/stores/useGitStore';
 import {
   SETTINGS_FIELDS_STACK_CLASS,
@@ -125,8 +126,17 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
   const open = openScope === binding.scope;
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
+  const authEntries = useSourceControlAuthStore((state) => state.entries);
   const read = binding.read;
   const providers = read?.binding?.providers ?? [];
+  // The binding stores an opaque credential ID. Naming the account matters once
+  // more than one is connected: the row otherwise cannot say which identity
+  // this repository acts as.
+  const boundAccountName = (provider: (typeof providers)[number]): string => {
+    const status = authEntries[getSourceControlAuthKey(provider)]?.status;
+    const account = status?.accounts?.find((entry) => entry.id === provider.accountId);
+    return account?.user.username.trim() ?? '';
+  };
   const remotes = read?.repository.remotes ?? [];
   const grants = new Map((read?.binding?.remotes ?? []).map((grant) => [grant.name, grant]));
   const ready = binding.status === 'ready';
@@ -191,7 +201,9 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
         {providers.length ? providers.map((provider) => summaryRow(
           t('gitView.context.provider'),
           <>
-            {getSourceControlProviderLabel(provider.provider)} · {provider.instance} · {provider.primaryRemote}
+            {getSourceControlProviderLabel(provider.provider)} · {provider.instance}
+            {boundAccountName(provider) ? <> · @{boundAccountName(provider)}</> : null}
+            {' · '}{provider.primaryRemote}
             {' · '}<Readiness ready={ready && provider.readiness === 'ready'} />
           </>,
           JSON.stringify([provider.provider, provider.instance, provider.accountId, provider.primaryRemote]),

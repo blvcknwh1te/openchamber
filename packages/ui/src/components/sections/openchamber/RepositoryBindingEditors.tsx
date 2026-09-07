@@ -37,8 +37,11 @@ import {
   SETTINGS_SELECT_SIZE,
   SettingsCheckboxRow,
   SettingsControlGroup,
+  SettingsGroupTitle,
   SettingsStackedField,
 } from '../shared/SettingsSection';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Icon } from '@/components/icon/Icon';
 import { ManagedSshCredentials } from './ManagedSshCredentials';
 import { useGitOperationRecovery } from '@/components/views/git/useGitOperationRecovery';
 import { GitOperationStatus } from '@/components/views/git/GitOperationStatus';
@@ -441,6 +444,7 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
   const [unverifiedConfirmed, setUnverifiedConfirmed] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
   const requestRef = React.useRef(0);
   const identities = useSourceControlAuthStore((state) => state.identities);
   const authEntries = useSourceControlAuthStore((state) => state.entries);
@@ -463,6 +467,7 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
     setUnverifiedConfirmed(false);
     setSaving(false);
     setError(false);
+    setOpen(false);
     return () => { requestRef.current += 1; };
   }, [binding.scope, git, sourceControl]);
 
@@ -557,11 +562,19 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
 
   const kindLabel = (kind: GitCheckoutHydrationRequirement['kind']) => t(kind === 'submodule' ? 'gitView.hydration.kind.submodule' : 'gitView.hydration.kind.lfs');
 
+  // Most repositories have neither submodules nor LFS, and the endpoint list
+  // only appears once a parent remote is chosen and the checkout is inspected.
+  // The block therefore stays closed until someone asks for it.
   return (
+    <Collapsible open={open} onOpenChange={setOpen} className={cn('min-w-0', className)}>
+      <CollapsibleTrigger className="w-auto justify-start gap-1.5">
+        <SettingsGroupTitle>{t('gitView.hydration.title')}</SettingsGroupTitle>
+        <Icon name={open ? 'arrow-up-s' : 'arrow-down-s'} className="h-4 w-4 text-muted-foreground" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
     <SettingsControlGroup
-      title={t('gitView.hydration.title')}
       description={t('gitView.hydration.description')}
-      className={cn('min-w-0', className)}
+      className="min-w-0 pt-2"
       contentClassName={SETTINGS_FIELDS_STACK_CLASS}
     >
       <SettingsStackedField label={t('gitView.hydration.parentRemote')} controlClassName={EDITOR_CONTROL_CLASS}>
@@ -637,5 +650,7 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
         </> : null}
       </div>
     </SettingsControlGroup>
+      </CollapsibleContent>
+    </Collapsible>
   );
 };
