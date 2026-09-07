@@ -2272,6 +2272,8 @@ export const settingsDict = {
   'settings.gitlab.actions.useInstance': 'Використати екземпляр',
   'settings.gitlab.status.checking': 'Перевірка з’єднання…',
   'settings.gitlab.status.operationFailed': 'Не вдалося виконати операцію',
+  'settings.gitlab.status.notConnected': 'Не підключено',
+  'settings.gitlab.status.connected': 'Підключено',
   'settings.gitlab.actions.connect': 'Підключити GitLab',
   'settings.gitlab.token.label': 'Персональний токен доступу',
   'settings.gitlab.token.info': 'Токен зберігається сервером OpenChamber і ніколи не повертається до інтерфейсу.',

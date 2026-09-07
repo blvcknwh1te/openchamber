@@ -2272,6 +2272,8 @@ export const settingsDict = {
   'settings.gitlab.actions.useInstance': 'Utiliser l’instance',
   'settings.gitlab.status.checking': 'Vérification de la connexion…',
   'settings.gitlab.status.operationFailed': 'Échec de l’opération',
+  'settings.gitlab.status.notConnected': 'Non connecté',
+  'settings.gitlab.status.connected': 'Connecté',
   'settings.gitlab.actions.connect': 'Connecter GitLab',
   'settings.gitlab.token.label': 'Jeton d’accès personnel',
   'settings.gitlab.token.info': 'Le jeton est stocké par le serveur OpenChamber et n’est jamais renvoyé à l’interface.',

@@ -2272,6 +2272,8 @@ export const settingsDict = {
   'settings.gitlab.actions.useInstance': '使用執行個體',
   'settings.gitlab.status.checking': '正在檢查連線…',
   'settings.gitlab.status.operationFailed': '操作失敗',
+  'settings.gitlab.status.notConnected': '未連線',
+  'settings.gitlab.status.connected': '已連線',
   'settings.gitlab.actions.connect': '連線 GitLab',
   'settings.gitlab.token.label': '個人存取權杖',
   'settings.gitlab.token.info': '權杖由 OpenChamber 伺服器儲存，絕不會傳回介面。',

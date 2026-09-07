@@ -2272,6 +2272,8 @@ export const settingsDict = {
   'settings.gitlab.actions.useInstance': 'インスタンスを使用',
   'settings.gitlab.status.checking': '接続を確認中…',
   'settings.gitlab.status.operationFailed': '操作に失敗しました',
+  'settings.gitlab.status.notConnected': '未接続',
+  'settings.gitlab.status.connected': '接続済み',
   'settings.gitlab.actions.connect': 'GitLab に接続',
   'settings.gitlab.token.label': '個人アクセストークン',
   'settings.gitlab.token.info': 'トークンは OpenChamber サーバーに保存され、UI には返されません。',

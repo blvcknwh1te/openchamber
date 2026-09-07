@@ -2276,6 +2276,8 @@ export const settingsDict = {
   'settings.gitlab.actions.useInstance': 'Instanz verwenden',
   'settings.gitlab.status.checking': 'Verbindung wird geprüft…',
   'settings.gitlab.status.operationFailed': 'Vorgang fehlgeschlagen',
+  'settings.gitlab.status.notConnected': 'Nicht verbunden',
+  'settings.gitlab.status.connected': 'Verbunden',
   'settings.gitlab.actions.connect': 'GitLab verbinden',
   'settings.gitlab.token.label': 'Persönliches Zugriffstoken',
   'settings.gitlab.token.info': 'Das Token wird vom OpenChamber-Server gespeichert und nie an die Oberfläche zurückgegeben.',

@@ -4,24 +4,26 @@ import { toast } from '@/components/ui';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { getSourceControlAuthKey, useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import type { SourceControlDeviceFlowStart } from '@/lib/api/types';
-import { useDeviceInfo } from '@/lib/device';
-import { cn } from '@/lib/utils';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
-import { Icon } from "@/components/icon/Icon";
-import { SettingsSection, SettingsGroupTitle, SettingsFieldRow } from '@/components/sections/shared/SettingsSection';
+import { SettingsFieldRow } from '@/components/sections/shared/SettingsSection';
 import { GITHUB_SOURCE_CONTROL_IDENTITY } from '@/lib/source-control/identity';
 import { getRuntimeKey, subscribeRuntimeEndpointWillChange } from '@/lib/runtime-switch';
 import { SourceControlAccountList } from './SourceControlAccountList';
+import { DeviceFlowCode } from './DeviceFlowCode';
 
+/**
+ * Body of the GitHub card in Settings → Integrations. The card row already
+ * names the provider and shows the connection pill, so this renders only the
+ * accounts, the sign-in flow, and the CLI fallback.
+ */
 type GitHubSettingsProps = {
-  /** Rendered inside the Integrations card: no section chrome of its own. */
+  /** The Integrations card is the only host today; the flag is its contract and changes nothing here. */
   embedded?: boolean;
 };
 
-export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ embedded = false }) => {
+export const GitHubSettings: React.FC<GitHubSettingsProps> = () => {
   const { t } = useI18n();
-  const { isMobile } = useDeviceInfo();
   const sourceControl = getRegisteredRuntimeAPIs()?.sourceControl;
   const authKey = getSourceControlAuthKey(GITHUB_SOURCE_CONTROL_IDENTITY);
   const authEntry = useSourceControlAuthStore((state) => state.entries[authKey]);
@@ -224,26 +226,10 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ embedded = false
   const refreshError = status?.status === 'unreachable' || status?.status === 'temporarily-unavailable'
     ? status.message || t('sessionAuth.error.networkRetry')
     : null;
+  const showCliFallback = Boolean(ghCli?.available && !ghCli.active && (!ghCli.user || ghCli.disabled));
 
-  const sections = (
-    <>
-      <SettingsSection
-        title={t('settings.github.title')}
-        divider={false}
-        settingsItem="git.github-account"
-        info={t('settings.github.page.tooltip.connectAccount')}
-        headerAction={(
-          <Button
-            data-settings-item="git.github-connect"
-            size="sm"
-            variant={accounts.length > 0 ? 'outline' : 'default'}
-            onClick={startConnect}
-            disabled={isBusy}
-          >
-            {accounts.length > 0 ? t('settings.github.page.actions.addAccount') : t('settings.github.page.actions.connect')}
-          </Button>
-        )}
-      >
+  return (
+    <div className="space-y-3" data-settings-item="git.github-account">
       {refreshError && (
         <SettingsFieldRow label={t('sessionAuth.error.networkTitle')} description={refreshError}>
           <Button
@@ -290,95 +276,49 @@ export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ embedded = false
         />
       )}
 
-      {flow && (
-        <div className="mt-4 rounded-lg bg-[var(--surface-elevated)]/70 p-4 border border-[var(--interactive-border)]">
-          <div className="space-y-1">
-            <SettingsGroupTitle>{t('settings.github.page.flow.title')}</SettingsGroupTitle>
-            <p className="typography-meta text-muted-foreground">
-              {t('settings.github.page.flow.description')}
-            </p>
-          </div>
-          <div className="flex items-center justify-between gap-3 mt-4">
-            <div className="font-mono text-xl tracking-widest text-foreground bg-[var(--surface-muted)] px-3 py-1.5 rounded-md border border-[var(--interactive-border)]">{flow.userCode}</div>
-            <Button size="sm" asChild>
-              <a
-                href={flow.verificationUriComplete || flow.verificationUri}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t('settings.github.page.actions.openGithub')}
-              </a>
-            </Button>
-          </div>
-          <div className="mt-4 flex items-center justify-between">
-            <span className="typography-micro text-muted-foreground animate-pulse">
-              {t('settings.github.page.flow.waiting')}
-            </span>
-            <Button size="sm" variant="ghost" disabled={isBusy} onClick={stopFlow}>
-              {t('settings.common.actions.cancel')}
-            </Button>
-          </div>
+      {flow ? (
+        <DeviceFlowCode
+          code={flow.userCode}
+          description={t('settings.github.page.flow.description')}
+          openLabel={t('settings.github.page.actions.openGithub')}
+          onOpen={() => void openExternal(flow.verificationUriComplete || flow.verificationUri)}
+          onCancel={stopFlow}
+          disabled={isBusy}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            data-settings-item="git.github-connect"
+            size="sm"
+            variant={accounts.length > 0 ? 'outline' : 'default'}
+            onClick={startConnect}
+            disabled={isBusy}
+          >
+            {accounts.length > 0 ? t('settings.github.page.actions.addAccount') : t('settings.github.page.actions.connect')}
+          </Button>
         </div>
       )}
 
-      </SettingsSection>
-
-      {ghCli?.available && !ghCli?.active && (!ghCli.user || ghCli.disabled) && (
-        <SettingsSection title={t('settings.github.page.ghCli.title')}>
-          <div className="rounded-lg bg-[var(--surface-elevated)]/70 overflow-hidden">
-            <div className={cn("px-4 py-3", isMobile ? "flex flex-col gap-3" : "flex items-center justify-between gap-4")}>
-              <div className={cn("flex min-w-0 items-center gap-4", isMobile ? "w-full" : undefined)}>
-                {ghCli.user?.avatarUrl ? (
-                  <img
-                    src={ghCli.user.avatarUrl}
-                    alt={ghCli.user.username ? t('settings.github.page.avatarAlt.withLogin', { login: ghCli.user.username }) : t('settings.github.page.avatarAlt.fallback')}
-                    className="h-10 w-10 shrink-0 rounded-full border border-[var(--interactive-border)] bg-[var(--surface-muted)] object-cover"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--interactive-border)] bg-[var(--surface-muted)]">
-                    <Icon name="github-fill" className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  {!ghCli.disabled && ghCli.user && (
-                    <div className="typography-ui-label text-foreground truncate">
-                      {ghCli.user.name?.trim() || ghCli.user.username || 'GitHub'}
-                    </div>
-                  )}
-                  {!ghCli.disabled && ghCli.user?.username && (
-                    <div className={cn("flex items-center gap-2 typography-meta text-muted-foreground mt-0.5", isMobile ? "flex-wrap" : "truncate")}>
-                      <Icon name="github-fill" className="h-3.5 w-3.5 shrink-0" />
-                      <span className="font-mono">{ghCli.user.username}</span>
-                      {ghCli.user.email && <span className="opacity-50">•</span>}
-                      {ghCli.user.email && <span>{ghCli.user.email}</span>}
-                    </div>
-                  )}
-                  <div className={cn("typography-meta text-muted-foreground", ghCli.disabled ? "opacity-60" : undefined)}>
-                    {ghCli.disabled
-                      ? t('settings.github.page.ghCli.disabledDescription')
-                      : t('settings.github.page.ghCli.fallbackDescription')}
-                  </div>
-                </div>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => toggleGhCli(!ghCli.disabled)}
-                disabled={isBusy}
-                className={cn(isMobile ? "w-full" : undefined)}
-              >
-                {ghCli.disabled
-                  ? t('settings.github.page.ghCli.actions.enable')
-                  : t('settings.github.page.ghCli.actions.disable')}
-              </Button>
-            </div>
-          </div>
-        </SettingsSection>
-      )}
-    </>
+      {showCliFallback && ghCli ? (
+        <SettingsFieldRow
+          label={t('settings.github.page.ghCli.title')}
+          description={ghCli.disabled
+            ? t('settings.github.page.ghCli.disabledDescription')
+            : t('settings.github.page.ghCli.fallbackDescription')}
+          className="border-t border-[var(--surface-subtle)] pt-3"
+        >
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => toggleGhCli(!ghCli.disabled)}
+            disabled={isBusy}
+          >
+            {ghCli.disabled
+              ? t('settings.github.page.ghCli.actions.enable')
+              : t('settings.github.page.ghCli.actions.disable')}
+          </Button>
+        </SettingsFieldRow>
+      ) : null}
+    </div>
   );
-
-  return embedded ? <div className="space-y-4">{sections}</div> : sections;
 };

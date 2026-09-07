@@ -334,9 +334,15 @@ mock.module('@/components/ui', () => ({
   },
 }));
 mock.module('@/components/icon/Icon', () => ({ Icon: () => null }));
+mock.module('@/components/ui/collapsible', () => ({
+  Collapsible: ({ children }: ElementProps) => children ?? null,
+  CollapsibleTrigger: ({ children }: ElementProps) => children ?? null,
+  CollapsibleContent: ({ children }: ElementProps) => children ?? null,
+}));
 mock.module('@/components/sections/shared/SettingsSection', () => ({
   SETTINGS_CONTROL_CLUSTER_CLASS: '',
   SETTINGS_FIELDS_STACK_CLASS: '',
+  SETTINGS_HELPER_CLASS: '',
   SETTINGS_SELECT_ROW_TRIGGER_CLASS: '',
   SETTINGS_SELECT_SIZE: 'sm',
   SettingsControlGroup: ({ children }: ElementProps) => children ?? null,
