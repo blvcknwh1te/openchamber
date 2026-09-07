@@ -53,7 +53,7 @@ written against staged code never silently re-anchors onto an unstaged edit.
 |---|---|---|
 | `working-tree` (`all` \| `staged` \| `working`) | `staged`, `working` | Untracked files are fetched individually because `git diff` omits them |
 | `branch` | `branch` | `getRangeDiff` uses three-dot `base...head`, so work merged in from the base branch is excluded |
-| `pr` | `pr:<number>` | GitHub returns the merge-base diff, matching the branch semantics |
+| `pr` | `pr:<number>` | GitHub returns the merge-base diff, matching the branch semantics. Every read carries a validated repository binding context |
 
 For the current-branch source, the UI takes the base from the default branch of
 the current branch's tracking remote (`defaultBranches` in the branches
@@ -247,13 +247,17 @@ scope.
 
 **Cache entries** (`entries/<sha256>.json`) are immutable and content-addressed.
 The key covers walkthrough version, prompt version, repo root, source, provider,
-model, output language, and every file's path/status/hunk-ids. The key is computed from the
+model, output language, and every file's path/status/hunk-ids. PR keys also cover
+the validated source-control provider, normalized instance, immutable account ID,
+repository ID, binding revision, directory, trusted primary remote, and PR number. The key is computed from the
 *current* diff, so a hit means the walkthrough was written about exactly this
 code; there is no freshness question to ask of an entry, because staleness is a
 miss. Returning the working tree to an earlier state therefore costs nothing.
 
 **Pointers** (`pointers/<sha256(repoRoot + source)>.json`) are mutable and hold
-`{ cacheKey, generatedAt, repoRoot, sourceKey }`. They answer what the cache
+`{ cacheKey, generatedAt, repoRoot, sourceKey }`. PR pointer keys and payloads
+also contain the full validated read context. Scoped PR reads never consult old
+unscoped pointer files or cache entries. Pointers answer what the cache
 cannot: which walkthrough was last shown here, and has the code moved since. A
 pointer whose entry has been evicted reads as "no walkthrough" — truthful, and
 the next generation overwrites it.
@@ -321,7 +325,9 @@ A dropped connection and a deliberate cancel are indistinguishable at the
 socket, so tying generation to the request lifetime meant an accidental refresh
 threw away a minute of paid-for work. Instead:
 
-- Jobs live in a module-level map keyed by repository + source. A second
+- Jobs live in a module-level map keyed by repository + source. PR jobs add the
+  validated provider, normalized instance, immutable account ID, repository ID,
+  binding revision, directory, trusted primary remote, and PR number. A second
   `generate` for the same source **attaches to the running job** rather than
   starting a rival one — pressing the button again after a refresh costs
   nothing extra.
@@ -382,6 +388,18 @@ be used for this: it re-runs the whole git pipeline.
   `null`. Memory-only and safe to poll.
 - `POST /api/walkthrough/cancel` — `{ directory, source }`; aborts a running
   generation.
+
+For a PR source, all four routes also require flat `provider`, `instance`,
+`accountId`, `repositoryId`, `bindingRevision`, and `primaryRemote` fields in the
+query or JSON body. They do not accept a nested context object. The source-control
+binding service validates these immutable fields before walkthrough service,
+cache, job, credential, repository-coordinate, or provider work. The server
+currently accepts only a validated GitHub context. It resolves the exact bound
+account and trusted primary remote, with no active-account or default-remote
+fallback, and every successful PR response echoes the trusted `readContext`.
+An exact-account `401` reconciles the account through the source-control binding
+service before credential invalidation; `403` and network failures leave the
+account and binding intact.
 
 There is deliberately no delete route: regeneration covers the need, and an
 endpoint nothing calls is a maintenance surface that rots untested.

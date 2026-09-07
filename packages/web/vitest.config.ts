@@ -1,8 +1,10 @@
 import path from 'node:path';
+import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const maxWorkers = Math.max(1, Math.min(4, availableParallelism() - 1));
 
 export default defineConfig({
   resolve: {
@@ -21,6 +23,10 @@ export default defineConfig({
     ],
   },
   test: {
+    // Loopback integration tests and real Git subprocesses need event-loop and
+    // CPU capacity outside Vitest's workers. Saturating every logical CPU made
+    // short deadline tests and socket handshakes fail at random.
+    maxWorkers,
     // The Git suites drive a real `git` binary against temporary repositories.
     // Those subprocess round-trips routinely pass the 5s default, and which
     // cases exceed it shifts with machine load, so the default made a valid

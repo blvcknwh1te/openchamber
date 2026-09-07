@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
+import { createWorktreeBootstrapStore } from './worktree-bootstrap-storage.js';
 
 import {
   checkoutCommit,
@@ -22,14 +23,18 @@ import {
   resolveBaseRefForLog,
   revertCommit,
   setLocalIdentity,
+  getGlobalIdentity,
   stageFiles,
   unstageFiles,
   applyHunk,
   getDiff,
   getFileDiff,
+  commit,
+  hasLocalIdentity,
   validateWorktreeCreate,
   parseBranchCreationSource,
   getRangeFiles,
+  inspectContributorCheckoutActions,
 } from './service.js';
 
 // ---------------------------------------------------------------------------
@@ -75,11 +80,14 @@ const createRepositoryWithRemote = ({ remoteName = 'origin', defaultBranch = 're
 };
 
 const canRunGit = () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-git-check-'));
   try {
-    execFileSync('git', ['--version'], { stdio: 'ignore' });
+    execFileSync('git', ['--version'], { cwd, stdio: 'ignore' });
     return true;
   } catch {
     return false;
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
   }
 };
 
@@ -158,19 +166,100 @@ describe('git index path validation', () => {
 });
 
 describe.runIf(canRunGit())('setLocalIdentity', () => {
-  it('configures the local SSH command with the targeted simple-git opt-in', async () => {
+  beforeEach(() => {
+    const home = createTempDir();
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('USERPROFILE', home);
+    vi.stubEnv('XDG_CONFIG_HOME', home);
+    vi.stubEnv('GIT_CONFIG_GLOBAL', path.join(home, '.gitconfig'));
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1');
+    vi.stubEnv('SSH_AUTH_SOCK', path.join(home, 'unused-agent.sock'));
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([
+    ['SSH', { authType: 'ssh', sshKey: '/unused/test key' }],
+    ['legacy default SSH', { sshKey: '~/unused/legacy key' }],
+    ['token', { authType: 'token', host: 'example.invalid' }],
+    ['HTTPS', { authType: 'https', host: 'example.invalid' }],
+    ['author only', {}],
+    ['global', { id: 'global' }],
+  ])('preserves authentication when applying a %s profile', async (_mode, legacyFields) => {
+    for (const localAuth of [false, true]) {
+      const { tmpDir } = await createTempRepo();
+      runGit(tmpDir, ['config', '--global', 'user.name', 'Global Author']);
+      runGit(tmpDir, ['config', '--global', 'user.email', 'global@example.com']);
+      runGit(tmpDir, ['config', '--global', 'core.sshCommand', "ssh -i '/unused/global key' -o IdentitiesOnly=yes"]);
+      runGit(tmpDir, ['config', '--global', '--replace-all', 'credential.helper', 'global-helper']);
+      if (localAuth) {
+        runGit(tmpDir, ['config', '--local', 'core.sshCommand', 'ssh -F /unused/repository-config']);
+        runGit(tmpDir, ['config', '--local', '--add', 'credential.helper', '']);
+        runGit(tmpDir, ['config', '--local', '--add', 'credential.helper', 'repository-helper']);
+        runGit(tmpDir, ['config', '--local', '--add', 'credential.helper', 'second-helper']);
+      }
+      const readAuth = () => runGit(tmpDir, ['config', '--null', '--get-regexp', '^(core\\.sshcommand|credential\\.helper)$']);
+      const authBefore = readAuth();
+      const globalBefore = fs.readFileSync(process.env.GIT_CONFIG_GLOBAL, 'utf8');
+      const global = await getGlobalIdentity();
+      const profile = {
+        userName: 'New Author',
+        userEmail: 'new@example.com',
+        ...legacyFields,
+      };
+      if (profile.id === 'global') {
+        profile.userName = global.userName;
+        profile.userEmail = global.userEmail;
+        profile.sshKey = global.sshCommand.replace('ssh -i ', '');
+      }
+      Object.freeze(profile);
+
+      await expect(setLocalIdentity(tmpDir, profile)).resolves.toBe(true);
+
+      expect(runGit(tmpDir, ['config', '--local', '--get', 'user.name']).trim()).toBe(profile.userName);
+      expect(runGit(tmpDir, ['config', '--local', '--get', 'user.email']).trim()).toBe(profile.userEmail);
+      expect(readAuth()).toBe(authBefore);
+      expect(fs.readFileSync(process.env.GIT_CONFIG_GLOBAL, 'utf8')).toBe(globalBefore);
+      const localConfig = runGit(tmpDir, ['config', '--local', '--list']);
+      expect(localConfig.includes('core.sshcommand=')).toBe(localAuth);
+      expect(localConfig.includes('credential.helper=')).toBe(localAuth);
+    }
+  });
+
+  it('preserves signing settings unless SSH signing is explicitly enabled with a key', async () => {
     const { tmpDir } = await createTempRepo();
+    runGit(tmpDir, ['config', '--local', 'gpg.format', 'openpgp']);
+    runGit(tmpDir, ['config', '--local', 'user.signingkey', 'existing-signing-key']);
+    runGit(tmpDir, ['config', '--local', 'commit.gpgsign', 'false']);
+    const profile = { userName: 'Signing Author', userEmail: 'signing@example.com' };
+    for (const signing of [{}, { signCommits: false, signingKey: 'ignored' }, { signCommits: true, signingKey: ' ' }]) {
+      await setLocalIdentity(tmpDir, { ...profile, ...signing });
+      expect(runGit(tmpDir, ['config', '--local', '--get', 'gpg.format']).trim()).toBe('openpgp');
+      expect(runGit(tmpDir, ['config', '--local', '--get', 'user.signingkey']).trim()).toBe('existing-signing-key');
+      expect(runGit(tmpDir, ['config', '--local', '--get', 'commit.gpgsign']).trim()).toBe('false');
+    }
+    await setLocalIdentity(tmpDir, { ...profile, signCommits: true, signingKey: ' /unused/signing.pub ' });
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'gpg.format']).trim()).toBe('ssh');
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'user.signingkey']).trim()).toBe('/unused/signing.pub');
+    expect(runGit(tmpDir, ['config', '--local', '--get', 'commit.gpgsign']).trim()).toBe('true');
+  });
 
-    await setLocalIdentity(tmpDir, {
-      userName: 'SSH User',
-      userEmail: 'ssh@example.com',
-      authType: 'ssh',
-      sshKey: '/tmp/test key',
-    });
+  it('requires both local identity fields before committing', async () => {
+    const tmpDir = createTempDir();
+    runGit(tmpDir, ['init']);
+    fs.writeFileSync(path.join(tmpDir, 'README.md'), '# identity\n');
+    runGit(tmpDir, ['add', 'README.md']);
 
-    expect(runGit(tmpDir, ['config', '--local', '--get', 'core.sshCommand']).trim()).toBe(
-      "ssh -i '/tmp/test key' -o IdentitiesOnly=yes"
-    );
+    await expect(hasLocalIdentity(tmpDir)).resolves.toBe(false);
+    await expect(commit(tmpDir, 'Missing identity')).rejects.toThrow('repository-local Git identity');
+
+    runGit(tmpDir, ['config', '--local', 'user.name', 'Test User']);
+    await expect(hasLocalIdentity(tmpDir)).resolves.toBe(false);
+    await expect(commit(tmpDir, 'Missing email')).rejects.toThrow('repository-local Git identity');
+
+    runGit(tmpDir, ['config', '--local', 'user.email', 'test@example.com']);
+    await expect(hasLocalIdentity(tmpDir)).resolves.toBe(true);
+    await expect(commit(tmpDir, 'Complete identity')).resolves.toMatchObject({ success: true });
   });
 });
 
@@ -468,13 +557,14 @@ describe('worktree root resolution', () => {
 // ---------------------------------------------------------------------------
 
 describe('createWorktree', () => {
-  it('returns ready/setup-ready when no bootstrap state is recorded', async () => {
+  it('returns an unknown repair blocker when no bootstrap state is recorded', async () => {
     const directory = path.join(createTempDir(), 'missing-worktree');
 
     await expect(getWorktreeBootstrapStatus(directory)).resolves.toMatchObject({
-      status: 'ready',
-      phase: 'setup-ready',
-      error: null,
+      status: 'failed',
+      phase: 'directory-created',
+      errorCode: 'UNKNOWN',
+      error: expect.stringContaining('repair'),
     });
   });
 
@@ -540,6 +630,55 @@ describe('createWorktree', () => {
     }
   });
 
+  it('does not report Git-ready when checkout hydration is incomplete', async () => {
+    if (!canRunGit()) return;
+    const repo = createTempDir();
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
+    runGit(repo, ['add', 'README.md']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+    const hydration = {
+      status: 'authorization-required',
+      submodules: [{
+        path: 'vendor/private', status: 'authorization-required',
+        error: { code: 'AUTHENTICATION_REQUIRED', message: 'Explicit grant required' },
+      }],
+      lfs: [{ path: '.', status: 'not-needed' }],
+    };
+    const hydrateCheckout = vi.fn(async () => hydration);
+    const bootstrapStore = createWorktreeBootstrapStore({
+      filePath: path.join(createTempDir(), 'bootstrap.json'),
+    });
+    const created = await createWorktree(repo, {
+      mode: 'new', branchName: 'feature/hydration-failure', worktreeName: 'hydration-failure',
+      returnAfterDirectoryCreated: true,
+    }, { hydrateCheckout, bootstrapStore });
+
+    await expect.poll(
+      async () => (await getWorktreeBootstrapStatus(created.path, { bootstrapStore })).status,
+      { timeout: 5_000 },
+    ).toBe('failed');
+    const expectedFailure = {
+      status: 'failed',
+      phase: 'directory-created',
+      errorCode: 'AUTHENTICATION_REQUIRED',
+      hydration: {
+        status: 'authorization-required',
+        submodules: [{
+          path: 'vendor/private',
+          status: 'authorization-required',
+          error: { code: 'AUTHENTICATION_REQUIRED' },
+        }],
+        lfs: [{ path: '.', status: 'not-needed' }],
+      },
+    };
+    await expect(getWorktreeBootstrapStatus(created.path, { bootstrapStore })).resolves.toMatchObject(expectedFailure);
+    await expect(bootstrapStore.read(created.path)).resolves.toMatchObject(expectedFailure);
+    expect(hydrateCheckout).toHaveBeenCalledWith({ directory: created.path, parentRemoteName: '' });
+  });
+
   const installPostCheckoutHook = (repo, script, executable = true) => {
     const hookPath = path.join(repo, '.git', 'hooks', 'post-checkout');
     fs.writeFileSync(hookPath, script);
@@ -549,7 +688,7 @@ describe('createWorktree', () => {
     return hookPath;
   };
 
-  it('runs the post-checkout hook after populating a created worktree', async () => {
+  it('does not run the post-checkout hook while populating a created worktree', async () => {
     if (!canRunGit()) return;
 
     const previousXdgDataHome = process.env.XDG_DATA_HOME;
@@ -564,8 +703,6 @@ describe('createWorktree', () => {
       fs.writeFileSync(path.join(repo, 'README.md'), '# Test\n');
       runGit(repo, ['add', 'README.md']);
       runGit(repo, ['commit', '-m', 'Initial commit']);
-      const head = runGit(repo, ['rev-parse', 'HEAD']).trim();
-
       const hookLog = path.join(dataHome, 'post-checkout.log');
       installPostCheckoutHook(
         repo,
@@ -579,19 +716,11 @@ describe('createWorktree', () => {
         returnAfterDirectoryCreated: true,
       });
 
-      await expect.poll(() => {
-        try {
-          return fs.readFileSync(hookLog, 'utf8');
-        } catch {
-          return '';
-        }
-      }, { timeout: 5_000 }).not.toBe('');
-
-      const [previousHead, newHead, flag, cwd] = fs.readFileSync(hookLog, 'utf8').split('|');
-      expect(previousHead).toBe('0000000000000000000000000000000000000000');
-      expect(newHead).toBe(head);
-      expect(flag).toBe('1');
-      expect(cwd).toBe(fs.realpathSync(created.path));
+      await expect.poll(
+        async () => (await getWorktreeBootstrapStatus(created.path)).status,
+        { timeout: 5_000 },
+      ).toBe('ready');
+      expect(fs.existsSync(hookLog)).toBe(false);
     } finally {
       if (previousXdgDataHome === undefined) {
         delete process.env.XDG_DATA_HOME;
@@ -645,7 +774,7 @@ describe('createWorktree', () => {
     }
   });
 
-  it('does not fail worktree bootstrap when the post-checkout hook fails', async () => {
+  it('does not execute a failing post-checkout hook during bootstrap', async () => {
     if (!canRunGit()) return;
 
     const previousXdgDataHome = process.env.XDG_DATA_HOME;
@@ -678,7 +807,7 @@ describe('createWorktree', () => {
         async () => (await getWorktreeBootstrapStatus(created.path)).status,
         { timeout: 5_000 },
       ).toBe('ready');
-      expect(fs.readFileSync(hookLog, 'utf8')).toBe('ran');
+      expect(fs.existsSync(hookLog)).toBe(false);
     } finally {
       if (previousXdgDataHome === undefined) {
         delete process.env.XDG_DATA_HOME;
@@ -688,7 +817,7 @@ describe('createWorktree', () => {
     }
   });
 
-  it('waits for active bootstrap work before removing a worktree', async () => {
+  it('waits for active bootstrap work before removing through a checkout alias', async () => {
     if (!canRunGit()) return;
 
     const previousXdgDataHome = process.env.XDG_DATA_HOME;
@@ -696,6 +825,16 @@ describe('createWorktree', () => {
     const setupStarted = path.join(dataHome, 'remove-race-started');
     const setupCompleted = path.join(dataHome, 'remove-race-completed');
     const setupScript = path.join(dataHome, 'remove-race.cjs');
+    let createdPath = '';
+    const bootstrapStore = {
+      write: vi.fn(async (_directory, state) => state),
+      read: vi.fn(async () => null),
+      remove: vi.fn(async () => {
+        expect(fs.existsSync(setupCompleted)).toBe(true);
+        expect(fs.existsSync(createdPath)).toBe(true);
+        return true;
+      }),
+    };
     process.env.XDG_DATA_HOME = dataHome;
 
     fs.writeFileSync(
@@ -718,11 +857,22 @@ describe('createWorktree', () => {
         worktreeName: 'remove-bootstrap-race',
         returnAfterDirectoryCreated: true,
         startCommand: `${JSON.stringify(process.execPath)} ${JSON.stringify(setupScript)}`,
+      }, {
+        bootstrapStore,
+        hydrateCheckout: async () => ({ status: 'not-needed', submodules: [], lfs: [] }),
       });
+      createdPath = created.path;
 
       await expect.poll(() => fs.existsSync(setupStarted), { timeout: 5_000 }).toBe(true);
+      let removalTarget = created.path;
+      if (process.platform !== 'win32') {
+        const aliasParent = createTempDir();
+        const aliasRoot = path.join(aliasParent, 'worktrees');
+        fs.symlinkSync(path.dirname(created.path), aliasRoot, 'dir');
+        removalTarget = path.join(aliasRoot, path.basename(created.path));
+      }
       let removalCompleted = false;
-      const removal = removeWorktree(repo, { directory: created.path }).then(() => {
+      const removal = removeWorktree(repo, { directory: removalTarget }, { bootstrapStore }).then(() => {
         removalCompleted = true;
       });
 
@@ -732,9 +882,11 @@ describe('createWorktree', () => {
 
       expect(fs.existsSync(setupCompleted)).toBe(true);
       expect(fs.existsSync(created.path)).toBe(false);
+      expect(bootstrapStore.remove).toHaveBeenCalledOnce();
       await expect(getWorktreeBootstrapStatus(created.path)).resolves.toMatchObject({
-        status: 'ready',
-        phase: 'setup-ready',
+        status: 'failed',
+        phase: 'directory-created',
+        errorCode: 'UNKNOWN',
       });
     } finally {
       if (previousXdgDataHome === undefined) {
@@ -765,6 +917,35 @@ describe('createWorktree', () => {
     await expect(populateWorktreeWithLockRecovery(worktree)).resolves.toBeUndefined();
     expect(fs.existsSync(lockPath)).toBe(false);
     expect(fs.readFileSync(path.join(worktree, 'README.md'), 'utf8')).toBe('# Test\n');
+  });
+
+  it('disables configured smudge filters while populating a worktree', async () => {
+    if (!canRunGit() || process.platform === 'win32') return;
+
+    const repo = createTempDir();
+    const worktree = createTempDir();
+    const marker = path.join(createTempDir(), 'smudge-ran');
+    const filterScript = path.join(createTempDir(), 'smudge.cjs');
+    runGit(repo, ['init', '-b', 'main']);
+    runGit(repo, ['config', 'user.email', 'test@example.com']);
+    runGit(repo, ['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(repo, '.gitattributes'), 'payload.txt filter=populate-smudge\n');
+    fs.writeFileSync(path.join(repo, 'payload.txt'), 'checkout content\n');
+    runGit(repo, ['add', '.gitattributes', 'payload.txt']);
+    runGit(repo, ['commit', '-m', 'Initial commit']);
+    fs.writeFileSync(
+      filterScript,
+      `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.stdin.pipe(process.stdout);\n`,
+    );
+    runGit(repo, ['config', 'filter.populate-smudge.smudge', `${JSON.stringify(process.execPath)} ${JSON.stringify(filterScript)}`]);
+    runGit(repo, ['config', 'filter.populate-smudge.required', 'true']);
+    fs.rmSync(worktree, { recursive: true, force: true });
+    runGit(repo, ['worktree', 'add', '--no-checkout', '-b', 'feature/filter-neutral', worktree, 'HEAD']);
+
+    await expect(populateWorktreeWithLockRecovery(worktree)).resolves.toBeUndefined();
+
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.readFileSync(path.join(worktree, 'payload.txt'), 'utf8')).toBe('checkout content\n');
   });
 
   it('preflights fast create branch-in-use failures before creating the candidate directory', async () => {
@@ -846,6 +1027,14 @@ describe('createWorktree from a forked GitHub PR', () => {
     }
   };
 
+  const getRemoteUrlOrNull = (directory, remote) => {
+    try {
+      return runGit(directory, ['remote', 'get-url', remote]).trim();
+    } catch {
+      return null;
+    }
+  };
+
   const forkWorktreeInput = ({ fork, worktreeName }) => ({
     mode: 'existing',
     branchName: 'feature/login',
@@ -858,32 +1047,122 @@ describe('createWorktree from a forked GitHub PR', () => {
     ensureRemoteUrl: fork,
   });
 
-  it('creates a worktree from a reachable fork head remote', async () => {
+  it('rejects direct contributor creation without managed transfer', async () => {
     if (!canRunGit()) return;
 
     await withDataHome(async () => {
       const { repository } = createRepositoryWithRemote();
       const fork = createTempDir();
       runGit(fork, ['init', '--bare']);
-      const sha = publishForkHead(repository, fork, 'feature/login');
+      publishForkHead(repository, fork, 'feature/login');
 
-      const created = await createWorktree(repository, forkWorktreeInput({
-        fork,
-        worktreeName: 'pr-42',
-      }));
-
-      expect(created.branch).toBe('feature/login');
-      expect(runGit(created.path, ['rev-parse', 'HEAD']).trim()).toBe(sha);
-      await expect.poll(() => fs.existsSync(path.join(created.path, 'FORK.md')), { timeout: 5_000 }).toBe(true);
-      expect(runGit(repository, ['remote', 'get-url', 'pr-alice']).trim()).toBe(fork);
-      await expect.poll(
-        () => getBranchTrackingRemote(created.path, 'feature/login') === 'pr-alice',
-        { timeout: 5_000 }
-      ).toBe(true);
+      await expect(createWorktree(repository, {
+        ...forkWorktreeInput({ fork, worktreeName: 'pr-42' }),
+        contributorFork: true,
+      }))
+        .rejects.toMatchObject({ code: 'CONTRIBUTOR_MANAGED_TRANSFER_REQUIRED', status: 409 });
+      expect(runGit(repository, ['remote'])).not.toContain('pr-alice');
     });
   }, 30_000);
 
-  it('rejects an unreachable fork with an actionable error and no worktree', async () => {
+  it('persists contributor provenance before success and skips hooks, setup, and upstream', async () => {
+    if (!canRunGit()) return;
+
+    await withDataHome(async (dataHome) => {
+      const { repository } = createRepositoryWithRemote();
+      const fork = createTempDir();
+      runGit(fork, ['init', '--bare']);
+      const sha = publishForkHead(repository, fork, 'feature/login');
+      runGit(repository, ['update-ref', 'refs/remotes/pr-alice/feature/login', sha]);
+      const hookMarker = path.join(dataHome, 'contributor-hook');
+      const setupMarker = path.join(dataHome, 'contributor-setup');
+      const setupScript = path.join(dataHome, 'contributor-setup.cjs');
+      fs.writeFileSync(path.join(repository, '.git', 'hooks', 'post-checkout'), `#!/bin/sh\n: > ${JSON.stringify(hookMarker)}\n`);
+      fs.chmodSync(path.join(repository, '.git', 'hooks', 'post-checkout'), 0o755);
+      fs.writeFileSync(setupScript, `require('node:fs').writeFileSync(${JSON.stringify(setupMarker)}, 'ran');\n`);
+      const compareAndSwap = vi.fn(async (_directory, expectedRevision, provenance) => ({
+        worktreeId: 'worktree_one', repositoryId: 'repo_one', revision: expectedRevision + 1, provenance,
+      }));
+
+      const created = await createWorktree(repository, {
+        ...forkWorktreeInput({ fork, worktreeName: 'pr-42-safe' }),
+        contributorTransferComplete: true,
+        setUpstream: false,
+        contributorFork: true,
+        expectedRevision: sha,
+        returnAfterDirectoryCreated: true,
+        startCommand: `${JSON.stringify(process.execPath)} ${JSON.stringify(setupScript)}`,
+      }, {
+        contributorProvenance: { compareAndSwap },
+        contributorSource: {
+          headRef: 'refs/heads/feature/login', sourceProject: { id: 'alice/app' }, targetProject: { id: 'acme/app' },
+          context: { provider: 'github', instance: 'github.com', accountId: 'account_one', bindingRevision: 3, primaryRemote: 'origin' },
+        },
+      });
+
+      expect(created.provenance).toEqual({
+        kind: 'contributor-fork', revision: 1, trust: 'untrusted', push: 'destination-selection-required',
+      });
+      expect(compareAndSwap).toHaveBeenCalledWith(created.path, 0, {
+        kind: 'contributor-fork', remoteName: 'pr-alice',
+        endpointFingerprint: expect.any(String), sourceSha: sha,
+        sourceRef: 'refs/heads/feature/login', sourceProjectId: 'alice/app', targetProjectId: 'acme/app',
+        provider: 'github', instance: 'github.com', accountId: 'account_one', bindingRevision: 3,
+        primaryRemote: 'origin', projectId: expect.any(String), setupCommand: expect.any(String),
+      });
+      await expect.poll(() => getWorktreeBootstrapStatus(created.path).then((status) => status.status), {
+        timeout: 5_000,
+      }).toBe('ready');
+      expect(getBranchTrackingRemote(created.path, 'feature/login')).toBe('');
+      expect(fs.existsSync(hookMarker)).toBe(false);
+      expect(fs.existsSync(setupMarker)).toBe(false);
+    });
+  }, 30_000);
+
+  it('does not report contributor creation when provenance persistence fails', async () => {
+    if (!canRunGit()) return;
+    await withDataHome(async () => {
+      const { repository } = createRepositoryWithRemote();
+      const fork = createTempDir();
+      runGit(fork, ['init', '--bare']);
+      const sha = publishForkHead(repository, fork, 'feature/login');
+      runGit(repository, ['update-ref', 'refs/remotes/pr-alice/feature/login', sha]);
+      await expect(createWorktree(repository, {
+        ...forkWorktreeInput({ fork, worktreeName: 'pr-42-provenance-failure' }),
+        contributorTransferComplete: true,
+        setUpstream: false,
+        contributorFork: true,
+        expectedRevision: sha,
+      }, {
+        contributorProvenance: { compareAndSwap: async () => { throw new Error('provenance write failed'); } },
+        contributorSource: {
+          headRef: 'refs/heads/feature/login', sourceProject: { id: 'alice/app' }, targetProject: { id: 'acme/app' },
+          context: { provider: 'github', instance: 'github.com', accountId: 'account_one', bindingRevision: 3, primaryRemote: 'origin' },
+        },
+      })).rejects.toThrow('provenance write failed');
+      expect(runGit(repository, ['worktree', 'list', '--porcelain'])).not.toContain('pr-42-provenance-failure');
+    });
+  }, 30_000);
+
+  it('fails closed before transferring a contributor head with ambient credentials', async () => {
+    if (!canRunGit()) return;
+    await withDataHome(async () => {
+      const { repository } = createRepositoryWithRemote();
+      const fork = createTempDir();
+      runGit(fork, ['init', '--bare']);
+      const sha = publishForkHead(repository, fork, 'feature/login');
+      await expect(createWorktree(repository, {
+        ...forkWorktreeInput({ fork, worktreeName: 'pr-42-managed-transfer-required' }),
+        contributorFork: true,
+        expectedRevision: sha,
+      }, { contributorProvenance: { compareAndSwap: vi.fn() } })).rejects.toMatchObject({
+        code: 'CONTRIBUTOR_MANAGED_TRANSFER_REQUIRED', status: 409,
+      });
+      expect(getRemoteUrlOrNull(repository, 'pr-alice')).toBeNull();
+    });
+  }, 30_000);
+
+  it('requires an explicit contributor transfer before worktree creation', async () => {
     if (!canRunGit()) return;
 
     await withDataHome(async () => {
@@ -894,16 +1173,147 @@ describe('createWorktree from a forked GitHub PR', () => {
       await expect(createWorktree(repository, forkWorktreeInput({
         fork: missingFork,
         worktreeName: 'pr-42-unreachable',
-      }))).rejects.toThrow(/Unable to (reach|fetch)/i);
+      }))).rejects.toThrow(/not available locally/i);
 
       expect(runGit(repository, ['worktree', 'list', '--porcelain'])).toBe(before);
+      expect(getRemoteUrlOrNull(repository, 'pr-alice')).toBeNull();
 
       const validation = await validateWorktreeCreate(repository, forkWorktreeInput({
         fork: missingFork,
         worktreeName: 'pr-42-unreachable',
       }));
       expect(validation.ok).toBe(false);
-      expect(validation.errors.some((error) => /Unable to (reach|fetch)/i.test(error.message))).toBe(true);
+      expect(validation.errors.some((error) => /not available locally/i.test(error.message))).toBe(true);
+    });
+  }, 30_000);
+
+  it('never overwrites an existing remote with a different contributor endpoint', async () => {
+    if (!canRunGit()) return;
+
+    await withDataHome(async () => {
+      const { repository } = createRepositoryWithRemote();
+      const originalFork = createTempDir();
+      runGit(originalFork, ['init', '--bare']);
+      runGit(repository, ['remote', 'add', 'pr-alice', originalFork]);
+      const missingFork = path.join(createTempDir(), 'missing-fork.git');
+      const marker = path.join(createTempDir(), 'set-url-used');
+      const previousPath = process.env.PATH;
+      const previousRealGit = process.env.REAL_GIT;
+      const previousMarker = process.env.SET_URL_MARKER;
+      if (process.platform !== 'win32') {
+        const wrapperDirectory = createTempDir();
+        const wrapper = path.join(wrapperDirectory, 'git');
+        const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+        fs.writeFileSync(wrapper, `#!/bin/sh
+if [ "$1" = "remote" ] && [ "$2" = "set-url" ]; then : > "$SET_URL_MARKER"; fi
+exec "$REAL_GIT" "$@"
+`);
+        fs.chmodSync(wrapper, 0o755);
+        process.env.PATH = `${wrapperDirectory}${path.delimiter}${previousPath || ''}`;
+        process.env.REAL_GIT = realGit;
+        process.env.SET_URL_MARKER = marker;
+      }
+
+      try {
+        await expect(createWorktree(repository, forkWorktreeInput({
+          fork: missingFork,
+          worktreeName: 'pr-42-restore-remote',
+        }))).rejects.toMatchObject({ code: 'CONTRIBUTOR_REMOTE_COLLISION', status: 409 });
+
+        expect(getRemoteUrlOrNull(repository, 'pr-alice')).toBe(originalFork);
+        expect(fs.existsSync(marker)).toBe(false);
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        if (previousRealGit === undefined) delete process.env.REAL_GIT;
+        else process.env.REAL_GIT = previousRealGit;
+        if (previousMarker === undefined) delete process.env.SET_URL_MARKER;
+        else process.env.SET_URL_MARKER = previousMarker;
+      }
+    });
+  }, 30_000);
+
+  it('rejects a fork branch that moved away from the requested PR head revision', async () => {
+    if (!canRunGit()) return;
+
+    await withDataHome(async () => {
+      const { repository } = createRepositoryWithRemote();
+      const fork = createTempDir();
+      runGit(fork, ['init', '--bare']);
+      const actualRevision = publishForkHead(repository, fork, 'feature/login');
+      runGit(repository, ['update-ref', 'refs/remotes/pr-alice/feature/login', actualRevision]);
+      const input = {
+        ...forkWorktreeInput({ fork, worktreeName: 'pr-42-stale' }),
+        expectedRevision: '1111111111111111111111111111111111111111',
+      };
+
+      const validation = await validateWorktreeCreate(repository, input);
+      expect(validation.ok).toBe(false);
+      expect(validation.errors.some((error) => /revision does not match/i.test(error.message))).toBe(true);
+      await expect(createWorktree(repository, input)).rejects.toThrow(/revision does not match/i);
+    });
+  }, 30_000);
+
+  it('creates from the verified revision when the remote-tracking ref moves before worktree add', async () => {
+    if (!canRunGit() || process.platform === 'win32') return;
+
+    await withDataHome(async () => {
+      const { repository } = createRepositoryWithRemote();
+      const fork = createTempDir();
+      runGit(fork, ['init', '--bare']);
+      const expectedRevision = publishForkHead(repository, fork, 'feature/login');
+      runGit(repository, ['update-ref', 'refs/remotes/pr-alice/feature/login', expectedRevision]);
+
+      fs.writeFileSync(path.join(repository, 'FORK.md'), '# moved\n');
+      runGit(repository, ['add', 'FORK.md']);
+      runGit(repository, ['commit', '-m', 'move tracking ref during worktree creation']);
+      const movedRevision = runGit(repository, ['rev-parse', 'HEAD']).trim();
+
+      const wrapperDirectory = createTempDir();
+      const marker = path.join(wrapperDirectory, 'moved');
+      const wrapper = path.join(wrapperDirectory, 'git');
+      const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+      fs.writeFileSync(wrapper, `#!/bin/sh
+if [ "$1" = "worktree" ] && [ "$2" = "add" ] && [ ! -e "$RACE_MARKER" ]; then
+  : > "$RACE_MARKER"
+  "$REAL_GIT" -C "$RACE_REPOSITORY" update-ref "$RACE_REF" "$RACE_REVISION" || exit $?
+fi
+exec "$REAL_GIT" "$@"
+`);
+      fs.chmodSync(wrapper, 0o755);
+
+      const previousEnvironment = {
+        PATH: process.env.PATH,
+        REAL_GIT: process.env.REAL_GIT,
+        RACE_MARKER: process.env.RACE_MARKER,
+        RACE_REPOSITORY: process.env.RACE_REPOSITORY,
+        RACE_REF: process.env.RACE_REF,
+        RACE_REVISION: process.env.RACE_REVISION,
+      };
+      Object.assign(process.env, {
+        PATH: `${wrapperDirectory}${path.delimiter}${process.env.PATH || ''}`,
+        REAL_GIT: realGit,
+        RACE_MARKER: marker,
+        RACE_REPOSITORY: repository,
+        RACE_REF: 'refs/remotes/pr-alice/feature/login',
+        RACE_REVISION: movedRevision,
+      });
+
+      try {
+        const created = await createWorktree(repository, {
+          ...forkWorktreeInput({ fork, worktreeName: 'pr-42-race' }),
+          expectedRevision,
+        });
+
+        expect(fs.existsSync(marker)).toBe(true);
+        expect(runGit(created.path, ['rev-parse', 'HEAD']).trim()).toBe(expectedRevision);
+        expect(created.branch).toBe('feature/login');
+      } finally {
+        for (const [key, value] of Object.entries(previousEnvironment)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
     });
   }, 30_000);
 
@@ -935,6 +1345,49 @@ describe('createWorktree from a forked GitHub PR', () => {
       expect(getBranchTrackingRemote(created.path, 'feature/tracking-wt')).toBe('');
     });
   }, 30_000);
+});
+
+describe('contributor checkout trust inspection', () => {
+  it('inspects the effective relative hooksPath from the worktree directory', async () => {
+    const { repository } = createRepositoryWithRemote();
+    const hooksDirectory = path.join(repository, 'trusted-hooks');
+    fs.mkdirSync(hooksDirectory);
+    const hookPath = path.join(hooksDirectory, 'post-checkout');
+    fs.writeFileSync(hookPath, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(hookPath, 0o755);
+    runGit(repository, ['config', 'core.hooksPath', 'trusted-hooks']);
+    const sourceSha = runGit(repository, ['rev-parse', 'HEAD']).trim();
+
+    const inspection = await inspectContributorCheckoutActions(repository, {
+      sourceSha, projectId: 'missing_project', setupCommand: '',
+    });
+
+    expect(inspection.actions).toEqual([expect.objectContaining({
+      kind: 'post-checkout-hook', path: hookPath,
+    })]);
+  });
+
+  it('binds checkout trust to the hook invocation path as well as its bytes', async () => {
+    const { repository } = createRepositoryWithRemote();
+    const firstDirectory = path.join(repository, 'first-hooks');
+    const secondDirectory = path.join(repository, 'second-hooks');
+    fs.mkdirSync(firstDirectory);
+    fs.mkdirSync(secondDirectory);
+    for (const directory of [firstDirectory, secondDirectory]) {
+      const hookPath = path.join(directory, 'post-checkout');
+      fs.writeFileSync(hookPath, '#!/bin/sh\nexit 0\n');
+      fs.chmodSync(hookPath, 0o755);
+    }
+    const sourceSha = runGit(repository, ['rev-parse', 'HEAD']).trim();
+    const provenance = { sourceSha, projectId: 'missing_project', setupCommand: '' };
+    runGit(repository, ['config', 'core.hooksPath', 'first-hooks']);
+    const first = await inspectContributorCheckoutActions(repository, provenance);
+    runGit(repository, ['config', 'core.hooksPath', 'second-hooks']);
+    const second = await inspectContributorCheckoutActions(repository, provenance);
+
+    expect(first.actions[0].contentDigest).toBe(second.actions[0].contentDigest);
+    expect(first.digest).not.toBe(second.digest);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1301,14 +1754,12 @@ describe.runIf(canRunGit())('getBranches', () => {
     });
   });
 
-  it('asks the remote when no local remote/HEAD exists', async () => {
+  it('does not infer a default branch when no local remote/HEAD exists', async () => {
     const { repository } = createRepositoryWithRemote({ remoteName: 'origin', defaultBranch: 'react' });
-    // A hand-added remote can end up without this ref; the branch it points at
-    // is still knowable, and guessing instead is the bug this data replaces.
     runGit(repository, ['remote', 'set-head', 'origin', '--delete']);
 
     await expect(getBranches(repository)).resolves.toMatchObject({
-      defaultBranches: { origin: 'react' },
+      defaultBranches: {},
     });
   });
 
@@ -1318,14 +1769,12 @@ describe.runIf(canRunGit())('getBranches', () => {
 
     const branches = await getBranches(repository);
 
-    // "We could not ask" is not "the branch is gone": callers read this list to
-    // decide whether a base branch exists at all.
     expect(branches.all).toContain('remotes/origin/react');
   });
 });
 
 describe.runIf(canRunGit())('getRangeDiff', () => {
-  it('resolves a base that exists only on a remote other than origin', async () => {
+  it('uses an explicitly selected remote base', async () => {
     const { repository } = createRepositoryWithRemote({ remoteName: 'upstream', defaultBranch: 'react' });
     // Only refs/remotes/upstream/react carries the base — git cannot resolve the
     // bare name, so an unqualified `react...next` fails with "ambiguous argument".
@@ -1333,7 +1782,8 @@ describe.runIf(canRunGit())('getRangeDiff', () => {
     runGit(repository, ['add', 'feature.txt']);
     runGit(repository, ['commit', '-m', 'feature']);
 
-    const diff = await getRangeDiff(repository, { base: 'react', head: 'next' });
+    await expect(getRangeDiff(repository, { base: 'react', head: 'next' })).rejects.toThrow();
+    const diff = await getRangeDiff(repository, { base: 'upstream/react', head: 'next' });
 
     expect(diff).toContain('feature.txt');
   });
@@ -1378,7 +1828,7 @@ describe.runIf(canRunGit())('getRangeFiles', () => {
     runGit(repository, ['add', 'added.txt', 'README.md']);
     runGit(repository, ['commit', '-m', 'changes']);
 
-    const files = await getRangeFiles(repository, { base: 'react', head: 'next' });
+    const files = await getRangeFiles(repository, { base: 'origin/react', head: 'next' });
 
     expect(files).toEqual(expect.arrayContaining([
       { path: 'added.txt', status: 'A' },
@@ -1400,7 +1850,7 @@ describe.runIf(canRunGit())('getRangeFiles', () => {
     runGit(repository, ['add', '-A']);
     runGit(repository, ['commit', '-m', 'rename']);
 
-    const files = await getRangeFiles(repository, { base: 'react', head: 'next' });
+    const files = await getRangeFiles(repository, { base: 'origin/react', head: 'next' });
 
     const renameEntry = files.find((file) => file.status === 'R');
     expect(renameEntry).toBeDefined();
@@ -1422,7 +1872,7 @@ describe.runIf(canRunGit())('getRangeFiles', () => {
     runGit(repository, ['add', '-A']);
     runGit(repository, ['commit', '-m', 'copy']);
 
-    const files = await getRangeFiles(repository, { base: 'react', head: 'next' });
+    const files = await getRangeFiles(repository, { base: 'origin/react', head: 'next' });
 
     const copyEntry = files.find((file) => file.status === 'C');
     expect(copyEntry).toBeDefined();

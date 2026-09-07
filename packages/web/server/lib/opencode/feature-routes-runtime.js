@@ -3,7 +3,7 @@ import { registerQuotaRoutes } from '../quota/routes.js';
 import { registerSmallModelRoutes } from '../small-model/routes.js';
 import { registerWalkthroughRoutes } from '../walkthrough/routes.js';
 import { registerSessionGoalRoutes } from '../session-goal/routes.js';
-import { registerGitHubRoutes } from '../github/routes.js';
+import { registerSourceControlRoutes } from '../source-control/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
 import { registerDevServerRoutes } from '../dev-servers/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
@@ -50,11 +50,29 @@ import { parseSkillRepoSource } from '../skills-catalog/source.js';
 import { scanSkillsRepository } from '../skills-catalog/scan.js';
 import { installSkillsFromRepository } from '../skills-catalog/install.js';
 import { fetchGitHubRepoMetas } from '../skills-catalog/github-meta.js';
+import crypto from 'node:crypto';
+import { getGitHubAuthByAccountId } from '../github/auth.js';
+import { createSourceControlAuthStore } from '../gitlab/auth-storage.js';
+import { createGitCredentialResolver, createHttpsCredentialReference } from '../git/credential-resolver.js';
+import { createNetworkOperations } from '../git/network-operations.js';
+import { createManagedSshCredentialStore } from '../git/ssh-credential-storage.js';
+import { createManagedSshInventory } from '../git/credentials.js';
+import { createSystemPushAcknowledgementStore } from '../git/system-push-acknowledgement-storage.js';
+import { createContributorProvenanceStore } from '../git/contributor-provenance-storage.js';
+import { createGitNetworkOperationStore } from '../git/network-operation-storage.js';
+import { readEffectiveGitTransportRevision } from '../git/transport-config.js';
+import { completeWorktreeCheckoutHydration } from '../git/service.js';
+import { createPrivateRepositoryIdentityResolver } from '../source-control/repository-identity.js';
+import { createSourceControlAuditStore } from '../source-control/audit-storage.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
     clientReloadDelayMs,
   } = dependencies;
+  const gitRuntimeIdentity = Object.freeze({
+    id: `server_${crypto.randomUUID()}`,
+    platform: process.env.OPENCHAMBER_RUNTIME === 'desktop' ? 'desktop' : 'web',
+  });
 
   let quotaProviders = null;
   const getQuotaProviders = async () => {
@@ -73,15 +91,45 @@ export const createFeatureRoutesRuntime = (dependencies) => {
   };
 
   let walkthroughService = null;
+  let walkthroughBindingService = null;
+  let networkOperations = null;
   const getWalkthroughService = async () => {
     if (!walkthroughService) {
       const [service, pullRequest] = await Promise.all([
         import('../walkthrough/index.js'),
         import('../walkthrough/pull-request.js'),
       ]);
-      walkthroughService = { ...service, getPullRequestDiff: pullRequest.getPullRequestDiff };
+      walkthroughService = {
+        ...service,
+        getPullRequestDiff: (directory, number, readContext) => pullRequest.getPullRequestDiff(
+          directory,
+          number,
+          readContext,
+          { onAccountUnavailable: walkthroughBindingService?.accountUnavailable },
+        ),
+      };
     }
     return walkthroughService;
+  };
+
+  const hydrateBoundCheckout = async ({ directory, parentDirectory, parentRemoteName }) => {
+    if (!(networkOperations?.hydrateBoundCheckout instanceof Function)
+      || !(walkthroughBindingService?.get instanceof Function)) {
+      throw Object.assign(new Error('Worktree checkout hydration is unavailable'), {
+        code: 'RUNTIME_UNSUPPORTED',
+      });
+    }
+    const bindingRead = await walkthroughBindingService.get(parentDirectory);
+    const repositoryAuthority = bindingRead?.binding ? {
+      repositoryId: bindingRead.repository.repositoryId,
+      bindingRevision: bindingRead.revision,
+      configRevision: bindingRead.repository.configRevision,
+    } : null;
+    return networkOperations.hydrateBoundCheckout({
+      directory,
+      parentRemoteName,
+      repositoryAuthority,
+    });
   };
 
   const registerRoutes = async (app, routeDependencies) => {
@@ -131,6 +179,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
       emitSessionCreatedEvent,
       permissionAutoAcceptRuntime,
+      worktreeBootstrapStore,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -255,7 +304,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       isExactSemver,
     });
 
-    const { getProfiles, getProfile } = await import('../git/index.js');
+    const { getProfiles, getProfile, getGlobalIdentity, resolveRepositoryGitPaths } = await import('../git/index.js');
 
     registerSkillRoutes(app, {
       fs,
@@ -297,10 +346,128 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     registerQuotaRoutes(app, { getQuotaProviders });
     registerSmallModelRoutes(app, { getSmallModelService });
-    registerWalkthroughRoutes(app, { getWalkthroughService });
     registerSessionGoalRoutes(app);
-    registerGitHubRoutes(app);
-    registerGitRoutes(app);
+    const gitBinary = resolveGitBinaryForSpawn();
+    const gitlabAuthStore = createSourceControlAuthStore({
+      filePath: path.join(openchamberDataDir, 'source-control-auth.json'),
+    });
+    const resolveSourceControlAccount = ({ provider, instance, accountId, credentialRevision }) => provider === 'github'
+      ? getGitHubAuthByAccountId(accountId, credentialRevision)
+      : gitlabAuthStore.readAccount(instance, accountId, credentialRevision);
+    const resolveTransportRepository = createPrivateRepositoryIdentityResolver({
+      getTransportRevision: (directory) => readEffectiveGitTransportRevision(directory, { gitBinary }),
+    });
+    const sourceControlAuditStore = createSourceControlAuditStore({
+      filePath: path.join(openchamberDataDir, 'source-control-audit.json'),
+      fsImpl: fsPromises,
+    });
+    const sshCredentialStore = createManagedSshCredentialStore({
+      filePath: path.join(openchamberDataDir, 'git-ssh-credentials.json'),
+      fsImpl: fsPromises,
+    });
+    const managedSshInventory = createManagedSshInventory({
+      store: sshCredentialStore,
+      snapshotRoot: path.join(openchamberDataDir, 'git-ssh-operation-keys'),
+      discoveryRoot: path.join(os.homedir(), '.ssh'),
+      managedKeyRoot: path.join(openchamberDataDir, 'git-ssh-private-keys'),
+      fsImpl: fsPromises,
+    });
+    walkthroughBindingService = registerSourceControlRoutes(app, {
+      validateManagedSshCredential: managedSshInventory.assertAvailable,
+      readManagedSshCredentialPresentation: managedSshInventory.presentation,
+      configRoot: openchamberDataDir,
+      resolveTransportRepository,
+      auditStore: sourceControlAuditStore,
+      runtimeIdentity: gitRuntimeIdentity,
+      readTransportAccount: resolveSourceControlAccount,
+      resolveCheckoutAuxiliary: async ({ directory, parentEndpoint, parentRemoteName, kind, path: checkoutPath }) => {
+        if (!(networkOperations?.inspectCheckoutHydration instanceof Function)) return null;
+        const inspection = await networkOperations.inspectCheckoutHydration({
+          directory, parentEndpoint, parentRemoteName,
+        });
+        return inspection.requirements.find((entry) => entry.kind === kind && entry.path === checkoutPath) ?? null;
+      },
+      gitlab: {
+        configRoot: openchamberDataDir,
+        store: gitlabAuthStore,
+        readSettings: readSettingsFromDisk,
+      },
+    });
+    registerWalkthroughRoutes(app, {
+      getWalkthroughService,
+      validateReadContext: walkthroughBindingService.validateReadContext,
+    });
+    const resolveGitIdentity = async (identityId) => {
+      if (identityId === 'global') {
+        const identity = await getGlobalIdentity();
+        return identity?.userName && identity?.userEmail ? { userName: identity.userName, userEmail: identity.userEmail } : null;
+      }
+      const identity = getProfile(identityId);
+      return identity?.userName && identity?.userEmail ? identity : null;
+    };
+    const validateGitIdentity = async (identityId) => {
+      const profile = await resolveGitIdentity(identityId);
+      if (!profile) throw new Error('Git identity profile is unavailable');
+      return profile;
+    };
+    const systemPushAcknowledgements = createSystemPushAcknowledgementStore({
+      filePath: path.join(openchamberDataDir, 'git-system-push-acknowledgements.json'),
+      fsImpl: fsPromises,
+    });
+    const contributorProvenance = createContributorProvenanceStore({
+      filePath: path.join(openchamberDataDir, 'git-contributor-provenance.json'),
+      resolveRepositoryIdentity: resolveTransportRepository,
+      resolveGitPaths: resolveRepositoryGitPaths,
+      fsImpl: fsPromises,
+    });
+    const networkOperationStore = createGitNetworkOperationStore({
+      filePath: path.join(openchamberDataDir, 'git-network-operations.json'),
+      fsImpl: fsPromises,
+    });
+    networkOperations = createNetworkOperations({
+      validateManagedSshCredential: managedSshInventory.assertAvailable,
+      resolveSourceControlAccount,
+      bindClonedRepository: walkthroughBindingService.bindClonedRepository,
+      validateGitTransportContext: walkthroughBindingService.validateGitTransportContext,
+      validateGitAuxiliaryContext: walkthroughBindingService.validateGitAuxiliaryContext,
+      systemPushAcknowledgements,
+      contributorProvenance,
+      resolveChangeRequestSource: walkthroughBindingService.resolveChangeRequestSource,
+      credentialResolver: createGitCredentialResolver({
+        readGitHubAccount: (accountId, credentialRevision) => resolveSourceControlAccount({
+          provider: 'github', instance: 'github.com', accountId, credentialRevision,
+        }),
+        readGitLabAccount: (instance, accountId, credentialRevision) => resolveSourceControlAccount({
+          provider: 'gitlab', instance, accountId, credentialRevision,
+        }),
+        lookupManagedSshKey: sshCredentialStore.lookup,
+        fsImpl: fsPromises,
+        snapshotRoot: path.join(openchamberDataDir, 'git-ssh-operation-keys'),
+      }),
+      runtimeIdentity: gitRuntimeIdentity,
+      auditStore: sourceControlAuditStore,
+      operationStore: networkOperationStore,
+      onCheckoutHydrated: (directory) => completeWorktreeCheckoutHydration(directory, {
+        bootstrapStore: worktreeBootstrapStore,
+      }),
+      spawnImpl: spawn,
+      fsImpl: fsPromises,
+      pathImpl: path,
+      gitBinary,
+      validateGitIdentity,
+      resolveGitIdentity,
+    });
+    registerGitRoutes(app, {
+      managedSshInventory,
+      networkOperations,
+      contributorProvenance,
+      resolveChangeRequestSource: walkthroughBindingService.resolveChangeRequestSource,
+      createHttpsCredentialReference,
+      getSourceControlBinding: walkthroughBindingService.get,
+      resolveSourceControlAccount,
+      errorRedactionSecrets: [openchamberDataDir],
+      worktreeBootstrapStore,
+    });
     registerDevServerRoutes(app, { scanner: devServerScanner, getOwnPorts });
     registerMagicPromptRoutes(app, {
       fsPromises,
@@ -327,10 +494,12 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildAugmentedPath,
       resolveGitBinaryForSpawn,
       openchamberUserConfigRoot,
+      cloneRepository: networkOperations.cloneRepository,
     });
   };
 
   return {
     registerRoutes,
+    hydrateBoundCheckout,
   };
 };

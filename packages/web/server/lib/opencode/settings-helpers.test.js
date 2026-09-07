@@ -58,6 +58,13 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('sanitizes the optional GitLab OAuth client ID', () => {
+    const helpers = createTestHelpers();
+    expect(helpers.sanitizeSettingsUpdate({ gitlabClientId: ' client-id ' })).toEqual({ gitlabClientId: 'client-id' });
+    expect(helpers.sanitizeSettingsUpdate({ gitlabClientId: '' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ gitlabClientId: 42 })).toEqual({});
+  });
+
   it('accepts only booleans for draft starter visibility', () => {
     const helpers = createTestHelpers();
 

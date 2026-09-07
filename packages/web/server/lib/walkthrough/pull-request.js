@@ -1,4 +1,5 @@
-import { getOctokitOrNull } from '../github/octokit.js';
+import { markGitHubAuthAccountInvalid } from '../github/auth.js';
+import { getOctokitForAccountId } from '../github/octokit.js';
 import { resolveGitHubRepoFromDirectory } from '../github/repo/index.js';
 
 /**
@@ -8,10 +9,22 @@ import { resolveGitHubRepoFromDirectory } from '../github/repo/index.js';
  * three-dot semantics used for local branch reviews: work merged in from the
  * base branch is not part of it.
  */
-export async function getPullRequestDiff(directory, number) {
-  const octokit = getOctokitOrNull();
-  if (!octokit) {
-    throw Object.assign(new Error('Connect a GitHub account to review pull requests'), {
+export async function getPullRequestDiff(directory, number, readContext, dependencies = {}) {
+  if (!readContext || readContext.provider !== 'github') {
+    throw Object.assign(new Error('A trusted GitHub read context is required'), {
+      statusCode: 400,
+      code: 'INVALID_SOURCE_CONTROL_READ_CONTEXT',
+    });
+  }
+  const getExactOctokit = dependencies.getOctokitForAccountId ?? getOctokitForAccountId;
+  const account = await getExactOctokit(readContext.accountId, {
+    onUnauthorized: async (identity, persisted) => {
+      await dependencies.onAccountUnavailable?.(identity);
+      if (persisted) await markGitHubAuthAccountInvalid(identity.accountId, 'unauthorized');
+    },
+  });
+  if (!account) {
+    throw Object.assign(new Error('GitHub account is unavailable'), {
       statusCode: 401,
       code: 'github-not-connected',
     });
@@ -19,7 +32,8 @@ export async function getPullRequestDiff(directory, number) {
 
   // The resolver returns `{ repo, remoteUrl }`, not the repo itself. Reading
   // `.owner` off the wrapper made this check fail for every repository.
-  const { repo } = await resolveGitHubRepoFromDirectory(directory);
+  const resolveRepository = dependencies.resolveGitHubRepoFromDirectory ?? resolveGitHubRepoFromDirectory;
+  const { repo } = await resolveRepository(directory, readContext.primaryRemote);
   if (!repo?.owner || !repo?.repo) {
     throw Object.assign(new Error('This directory has no GitHub remote'), {
       statusCode: 400,
@@ -27,7 +41,7 @@ export async function getPullRequestDiff(directory, number) {
     });
   }
 
-  const response = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+  const response = await account.octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
     owner: repo.owner,
     repo: repo.repo,
     pull_number: number,

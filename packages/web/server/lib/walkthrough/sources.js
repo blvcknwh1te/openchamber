@@ -77,7 +77,7 @@ const untrackedSections = async (directory) => {
  *
  * @returns {Promise<{sections: Array<{scope: string, patch: string}>, meta: object}>}
  */
-export async function loadSourceSections(directory, source, { getPullRequestDiff } = {}) {
+export async function loadSourceSections(directory, source, { getPullRequestDiff, readContext } = {}) {
   if (source.kind === 'working-tree') {
     const sections = [];
 
@@ -108,7 +108,7 @@ export async function loadSourceSections(directory, source, { getPullRequestDiff
     throw new WalkthroughSourceError('Pull request diffs are unavailable', 500);
   }
 
-  const { patch, meta } = await getPullRequestDiff(directory, source.number);
+  const { patch, meta } = await getPullRequestDiff(directory, source.number, readContext);
   return {
     sections: patch && patch.trim() ? [{ scope: `pr:${source.number}`, patch }] : [],
     meta: meta || {},
