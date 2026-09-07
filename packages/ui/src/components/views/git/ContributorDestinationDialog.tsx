@@ -28,7 +28,7 @@ export const ContributorDestinationDialog: React.FC<{
         </DialogHeader>
         <div className="flex flex-col gap-2">
           {candidates?.map((candidate) => (
-            <Button key={candidate.remote.name} variant="outline" onClick={() => onSelect(candidate.remote.name)}>
+            <Button key={candidate.remote.name} size="sm" variant="outline" onClick={() => onSelect(candidate.remote.name)}>
               <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
                 <span className="truncate">{candidate.remote.name}</span>
                 <span className="typography-meta text-muted-foreground">
@@ -39,7 +39,7 @@ export const ContributorDestinationDialog: React.FC<{
           ))}
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onSelect(null)}>{t('gitView.common.cancel')}</Button>
+          <Button size="sm" variant="ghost" onClick={() => onSelect(null)}>{t('gitView.common.cancel')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

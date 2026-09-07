@@ -1562,15 +1562,16 @@ export const PullRequestSection: React.FC<{
             {isLoading || isManualRefreshing ? <Icon name="loader-4" className="size-4 animate-spin text-muted-foreground" /> : null}
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex size-5 items-center justify-center rounded hover:bg-interactive-hover/60 disabled:opacity-40"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 px-0"
                   disabled={isLoading || isManualRefreshing}
                   onClick={() => void refreshManually()}
                   aria-label={t('gitView.pr.actions.refreshAria')}
                 >
-                  <Icon name="refresh" className="size-3.5 text-muted-foreground" />
-                </button>
+                  <Icon name="refresh" className="size-4 text-muted-foreground" />
+                </Button>
               </TooltipTrigger>
               <TooltipContent><p>{t('gitView.pr.actions.refresh')}</p></TooltipContent>
             </Tooltip>

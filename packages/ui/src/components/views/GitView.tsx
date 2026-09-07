@@ -2436,7 +2436,7 @@ export const GitView: React.FC<GitViewProps> = ({ isActive }) => {
         directory={isActive ? currentDirectory ?? '' : ''}
         author={currentIdentity}
       /> : null}
-      <GitOperationStatus entry={operationRecovery.entry} onRefresh={() => void operationRecovery.refresh()} onCancel={() => void operationRecovery.cancel()} />
+      <GitOperationStatus className="mx-4 mt-3" entry={operationRecovery.entry} onRefresh={() => void operationRecovery.refresh()} onCancel={() => void operationRecovery.cancel()} />
 
       {/* In-progress operation banner */}
       {currentDirectory && (

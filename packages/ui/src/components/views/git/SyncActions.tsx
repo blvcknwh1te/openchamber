@@ -122,9 +122,16 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
             <Icon name="arrow-down-s" className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" alignOffset={-40} className="w-[min(360px,calc(100vw-2rem))] max-h-[320px] overflow-y-auto">
-          <DropdownMenuItem disabled={detached} onSelect={onPublish}>{t('gitView.publish.title')}</DropdownMenuItem>
-          <DropdownMenuItem disabled={detached || hasUncommittedChanges} onSelect={onChooseSyncTargets}>{t('gitView.publish.syncTitle')}</DropdownMenuItem>
+        {/* Anchored to the trailing edge so the menu stays inside the pane instead of running past it. */}
+        <DropdownMenuContent align="end" className="w-[min(360px,calc(100vw-2rem))] max-h-[320px] overflow-y-auto">
+          <DropdownMenuItem disabled={detached} onSelect={onPublish}>
+            <Icon name="arrow-up" className="size-4 text-muted-foreground" />
+            {t('gitView.publish.title')}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={detached || hasUncommittedChanges} onSelect={onChooseSyncTargets}>
+            <Icon name="refresh" className="size-4 text-muted-foreground" />
+            {t('gitView.publish.syncTitle')}
+          </DropdownMenuItem>
           {remotes.map((remote) => (
             <DropdownMenuItem
               key={remote.name}
@@ -138,7 +145,7 @@ export const SyncActions: React.FC<SyncActionsProps> = ({
               }}
             >
               <div className="flex w-full items-center gap-2">
-                <Icon name="refresh" className="size-4 text-muted-foreground" />
+                <Icon name="download" className="size-4 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-col">
                     <span className="typography-ui-label text-foreground">

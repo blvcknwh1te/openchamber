@@ -678,7 +678,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
         />
       </header>
       <SourceControlBindingSettings className="px-3" directory={currentDirectory} author={currentIdentity} allowAuthorApply />
-      <GitOperationStatus entry={operationRecovery.entry} onRefresh={() => void operationRecovery.refresh()} onCancel={() => void operationRecovery.cancel()} />
+      <GitOperationStatus className="mx-3 mt-3" entry={operationRecovery.entry} onRefresh={() => void operationRecovery.refresh()} onCancel={() => void operationRecovery.cancel()} />
       {changeEntries.length > 0 ? (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* File list scrolls inside ChangesPanel; the commit footer stays pinned. */}

@@ -126,6 +126,8 @@ export function useGitPublishChooser({ directory, branch, chooseContributor }: {
   };
 
   const errorMessage = (error: BoundGitNetworkOperationError) => {
+    // No usable transport grant: point at the configuration instead of a bare "failed".
+    if (error.code === 'binding-required' || error.code === 'binding-needs-attention') return t('gitView.publish.noGrants');
     if (error.code === 'anonymous-read-only') return t('settings.sourceControl.transport.anonymous');
     if (error.code === 'branch-required') return t('gitView.publish.detached');
     if (error.code === 'publish-selection-stale') return t('gitView.publish.stale');
