@@ -12,7 +12,13 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { repositoryBindingOwner, useRepositoryBinding } from '@/lib/source-control/repository-binding';
 import { useUIStore } from '@/stores/useUIStore';
 import { useGitStore } from '@/stores/useGitStore';
-import { SettingsStackedField } from '../shared/SettingsSection';
+import {
+  SETTINGS_FIELDS_STACK_CLASS,
+  SETTINGS_HELPER_CLASS,
+  SETTINGS_SELECT_SIZE,
+  SettingsControlGroup,
+  SettingsStackedField,
+} from '../shared/SettingsSection';
 import { AuxiliaryBindingSettings, ProviderSourceControlBindingSettings, TransportBindingSettings } from './RepositoryBindingEditors';
 
 type SourceControlBindingSettingsProps = {
@@ -22,7 +28,10 @@ type SourceControlBindingSettingsProps = {
   allowAuthorApply?: boolean;
 };
 
-const RepositoryAuthorEditor = ({ directory }: { directory: string }) => {
+/** Every editor after the first in the dialog is separated by the settings divider. */
+const DIALOG_DIVIDER_CLASS = 'border-t border-border/60 pt-4';
+
+const RepositoryAuthorEditor = ({ directory, className }: { directory: string; className?: string }) => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
   const fetchIdentity = useGitStore((state) => state.fetchIdentity);
@@ -69,10 +78,10 @@ const RepositoryAuthorEditor = ({ directory }: { directory: string }) => {
   };
   const selectedProfile = profiles.find((profile) => profile.id === selected);
 
-  return <div className="min-w-0 space-y-2 border-t border-border pt-4">
-    <SettingsStackedField label={t('gitView.context.author')}>
+  return <SettingsControlGroup title={t('gitView.context.author')} className={cn('min-w-0', className)} contentClassName={SETTINGS_FIELDS_STACK_CLASS}>
+    <SettingsStackedField label={t('gitView.header.identityTooltip')} controlClassName="max-w-none">
       <Select value={selected} onValueChange={setSelected} disabled={loading || saving || profiles.length === 0}>
-        <SelectTrigger size="settings" className="w-full" aria-label={t('gitView.context.author')}>
+        <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('gitView.context.author')}>
           <SelectValue placeholder={t(loading ? 'settings.sourceControl.binding.loading' : profiles.length ? 'gitView.header.identityTooltip' : 'gitView.header.noProfiles')}>
             {selectedProfile ? `${selectedProfile.name} · ${selectedProfile.userEmail}` : undefined}
           </SelectValue>
@@ -82,14 +91,25 @@ const RepositoryAuthorEditor = ({ directory }: { directory: string }) => {
         </SelectItem>)}</SelectContent>
       </Select>
     </SettingsStackedField>
-    <Button size="sm" variant="outline" className="max-w-full" disabled={!selected || loading || saving} onClick={() => void applyAuthor()}>
-      <span className="truncate">{t('gitView.context.applyAuthor')}</span>
-    </Button>
-    {error ? <div role="alert" className="typography-micro text-[var(--status-error)]">
+    {error ? <p role="alert" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-error)]')}>
       {t('gitView.toast.applyIdentityFailed')}
-      <Button size="xs" variant="ghost" disabled={saving || loading} onClick={() => setRetry((value) => value + 1)}>{t('settings.sourceControl.transport.retry')}</Button>
-    </div> : null}
-  </div>;
+    </p> : null}
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" className="max-w-full" disabled={!selected || loading || saving} onClick={() => void applyAuthor()}>
+        <span className="truncate">{t('gitView.context.applyAuthor')}</span>
+      </Button>
+      {error ? <Button size="sm" variant="outline" disabled={saving || loading} onClick={() => setRetry((value) => value + 1)}>
+        {t('settings.sourceControl.transport.retry')}
+      </Button> : null}
+    </div>
+  </SettingsControlGroup>;
+};
+
+const Readiness = ({ ready }: { ready: boolean }) => {
+  const { t } = useI18n();
+  return ready
+    ? <>{t('gitView.context.ready')}</>
+    : <span className="text-[var(--status-warning)]">{t('gitView.context.needsAttention')}</span>;
 };
 
 export const SourceControlBindingSettings: React.FC<SourceControlBindingSettingsProps> = ({ className, directory, author, allowAuthorApply = false }) => {
@@ -151,21 +171,34 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
     }
   };
 
+  const summaryRow = (label: string, value: React.ReactNode, key: string) => (
+    <React.Fragment key={key}>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-foreground/80">{value}</dd>
+    </React.Fragment>
+  );
+
   // The strip is its own container: on a narrow pane the summary claims the
   // whole row so the action wraps beneath it, instead of being squeezed into
-  // the width left over beside the button.
-  return <div className={cn('@container shrink-0 min-w-0 border-b border-border px-4 pb-2', className)} aria-label={t('gitView.context.ariaLabel')}>
-    <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-      <div className="min-w-0 flex-1 basis-full @xl:basis-48 typography-micro text-muted-foreground break-words" data-binding-revision={read?.revision}>
-        {providers.length ? providers.map((provider) => {
-          return <div key={JSON.stringify([provider.provider, provider.instance, provider.accountId, provider.primaryRemote])}>
-            {t('gitView.context.provider')}: {getSourceControlProviderLabel(provider.provider)} · {provider.instance} · {provider.primaryRemote}
-            {' · '}{t(ready && provider.readiness === 'ready' ? 'gitView.context.ready' : 'gitView.context.needsAttention')}
-          </div>;
-        }) : <div>{t('gitView.context.provider')}: {emptyContext}</div>}
+  // the width left over beside the button. The pane body indents by px-4, so
+  // the summary aligns with the changes list below it.
+  return <div className={cn('@container shrink-0 min-w-0 border-b border-border px-4 pb-3', className)} aria-label={t('gitView.context.ariaLabel')}>
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+      <dl
+        className="grid min-w-0 flex-1 basis-full grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 typography-micro @xl:basis-48"
+        data-binding-revision={read?.revision}
+      >
+        {providers.length ? providers.map((provider) => summaryRow(
+          t('gitView.context.provider'),
+          <>
+            {getSourceControlProviderLabel(provider.provider)} · {provider.instance} · {provider.primaryRemote}
+            {' · '}<Readiness ready={ready && provider.readiness === 'ready'} />
+          </>,
+          JSON.stringify([provider.provider, provider.instance, provider.accountId, provider.primaryRemote]),
+        )) : summaryRow(t('gitView.context.provider'), emptyContext, 'provider-empty')}
         {remotes.length ? remotes.map((remote) => {
           const grant = grants.get(remote.name);
-          return <div key={remote.name}>{t('gitView.context.transport')}: {remote.name} · {grant ? <>
+          return summaryRow(t('gitView.context.transport'), <>{remote.name} · {grant ? <>
             {grant.mode === 'managed' ? grant.presentation?.status === 'available'
               ? grant.presentation.transport === 'ssh'
                 ? `SSH · ${grant.presentation.fingerprint}`
@@ -174,28 +207,31 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
                   {' · '}{grant.presentation.providerUserId}</>
               : t('gitView.context.managedCredentialUnavailable')
               : t(grant.mode === 'anonymous' ? 'settings.sourceControl.transport.anonymous' : 'gitView.context.systemUnverified')}
-            {' · '}{t(ready && grant.readiness === 'ready' ? 'gitView.context.ready' : 'gitView.context.needsAttention')}
-          </> : t('gitView.context.notConfigured')}</div>;
-        }) : <div>{t('gitView.context.transport')}: {emptyContext}</div>}
-        {author !== undefined ? <div>{t('gitView.context.author')}: {author?.userName && author.userEmail
-          ? `${author.userName} <${author.userEmail}>` : t('gitView.context.notConfigured')}</div> : null}
-        {binding.stale ? <div role="status">{t('gitView.context.stale')}</div> : null}
-        {binding.error ? <div role="alert">{t('settings.gitlab.status.operationFailed')}</div> : null}
-      </div>
+            {' · '}<Readiness ready={ready && grant.readiness === 'ready'} />
+          </> : t('gitView.context.notConfigured')}</>, `remote:${remote.name}`);
+        }) : summaryRow(t('gitView.context.transport'), emptyContext, 'transport-empty')}
+        {author !== undefined ? summaryRow(t('gitView.context.author'), author?.userName && author.userEmail
+          ? `${author.userName} <${author.userEmail}>` : t('gitView.context.notConfigured'), 'author') : null}
+        {binding.stale ? <dd role="status" className="col-span-2 text-muted-foreground">{t('gitView.context.stale')}</dd> : null}
+        {binding.error ? <dd role="alert" className="col-span-2 text-[var(--status-error)]">{t('settings.gitlab.status.operationFailed')}</dd> : null}
+      </dl>
       <Dialog open={open} onOpenChange={(value) => setOpenScope(value ? binding.scope : null)}>
-        <DialogTrigger asChild><Button size="sm" variant="ghost" disabled={!directory}>{t('gitView.context.configure')}</Button></DialogTrigger>
-        {open ? <DialogContent className="@container min-w-0">
+        <DialogTrigger asChild><Button size="sm" variant="outline" className="ml-auto" disabled={!directory}>{t('gitView.context.configure')}</Button></DialogTrigger>
+        {open ? <DialogContent className="@container min-w-0 max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('gitView.context.configure')}</DialogTitle>
             <DialogDescription>{t('gitView.context.draft')}</DialogDescription>
           </DialogHeader>
           <ProviderSourceControlBindingSettings directory={directory} />
-          <TransportBindingSettings directory={directory} />
-          <AuxiliaryBindingSettings directory={directory} />
-          {allowAuthorApply ? <RepositoryAuthorEditor directory={directory} /> : null}
-          {read?.binding ? <div className="min-w-0 space-y-2 border-t border-border pt-4">
-            <p className="typography-label text-foreground">{t('settings.sourceControl.reset.title')}</p>
-            <p className="typography-micro text-muted-foreground">{t('settings.sourceControl.reset.description')}</p>
+          <TransportBindingSettings directory={directory} className={DIALOG_DIVIDER_CLASS} />
+          <AuxiliaryBindingSettings directory={directory} className={DIALOG_DIVIDER_CLASS} />
+          {allowAuthorApply ? <RepositoryAuthorEditor directory={directory} className={DIALOG_DIVIDER_CLASS} /> : null}
+          {read?.binding ? <SettingsControlGroup
+            title={t('settings.sourceControl.reset.title')}
+            description={t('settings.sourceControl.reset.description')}
+            className={cn('min-w-0', DIALOG_DIVIDER_CLASS)}
+            contentClassName="pt-1"
+          >
             <Dialog open={resetOpen} onOpenChange={(value) => { if (!resetting) { setResetOpen(value); setResetError(false); } }}>
               <DialogTrigger asChild><Button size="sm" variant="destructive" disabled={resetting || binding.status !== 'ready'}>
                 {t('settings.sourceControl.reset.action')}
@@ -205,11 +241,11 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
                   <DialogTitle>{t('settings.sourceControl.reset.confirmTitle')}</DialogTitle>
                   <DialogDescription>{t('settings.sourceControl.reset.confirmDescription')}</DialogDescription>
                 </DialogHeader>
-                {resetError ? <p role="alert" className="typography-micro text-[var(--status-error)]">
+                {resetError ? <p role="alert" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-error)]')}>
                   {t('settings.sourceControl.reset.failed')}
                 </p> : null}
                 <DialogFooter>
-                  <Button size="sm" variant="outline" disabled={resetting} onClick={() => setResetOpen(false)}>
+                  <Button size="sm" variant="ghost" disabled={resetting} onClick={() => setResetOpen(false)}>
                     {t('gitView.common.cancel')}
                   </Button>
                   <Button size="sm" variant="destructive" disabled={resetting} onClick={() => void resetBinding()}>
@@ -218,15 +254,15 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
                 </DialogFooter>
               </DialogContent> : null}
             </Dialog>
-          </div> : null}
-          <DialogFooter>
-            <Button size="sm" variant="outline" onClick={() => {
+          </SettingsControlGroup> : null}
+          <DialogFooter className={DIALOG_DIVIDER_CLASS}>
+            <Button size="sm" variant="ghost" onClick={() => {
               setOpenScope(null);
               setSettingsPage('git');
               if (mobileActions) mobileActions.openSettings();
               else setSettingsDialogOpen(true);
             }}>{t('gitView.context.settings')}</Button>
-            <Button size="sm" variant="ghost" onClick={() => setOpenScope(null)}>{t('dialog.common.actions.close')}</Button>
+            <Button size="sm" variant="outline" onClick={() => setOpenScope(null)}>{t('dialog.common.actions.close')}</Button>
           </DialogFooter>
         </DialogContent> : null}
       </Dialog>

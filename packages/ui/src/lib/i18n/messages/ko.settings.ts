@@ -2304,7 +2304,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': '원격',
   'settings.sourceControl.transport.remoteAriaLabel': '구성할 Git 원격',
   'settings.sourceControl.transport.noRemotes': 'Git 원격 없음',
-  'settings.sourceControl.transport.modeLabel': '전송',
+  'settings.sourceControl.transport.modeLabel': '자격 증명',
   'settings.sourceControl.transport.modeAriaLabel': '선택한 원격의 Git 전송',
   'settings.sourceControl.transport.choose': '전송 방식 선택',
   'settings.sourceControl.transport.system': '시스템 Git',

@@ -2310,7 +2310,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': 'Remote',
   'settings.sourceControl.transport.remoteAriaLabel': 'Yapılandırılacak Git remote\'u',
   'settings.sourceControl.transport.noRemotes': 'Git remote\'u yok',
-  'settings.sourceControl.transport.modeLabel': 'Aktarım',
+  'settings.sourceControl.transport.modeLabel': 'Kimlik bilgileri',
   'settings.sourceControl.transport.modeAriaLabel': 'Seçili remote için Git aktarımı',
   'settings.sourceControl.transport.choose': 'Aktarım seçin',
   'settings.sourceControl.transport.system': 'Sistem Git',

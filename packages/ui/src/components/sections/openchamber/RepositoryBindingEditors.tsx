@@ -31,7 +31,14 @@ import { GitOperationResultError, runCheckoutHydration } from '@/lib/boundGitNet
 import { repositoryBindingOwner, useRepositoryBinding } from '@/lib/source-control/repository-binding';
 import { getSourceControlAuthKey, useSourceControlAuthStore } from '@/stores/useSourceControlAuthStore';
 import { useProviderBindingEditor } from './useProviderBindingEditor';
-import { SettingsCheckboxRow, SettingsStackedField } from '../shared/SettingsSection';
+import {
+  SETTINGS_FIELDS_STACK_CLASS,
+  SETTINGS_HELPER_CLASS,
+  SETTINGS_SELECT_SIZE,
+  SettingsCheckboxRow,
+  SettingsControlGroup,
+  SettingsStackedField,
+} from '../shared/SettingsSection';
 import { ManagedSshCredentials } from './ManagedSshCredentials';
 import { useGitOperationRecovery } from '@/components/views/git/useGitOperationRecovery';
 import { GitOperationStatus } from '@/components/views/git/GitOperationStatus';
@@ -40,6 +47,19 @@ type SourceControlBindingSettingsProps = {
   className?: string;
   directory: string;
 };
+
+/** Selects inside the binding editors fill their stacked field instead of the shared settings width cap. */
+const EDITOR_CONTROL_CLASS = 'max-w-none';
+/** Action row under each editor: primary save first, quiet removal second. */
+const EDITOR_ACTIONS_CLASS = 'flex flex-wrap items-center gap-2';
+/** Remote and transport pickers sit side by side once the dialog is wide enough. */
+const REMOTE_TRANSPORT_GRID_CLASS = 'grid grid-cols-1 gap-3 @sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]';
+
+const EditorStatus = ({ error, children }: { error?: boolean; children: React.ReactNode }) => (
+  <p role={error ? 'alert' : undefined} className={cn(SETTINGS_HELPER_CLASS, error && 'text-[var(--status-error)]')}>
+    {children}
+  </p>
+);
 
 export const CredentialLabel = ({ identity, account }: { identity: SourceControlIdentity; account?: SourceControlAuthAccount }) => {
   const { t } = useI18n();
@@ -71,11 +91,16 @@ export const ProviderSourceControlBindingSettings: React.FC<SourceControlBinding
   else if (boundProvider) statusText = t(canSave && boundProvider.readiness === 'ready' ? 'gitView.context.ready' : 'gitView.context.needsAttention');
 
   return (
-    <div
-      className={cn('min-w-0 space-y-2', className)}
+    <SettingsControlGroup
+      title={t('gitView.context.provider')}
+      className={cn('min-w-0', className)}
+      contentClassName={SETTINGS_FIELDS_STACK_CLASS}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <SettingsStackedField className="min-w-0 w-full max-w-72" label={t('settings.sourceControl.binding.accountLabel')} info={t('settings.sourceControl.binding.configured')}>
+      <SettingsStackedField
+        label={t('settings.sourceControl.binding.accountLabel')}
+        info={t('settings.sourceControl.binding.configured')}
+        controlClassName={EDITOR_CONTROL_CLASS}
+      >
         <Select
           value={effectiveSelectedKey}
           onValueChange={setSelectedKey}
@@ -83,8 +108,8 @@ export const ProviderSourceControlBindingSettings: React.FC<SourceControlBinding
         >
           <SelectTrigger
             ref={selectRef}
-            size="settings"
-            className="w-full max-w-72"
+            size={SETTINGS_SELECT_SIZE}
+            className="w-full"
             aria-label={t('settings.sourceControl.binding.accountAriaLabel')}
           >
             <SelectValue placeholder={t('settings.sourceControl.binding.noAccounts')}>
@@ -99,25 +124,24 @@ export const ProviderSourceControlBindingSettings: React.FC<SourceControlBinding
             ))}
           </SelectContent>
         </Select>
-        </SettingsStackedField>
-        <Button size="xs" variant="outline" onClick={saveBinding} disabled={!selected || isSaving || !canSave}>
+      </SettingsStackedField>
+      <EditorStatus error={Boolean(error)}>{error ?? statusText}</EditorStatus>
+      <div className={EDITOR_ACTIONS_CLASS}>
+        <Button size="sm" onClick={saveBinding} disabled={!selected || isSaving || !canSave}>
           {bindingRead?.status === 'missing'
             ? t('settings.sourceControl.binding.confirm')
             : t('settings.common.actions.saveChanges')}
         </Button>
         {boundProvider ? (
-          <Button size="xs" variant="ghost" className="max-w-full" onClick={removeBinding} disabled={isSaving || !canSave}>
+          <Button size="sm" variant="ghost" className="max-w-full" onClick={removeBinding} disabled={isSaving || !canSave}>
             <span className="truncate">{t('gitView.context.removeProvider')}</span>
           </Button>
         ) : null}
+        {error ? <Button size="sm" variant="outline" onClick={() => void retry()} disabled={isLoading || isSaving}>
+          {t('settings.sourceControl.transport.retry')}
+        </Button> : null}
       </div>
-      <div className={cn('mt-1 typography-micro', error ? 'text-[var(--status-error)]' : 'text-muted-foreground')}>
-        {error ?? statusText}
-      </div>
-      {error ? <Button size="xs" variant="outline" onClick={() => void retry()} disabled={isLoading || isSaving}>
-        {t('settings.sourceControl.transport.retry')}
-      </Button> : null}
-    </div>
+    </SettingsControlGroup>
   );
 };
 
@@ -284,102 +308,105 @@ export const TransportBindingSettings: React.FC<SourceControlBindingSettingsProp
   else if (bindingRead) statusText = t('settings.sourceControl.transport.missing');
 
   return (
-    <div
-      className={cn('min-w-0 space-y-2 border-t border-border pt-4', className)}
+    <SettingsControlGroup
+      title={t('gitView.context.transport')}
+      info={t('settings.sourceControl.transport.info')}
+      className={cn('min-w-0', className)}
+      contentClassName={SETTINGS_FIELDS_STACK_CLASS}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <SettingsStackedField label={t('settings.sourceControl.transport.remoteLabel')}>
-        <Select value={remoteName} onValueChange={(value) => {
-          setSelectedRemote(value);
-          setSelectedTransport('');
-          setSelectedAccount('');
-          setUnverifiedConfirmed(false);
-        }} disabled={!bindingRead || isSaving}>
-          <SelectTrigger
-            ref={remoteSelectRef}
-            size="settings"
-            className="w-28"
-            aria-label={t('settings.sourceControl.transport.remoteAriaLabel')}
-          >
-            <SelectValue placeholder={t(bindingRead?.repository.remotes.length
-              ? 'settings.sourceControl.transport.remoteLabel' : 'settings.sourceControl.transport.noRemotes')} />
-          </SelectTrigger>
-          <SelectContent>
-            {bindingRead?.repository.remotes.map((item) => (
-              <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className={REMOTE_TRANSPORT_GRID_CLASS}>
+        <SettingsStackedField label={t('settings.sourceControl.transport.remoteLabel')} controlClassName={EDITOR_CONTROL_CLASS}>
+          <Select value={remoteName} onValueChange={(value) => {
+            setSelectedRemote(value);
+            setSelectedTransport('');
+            setSelectedAccount('');
+            setUnverifiedConfirmed(false);
+          }} disabled={!bindingRead || isSaving}>
+            <SelectTrigger
+              ref={remoteSelectRef}
+              size={SETTINGS_SELECT_SIZE}
+              className="w-full"
+              aria-label={t('settings.sourceControl.transport.remoteAriaLabel')}
+            >
+              <SelectValue placeholder={t(bindingRead?.repository.remotes.length
+                ? 'settings.sourceControl.transport.remoteLabel' : 'settings.sourceControl.transport.noRemotes')} />
+            </SelectTrigger>
+            <SelectContent>
+              {bindingRead?.repository.remotes.map((item) => (
+                <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingsStackedField>
-        <SettingsStackedField label={t('settings.sourceControl.transport.modeLabel')} info={t('settings.sourceControl.transport.info')}>
-        <Select
-          value={transport}
-          onValueChange={(value) => {
-            if (value === 'system' || value === 'https' || value === 'ssh' || value === 'anonymous') {
-              setSelectedTransport(value);
-              setUnverifiedConfirmed(false);
-              setSelectedAccount('');
-            }
-          }}
-          disabled={!remote || isSaving}
-        >
-          <SelectTrigger
-            size="settings"
-            className="w-44"
-            aria-label={t('settings.sourceControl.transport.modeAriaLabel')}
+        <SettingsStackedField label={t('settings.sourceControl.transport.modeLabel')} controlClassName={EDITOR_CONTROL_CLASS}>
+          <Select
+            value={transport}
+            onValueChange={(value) => {
+              if (value === 'system' || value === 'https' || value === 'ssh' || value === 'anonymous') {
+                setSelectedTransport(value);
+                setUnverifiedConfirmed(false);
+                setSelectedAccount('');
+              }
+            }}
+            disabled={!remote || isSaving}
           >
-            <SelectValue placeholder={t('settings.sourceControl.transport.choose')}>
-              {transport ? t(transport === 'system' ? 'settings.sourceControl.transport.system'
-                : transport === 'anonymous' ? 'settings.sourceControl.transport.anonymous'
-                  : transport === 'https' ? 'settings.sourceControl.transport.https' : 'settings.sourceControl.transport.ssh') : undefined}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="system">{t('settings.sourceControl.transport.system')}</SelectItem>
-            <SelectItem value="anonymous" disabled={!remote?.fetch.displayUrl.startsWith('https://')}>{t('settings.sourceControl.transport.anonymous')}</SelectItem>
-            <SelectItem value="https" disabled={!httpsAvailable}>{t('settings.sourceControl.transport.https')}</SelectItem>
-            <SelectItem value="ssh" disabled={!sshAvailable}>{t('settings.sourceControl.transport.ssh')}</SelectItem>
-          </SelectContent>
-        </Select>
+            <SelectTrigger
+              size={SETTINGS_SELECT_SIZE}
+              className="w-full"
+              aria-label={t('settings.sourceControl.transport.modeAriaLabel')}
+            >
+              <SelectValue placeholder={t('settings.sourceControl.transport.choose')}>
+                {transport ? t(transport === 'system' ? 'settings.sourceControl.transport.system'
+                  : transport === 'anonymous' ? 'settings.sourceControl.transport.anonymous'
+                    : transport === 'https' ? 'settings.sourceControl.transport.https' : 'settings.sourceControl.transport.ssh') : undefined}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">{t('settings.sourceControl.transport.system')}</SelectItem>
+              <SelectItem value="anonymous" disabled={!remote?.fetch.displayUrl.startsWith('https://')}>{t('settings.sourceControl.transport.anonymous')}</SelectItem>
+              <SelectItem value="https" disabled={!httpsAvailable}>{t('settings.sourceControl.transport.https')}</SelectItem>
+              <SelectItem value="ssh" disabled={!sshAvailable}>{t('settings.sourceControl.transport.ssh')}</SelectItem>
+            </SelectContent>
+          </Select>
         </SettingsStackedField>
-        {transport === 'https' ? (
-          <SettingsStackedField className="min-w-0 w-full" label={t('settings.sourceControl.transport.credentialAccount')}>
-            <Select value={selectedAccount} onValueChange={setSelectedAccount} disabled={isSaving}>
-              <SelectTrigger size="settings" className="w-full max-w-72" aria-label={t('settings.sourceControl.transport.credentialAccount')}>
-                <SelectValue placeholder={t(accountOptions.length
-                  ? 'settings.sourceControl.transport.credentialAccount' : 'settings.sourceControl.binding.noAccounts')}>{account?.label}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>{accountOptions.map((option) => <SelectItem key={option.key} value={option.key}>{option.label}</SelectItem>)}</SelectContent>
-            </Select>
-            {accountsFailed ? <p className="typography-micro text-[var(--status-error)]">{t('settings.gitlab.status.operationFailed')}</p> : null}
-            <Button size="xs" variant="ghost" disabled={isSaving} onClick={() => void refreshAccounts(sourceControl, { force: true })}>
-              {t('settings.sourceControl.transport.retry')}
-            </Button>
-          </SettingsStackedField>
-        ) : null}
-        {transport === 'ssh' ? <ManagedSshCredentials
-          selection={{ value: selectedSshCredential, onChange: setSelectedSshCredential }} disabled={isSaving}
-        /> : null}
-        <Button size="xs" variant="outline" onClick={saveBinding} disabled={!canSave}>
-          {bindingRead?.status === 'missing'
-            ? t('settings.sourceControl.transport.bind')
-            : t('settings.common.actions.saveChanges')}
-        </Button>
-        {currentRemoteBinding ? <Button size="xs" variant="ghost" onClick={() => void removeBinding()} disabled={!canRemove}>
-          {t('settings.sourceControl.transport.remove')}
-        </Button> : null}
       </div>
+      {transport === 'https' ? (
+        <SettingsStackedField label={t('settings.sourceControl.transport.credentialAccount')} controlClassName={cn(EDITOR_CONTROL_CLASS, 'flex-wrap')}>
+          <Select value={selectedAccount} onValueChange={setSelectedAccount} disabled={isSaving}>
+            <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('settings.sourceControl.transport.credentialAccount')}>
+              <SelectValue placeholder={t(accountOptions.length
+                ? 'settings.sourceControl.transport.credentialAccount' : 'settings.sourceControl.binding.noAccounts')}>{account?.label}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>{accountOptions.map((option) => <SelectItem key={option.key} value={option.key}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+          {accountsFailed ? <EditorStatus error>{t('settings.gitlab.status.operationFailed')}</EditorStatus> : null}
+          <Button size="sm" variant="ghost" disabled={isSaving} onClick={() => void refreshAccounts(sourceControl, { force: true })}>
+            {t('settings.sourceControl.transport.retry')}
+          </Button>
+        </SettingsStackedField>
+      ) : null}
+      {transport === 'ssh' ? <ManagedSshCredentials
+        selection={{ value: selectedSshCredential, onChange: setSelectedSshCredential }} disabled={isSaving}
+      /> : null}
       {transport === 'system' ? <SettingsCheckboxRow
         checked={unverifiedConfirmed} onChange={setUnverifiedConfirmed} disabled={isSaving}
         label={t('settings.sourceControl.transport.unverifiedConfirmation')}
       /> : null}
-      <div className={cn('mt-1 typography-micro', error ? 'text-[var(--status-error)]' : 'text-muted-foreground')}>
-        {error ?? statusText}
+      <EditorStatus error={Boolean(error)}>{error ?? statusText}</EditorStatus>
+      <div className={EDITOR_ACTIONS_CLASS}>
+        <Button size="sm" onClick={saveBinding} disabled={!canSave}>
+          {bindingRead?.status === 'missing'
+            ? t('settings.sourceControl.transport.bind')
+            : t('settings.common.actions.saveChanges')}
+        </Button>
+        {currentRemoteBinding ? <Button size="sm" variant="ghost" onClick={() => void removeBinding()} disabled={!canRemove}>
+          {t('settings.sourceControl.transport.remove')}
+        </Button> : null}
+        {error ? <Button size="sm" variant="outline" onClick={() => { setError(null); void binding.retry(); }} disabled={isSaving || isLoading}>
+          {t('settings.sourceControl.transport.retry')}
+        </Button> : null}
       </div>
-      {error ? <Button size="xs" variant="outline" onClick={() => { setError(null); void binding.retry(); }} disabled={isSaving || isLoading}>
-        {t('settings.sourceControl.transport.retry')}
-      </Button> : null}
-    </div>
+    </SettingsControlGroup>
   );
 };
 
@@ -528,76 +555,87 @@ export const AuxiliaryBindingSettings: React.FC<SourceControlBindingSettingsProp
     }
   };
 
-  return <div className={cn('min-w-0 space-y-3 border-t border-border pt-4', className)}>
-    <p className="typography-label text-foreground">{t('gitView.hydration.title')}</p>
-    <p className="typography-micro text-muted-foreground">{t('gitView.hydration.description')}</p>
-    <SettingsStackedField label={t('gitView.hydration.parentRemote')}>
-      <Select value={parentRemote} onValueChange={(value) => {
-        setParentRemote(value);
-        setSelectedRequirement('');
-        setTransport('');
-        setAccountKey('');
-        setSshCredential('');
-        setUnverifiedConfirmed(false);
-      }} disabled={!read?.binding || saving || recovery.blocked}>
-        <SelectTrigger size="settings" className="w-full max-w-72" aria-label={t('gitView.hydration.parentRemote')}>
-          <SelectValue placeholder={t('settings.sourceControl.transport.remoteLabel')} />
-        </SelectTrigger>
-        <SelectContent>{read?.binding?.remotes.filter((entry) => entry.readiness === 'ready').map((entry) => (
-          <SelectItem key={entry.name} value={entry.name}>{entry.name}</SelectItem>
-        ))}</SelectContent>
-      </Select>
-    </SettingsStackedField>
-    <Button size="sm" variant="outline" disabled={!parentRemote || recovery.blocked || saving} onClick={() => void retryHydration()}>
-      {t('gitView.hydration.retry')}
-    </Button>
-    <GitOperationStatus entry={recovery.entry} onRefresh={() => void recovery.refresh()} onCancel={() => void recovery.cancel()} />
-    {requirements.length ? <SettingsStackedField label={t('gitView.hydration.endpoint')}>
-      <Select value={selectedRequirement} onValueChange={setSelectedRequirement} disabled={saving}>
-        <SelectTrigger size="settings" className="w-full max-w-96" aria-label={t('gitView.hydration.endpoint')}>
-          <SelectValue placeholder={t('gitView.hydration.chooseEndpoint')}>
-            {selected ? `${selected.path} · ${t(selected.kind === 'submodule' ? 'gitView.hydration.kind.submodule' : 'gitView.hydration.kind.lfs')} · ${selected.endpoint.displayUrl}` : undefined}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>{requirements.map((entry) => {
-          const key = JSON.stringify([entry.kind, entry.path, entry.endpoint.fingerprint]);
-          return <SelectItem key={key} value={key}>{entry.path} · {t(entry.kind === 'submodule' ? 'gitView.hydration.kind.submodule' : 'gitView.hydration.kind.lfs')} · {entry.endpoint.displayUrl}</SelectItem>;
-        })}</SelectContent>
-      </Select>
-    </SettingsStackedField> : null}
-    {selected ? <>
-      <SettingsStackedField label={t('settings.sourceControl.transport.modeLabel')}>
-        <Select value={transport} onValueChange={(value) => {
-          if (value === 'system' || value === 'https' || value === 'ssh' || value === 'anonymous') setTransport(value);
-        }} disabled={saving}>
-          <SelectTrigger size="settings" className="w-full max-w-72" aria-label={t('settings.sourceControl.transport.modeAriaLabel')}>
-            <SelectValue placeholder={t('settings.sourceControl.transport.choose')} />
+  const kindLabel = (kind: GitCheckoutHydrationRequirement['kind']) => t(kind === 'submodule' ? 'gitView.hydration.kind.submodule' : 'gitView.hydration.kind.lfs');
+
+  return (
+    <SettingsControlGroup
+      title={t('gitView.hydration.title')}
+      description={t('gitView.hydration.description')}
+      className={cn('min-w-0', className)}
+      contentClassName={SETTINGS_FIELDS_STACK_CLASS}
+    >
+      <SettingsStackedField label={t('gitView.hydration.parentRemote')} controlClassName={EDITOR_CONTROL_CLASS}>
+        <Select value={parentRemote} onValueChange={(value) => {
+          setParentRemote(value);
+          setSelectedRequirement('');
+          setTransport('');
+          setAccountKey('');
+          setSshCredential('');
+          setUnverifiedConfirmed(false);
+        }} disabled={!read?.binding || saving || recovery.blocked}>
+          <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('gitView.hydration.parentRemote')}>
+            <SelectValue placeholder={t('settings.sourceControl.transport.remoteLabel')} />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="system">{t('settings.sourceControl.transport.system')}</SelectItem>
-            <SelectItem value="anonymous" disabled={!isHttps}>{t('settings.sourceControl.transport.anonymous')}</SelectItem>
-            <SelectItem value="https" disabled={!isHttps}>{t('settings.sourceControl.transport.https')}</SelectItem>
-            <SelectItem value="ssh" disabled={!isSsh}>{t('settings.sourceControl.transport.ssh')}</SelectItem>
-          </SelectContent>
+          <SelectContent>{read?.binding?.remotes.filter((entry) => entry.readiness === 'ready').map((entry) => (
+            <SelectItem key={entry.name} value={entry.name}>{entry.name}</SelectItem>
+          ))}</SelectContent>
         </Select>
       </SettingsStackedField>
-      {transport === 'https' ? <SettingsStackedField label={t('settings.sourceControl.transport.credentialAccount')}>
-        <Select value={accountKey} onValueChange={setAccountKey} disabled={saving}>
-          <SelectTrigger size="settings" className="w-full max-w-72"><SelectValue placeholder={t('settings.sourceControl.binding.noAccounts')}>{account?.label}</SelectValue></SelectTrigger>
-          <SelectContent>{accountOptions.map((entry) => <SelectItem key={entry.key} value={entry.key}>{entry.label}</SelectItem>)}</SelectContent>
+      <GitOperationStatus entry={recovery.entry} onRefresh={() => void recovery.refresh()} onCancel={() => void recovery.cancel()} />
+      {requirements.length ? <SettingsStackedField label={t('gitView.hydration.endpoint')} controlClassName={EDITOR_CONTROL_CLASS}>
+        <Select value={selectedRequirement} onValueChange={setSelectedRequirement} disabled={saving}>
+          <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('gitView.hydration.endpoint')}>
+            <SelectValue placeholder={t('gitView.hydration.chooseEndpoint')}>
+              {selected ? `${selected.path} · ${kindLabel(selected.kind)} · ${selected.endpoint.displayUrl}` : undefined}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>{requirements.map((entry) => {
+            const key = JSON.stringify([entry.kind, entry.path, entry.endpoint.fingerprint]);
+            return <SelectItem key={key} value={key}>{entry.path} · {kindLabel(entry.kind)} · {entry.endpoint.displayUrl}</SelectItem>;
+          })}</SelectContent>
         </Select>
       </SettingsStackedField> : null}
-      {transport === 'ssh' ? <ManagedSshCredentials selection={{ value: sshCredential, onChange: setSshCredential }} disabled={saving} /> : null}
-      {transport === 'system' ? <SettingsCheckboxRow checked={unverifiedConfirmed} onChange={setUnverifiedConfirmed} disabled={saving}
-        label={t('gitView.hydration.systemConfirmation')} /> : null}
-      <div className="flex flex-wrap gap-2">
-        <Button size="xs" variant="outline" disabled={!canSave} onClick={() => void save('configure')}>{t('settings.common.actions.saveChanges')}</Button>
-        {currentGrant ? <Button size="xs" variant="ghost" disabled={!canRemove} onClick={() => void save('remove')}>{t('settings.common.actions.delete')}</Button> : null}
+      {selected ? <>
+        <SettingsStackedField label={t('settings.sourceControl.transport.modeLabel')} controlClassName={EDITOR_CONTROL_CLASS}>
+          <Select value={transport} onValueChange={(value) => {
+            if (value === 'system' || value === 'https' || value === 'ssh' || value === 'anonymous') setTransport(value);
+          }} disabled={saving}>
+            <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('settings.sourceControl.transport.modeAriaLabel')}>
+              <SelectValue placeholder={t('settings.sourceControl.transport.choose')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">{t('settings.sourceControl.transport.system')}</SelectItem>
+              <SelectItem value="anonymous" disabled={!isHttps}>{t('settings.sourceControl.transport.anonymous')}</SelectItem>
+              <SelectItem value="https" disabled={!isHttps}>{t('settings.sourceControl.transport.https')}</SelectItem>
+              <SelectItem value="ssh" disabled={!isSsh}>{t('settings.sourceControl.transport.ssh')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingsStackedField>
+        {transport === 'https' ? <SettingsStackedField label={t('settings.sourceControl.transport.credentialAccount')} controlClassName={EDITOR_CONTROL_CLASS}>
+          <Select value={accountKey} onValueChange={setAccountKey} disabled={saving}>
+            <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('settings.sourceControl.transport.credentialAccount')}>
+              <SelectValue placeholder={t('settings.sourceControl.binding.noAccounts')}>{account?.label}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>{accountOptions.map((entry) => <SelectItem key={entry.key} value={entry.key}>{entry.label}</SelectItem>)}</SelectContent>
+          </Select>
+        </SettingsStackedField> : null}
+        {transport === 'ssh' ? <ManagedSshCredentials selection={{ value: sshCredential, onChange: setSshCredential }} disabled={saving} /> : null}
+        {transport === 'system' ? <SettingsCheckboxRow checked={unverifiedConfirmed} onChange={setUnverifiedConfirmed} disabled={saving}
+          label={t('gitView.hydration.systemConfirmation')} /> : null}
+      </> : null}
+      {latest?.hydration?.status === 'client-missing' ? <p role="alert" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-warning)]')}>
+        {t('gitView.hydration.lfsMissing')}
+      </p> : null}
+      {error ? <EditorStatus error>{t('settings.gitlab.status.operationFailed')}</EditorStatus> : null}
+      <div className={EDITOR_ACTIONS_CLASS}>
+        <Button size="sm" variant="outline" disabled={!parentRemote || recovery.blocked || saving} onClick={() => void retryHydration()}>
+          {t('gitView.hydration.retry')}
+        </Button>
+        {selected ? <>
+          <Button size="sm" disabled={!canSave} onClick={() => void save('configure')}>{t('settings.common.actions.saveChanges')}</Button>
+          {currentGrant ? <Button size="sm" variant="ghost" disabled={!canRemove} onClick={() => void save('remove')}>{t('settings.common.actions.delete')}</Button> : null}
+        </> : null}
       </div>
-    </> : null}
-    {latest?.hydration?.status === 'client-missing' ? <p role="alert" className="typography-micro text-[var(--status-warning)]">
-      {t('gitView.hydration.lfsMissing')}
-    </p> : null}
-    {error ? <p role="alert" className="typography-micro text-[var(--status-error)]">{t('settings.gitlab.status.operationFailed')}</p> : null}
-  </div>;
+    </SettingsControlGroup>
+  );
 };

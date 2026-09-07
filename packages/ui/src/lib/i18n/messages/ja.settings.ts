@@ -2304,7 +2304,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': 'リモート',
   'settings.sourceControl.transport.remoteAriaLabel': '設定する Git リモート',
   'settings.sourceControl.transport.noRemotes': 'Git リモートがありません',
-  'settings.sourceControl.transport.modeLabel': '転送方式',
+  'settings.sourceControl.transport.modeLabel': '認証情報',
   'settings.sourceControl.transport.modeAriaLabel': '選択したリモートの Git 転送方式',
   'settings.sourceControl.transport.choose': '転送方式を選択',
   'settings.sourceControl.transport.system': 'システム Git',

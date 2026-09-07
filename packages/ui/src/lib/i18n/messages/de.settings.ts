@@ -2308,7 +2308,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': 'Remote',
   'settings.sourceControl.transport.remoteAriaLabel': 'Zu konfigurierendes Git-Remote',
   'settings.sourceControl.transport.noRemotes': 'Keine Git-Remotes',
-  'settings.sourceControl.transport.modeLabel': 'Transport',
+  'settings.sourceControl.transport.modeLabel': 'Anmeldedaten',
   'settings.sourceControl.transport.modeAriaLabel': 'Git-Transport für das ausgewählte Remote',
   'settings.sourceControl.transport.choose': 'Transport wählen',
   'settings.sourceControl.transport.system': 'System-Git',

@@ -1,9 +1,10 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { SettingsCheckboxRow, SettingsStackedField } from '../shared/SettingsSection';
+import { SETTINGS_HELPER_CLASS, SETTINGS_SELECT_SIZE, SettingsCheckboxRow, SettingsStackedField } from '../shared/SettingsSection';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import type { GitManagedSshCandidate, GitManagedSshCredential, GitManagedSshIntent } from '@/lib/api/types';
 import { getRuntimeKey, subscribeRuntimeEndpointWillChange } from '@/lib/runtime-switch';
 
@@ -120,16 +121,16 @@ export function ManagedSshCredentials({ selection, disabled = false }: {
   const rejection = rejectionMessage();
   const controlsDisabled = disabled || state.status === 'loading' || !git.managedSshCredentials;
 
-  return <SettingsStackedField className="min-w-0 w-full" controlClassName="flex-col items-stretch"
-    label={t('settings.sourceControl.ssh.title')} info={t('settings.sourceControl.ssh.hostSetup')}>
+  const content = <>
+
     {selection ? <Select value={selection.value} onValueChange={selection.onChange} disabled={disabled || state.status !== 'ready'}>
-      <SelectTrigger size="settings" className="w-full max-w-72" aria-label={t('settings.sourceControl.ssh.title')}>
+      <SelectTrigger size={SETTINGS_SELECT_SIZE} className="w-full" aria-label={t('settings.sourceControl.ssh.title')}>
         <SelectValue placeholder={t('settings.sourceControl.ssh.title')} />
       </SelectTrigger>
       <SelectContent>{state.credentials.map((credential) => <SelectItem key={credential.credentialId} value={credential.credentialId} disabled={credential.capability.status !== 'ready'}>
         {credential.label} {credential.fingerprint} {credentialReason(credential)}
       </SelectItem>)}</SelectContent>
-    </Select> : state.credentials.map((credential) => <p key={credential.credentialId} className="break-all typography-micro text-muted-foreground">
+    </Select> : state.credentials.map((credential) => <p key={credential.credentialId} className={cn(SETTINGS_HELPER_CLASS, 'break-all')}>
       {credential.label} {credential.fingerprint} {credentialReason(credential)}
     </p>)}
     <div className="flex flex-wrap gap-2">
@@ -143,7 +144,7 @@ export function ManagedSshCredentials({ selection, disabled = false }: {
     {state.candidates.length ? <div className="space-y-4">
       {state.candidates.map((candidate, index) => 'candidateId' in candidate ? <div key={candidate.candidateId} className="space-y-2 border-t border-border/60 pt-3">
         <p className="typography-settings-field-label text-foreground">{candidate.label}</p>
-        <p className="break-all typography-micro text-muted-foreground">{candidate.fingerprint}</p>
+        <p className={cn(SETTINGS_HELPER_CLASS, 'break-all')}>{candidate.fingerprint}</p>
         <SettingsCheckboxRow
           checked={confirmedCandidateId === candidate.candidateId}
           onChange={(checked) => setConfirmedCandidateId(checked ? candidate.candidateId : '')}
@@ -156,17 +157,27 @@ export function ManagedSshCredentials({ selection, disabled = false }: {
           onClick={() => void send({ operation: 'import', candidateId: candidate.candidateId, expectedFingerprint: candidate.fingerprint, confirmed: true })}>
           {t('settings.sourceControl.ssh.import')}
         </Button>
-      </div> : <p key={`${candidate.label}-${index}`} className="typography-micro text-muted-foreground">
+      </div> : <p key={`${candidate.label}-${index}`} className={SETTINGS_HELPER_CLASS}>
         {candidate.label} {candidateReason(candidate)}
       </p>)}
     </div> : null}
-    {state.status === 'loading' ? <p role="status" className="typography-micro text-muted-foreground">{t('settings.sourceControl.transport.loading')}</p> : null}
-    {state.status === 'error' ? <p role="alert" className="typography-micro text-status-error">{t('settings.sourceControl.ssh.operationFailed')}</p> : null}
-    {rejection ? <p role="alert" className="typography-micro text-status-error">{rejection}</p> : null}
-    {state.imported ? <p role="status" className="typography-micro text-status-success">{t('settings.sourceControl.ssh.imported')}</p> : null}
-    {state.status === 'ready' && !state.credentials.length ? <p className="typography-micro text-muted-foreground">{t('settings.sourceControl.ssh.empty')}</p> : null}
-    {state.status === 'ready' && state.discoveryAttempted && !state.candidates.length ? <p className="typography-micro text-muted-foreground">{t('settings.sourceControl.ssh.discoveredEmpty')}</p> : null}
-    {state.truncated ? <p role="status" className="typography-micro text-status-warning">{t('settings.sourceControl.ssh.discoveryTruncated')}</p> : null}
-    {hostSetup || !git.managedSshCredentials ? <p role="status" className="typography-micro text-muted-foreground">{t('settings.sourceControl.ssh.hostSetup')}</p> : null}
-  </SettingsStackedField>;
+    {state.status === 'loading' ? <p role="status" className={SETTINGS_HELPER_CLASS}>{t('settings.sourceControl.transport.loading')}</p> : null}
+    {state.status === 'error' ? <p role="alert" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-error)]')}>{t('settings.sourceControl.ssh.operationFailed')}</p> : null}
+    {rejection ? <p role="alert" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-error)]')}>{rejection}</p> : null}
+    {state.imported ? <p role="status" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-success)]')}>{t('settings.sourceControl.ssh.imported')}</p> : null}
+    {state.status === 'ready' && !state.credentials.length ? <p className={SETTINGS_HELPER_CLASS}>{t('settings.sourceControl.ssh.empty')}</p> : null}
+    {state.status === 'ready' && state.discoveryAttempted && !state.candidates.length ? <p className={SETTINGS_HELPER_CLASS}>{t('settings.sourceControl.ssh.discoveredEmpty')}</p> : null}
+    {state.truncated ? <p role="status" className={cn(SETTINGS_HELPER_CLASS, 'text-[var(--status-warning)]')}>{t('settings.sourceControl.ssh.discoveryTruncated')}</p> : null}
+    {hostSetup || !git.managedSshCredentials ? <p role="status" className={SETTINGS_HELPER_CLASS}>{t('settings.sourceControl.ssh.hostSetup')}</p> : null}
+  </>;
+
+  // In picker mode the key select needs its own label; on the Git settings
+  // page the section title already names the block, so the inventory renders
+  // as a plain stack under it.
+  return selection
+    ? <SettingsStackedField className="min-w-0 w-full" controlClassName="max-w-none flex-col items-stretch gap-3"
+      label={t('settings.sourceControl.ssh.title')} info={t('settings.sourceControl.ssh.hostSetup')}>
+      {content}
+    </SettingsStackedField>
+    : <div className="min-w-0 w-full space-y-3">{content}</div>;
 }

@@ -2304,7 +2304,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': '远程',
   'settings.sourceControl.transport.remoteAriaLabel': '要配置的 Git 远程',
   'settings.sourceControl.transport.noRemotes': '没有 Git 远程',
-  'settings.sourceControl.transport.modeLabel': '传输',
+  'settings.sourceControl.transport.modeLabel': '凭据',
   'settings.sourceControl.transport.modeAriaLabel': '所选远程的 Git 传输方式',
   'settings.sourceControl.transport.choose': '选择传输方式',
   'settings.sourceControl.transport.system': '系统 Git',

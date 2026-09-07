@@ -2304,7 +2304,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': 'Dépôt distant',
   'settings.sourceControl.transport.remoteAriaLabel': 'Dépôt Git distant à configurer',
   'settings.sourceControl.transport.noRemotes': 'Aucun dépôt Git distant',
-  'settings.sourceControl.transport.modeLabel': 'Transport',
+  'settings.sourceControl.transport.modeLabel': 'Identifiants',
   'settings.sourceControl.transport.modeAriaLabel': 'Transport Git du dépôt distant sélectionné',
   'settings.sourceControl.transport.choose': 'Choisir un transport',
   'settings.sourceControl.transport.system': 'Git système',

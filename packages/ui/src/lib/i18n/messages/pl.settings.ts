@@ -2297,7 +2297,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': 'Repozytorium zdalne',
   'settings.sourceControl.transport.remoteAriaLabel': 'Repozytorium Git do skonfigurowania',
   'settings.sourceControl.transport.noRemotes': 'Brak repozytoriów zdalnych Git',
-  'settings.sourceControl.transport.modeLabel': 'Transport',
+  'settings.sourceControl.transport.modeLabel': 'Poświadczenia',
   'settings.sourceControl.transport.modeAriaLabel': 'Transport Git dla wybranego repozytorium zdalnego',
   'settings.sourceControl.transport.choose': 'Wybierz transport',
   'settings.sourceControl.transport.system': 'Systemowy Git',

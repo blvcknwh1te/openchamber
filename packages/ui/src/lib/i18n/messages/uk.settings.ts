@@ -2304,7 +2304,7 @@ export const settingsDict = {
   'settings.sourceControl.transport.remoteLabel': 'Віддалений репозиторій',
   'settings.sourceControl.transport.remoteAriaLabel': 'Віддалений Git-репозиторій для налаштування',
   'settings.sourceControl.transport.noRemotes': 'Немає віддалених Git-репозиторіїв',
-  'settings.sourceControl.transport.modeLabel': 'Транспорт',
+  'settings.sourceControl.transport.modeLabel': 'Облікові дані',
   'settings.sourceControl.transport.modeAriaLabel': 'Git-транспорт для вибраного віддаленого репозиторію',
   'settings.sourceControl.transport.choose': 'Виберіть транспорт',
   'settings.sourceControl.transport.system': 'Системний Git',

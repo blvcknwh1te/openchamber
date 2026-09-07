@@ -372,7 +372,7 @@ export const GitIdentityEditorDialog: React.FC<GitIdentityEditorDialogProps> = (
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsDeleteDialogOpen(false)} disabled={isDeleting}>
+            <Button size="sm" variant="ghost" onClick={() => setIsDeleteDialogOpen(false)} disabled={isDeleting}>
               {t('settings.common.actions.cancel')}
             </Button>
             <Button size="sm" variant="destructive" onClick={() => void handleConfirmDelete()} disabled={isDeleting}>

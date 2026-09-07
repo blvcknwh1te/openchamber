@@ -115,12 +115,16 @@ export const GitPage: React.FC = () => {
         showSaveStatus
         className="px-4 @xl:px-6 @3xl:px-12"
       >
-        {!isVSCode && <SettingsSection title={t('settings.sourceControl.ssh.title')} settingsItem="git.managed-ssh">
+        {/* The page layout strips the divider from whichever section renders first. */}
+        {!isVSCode && <SettingsSection
+          title={t('settings.sourceControl.ssh.title')}
+          info={t('settings.sourceControl.ssh.hostSetup')}
+          settingsItem="git.managed-ssh"
+        >
           <ManagedSshCredentials />
         </SettingsSection>}
         <SettingsSection
           title={t('settings.gitIdentities.page.section.title')}
-          divider={false}
           headerAction={(
             <Button size="sm" variant="outline" onClick={() => openEditor('new')}>
               <Icon name="add" className="w-3.5 h-3.5 mr-1" /> {t('settings.common.badge.new')}
@@ -190,7 +194,7 @@ export const GitPage: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteDialogProfile(null)} disabled={isDeletePending}>
+            <Button size="sm" variant="ghost" onClick={() => setDeleteDialogProfile(null)} disabled={isDeletePending}>
               {t('settings.common.actions.cancel')}
             </Button>
             <Button size="sm" variant="destructive" onClick={() => void handleConfirmDelete()} disabled={isDeletePending}>
