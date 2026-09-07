@@ -151,9 +151,12 @@ export const SourceControlBindingSettings: React.FC<SourceControlBindingSettings
     }
   };
 
-  return <div className={cn('shrink-0 min-w-0 border-b border-border px-4 pb-2', className)} aria-label={t('gitView.context.ariaLabel')}>
+  // The strip is its own container: on a narrow pane the summary claims the
+  // whole row so the action wraps beneath it, instead of being squeezed into
+  // the width left over beside the button.
+  return <div className={cn('@container shrink-0 min-w-0 border-b border-border px-4 pb-2', className)} aria-label={t('gitView.context.ariaLabel')}>
     <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-      <div className="min-w-0 flex-1 basis-48 typography-micro text-muted-foreground break-words" data-binding-revision={read?.revision}>
+      <div className="min-w-0 flex-1 basis-full @xl:basis-48 typography-micro text-muted-foreground break-words" data-binding-revision={read?.revision}>
         {providers.length ? providers.map((provider) => {
           return <div key={JSON.stringify([provider.provider, provider.instance, provider.accountId, provider.primaryRemote])}>
             {t('gitView.context.provider')}: {getSourceControlProviderLabel(provider.provider)} · {provider.instance} · {provider.primaryRemote}
