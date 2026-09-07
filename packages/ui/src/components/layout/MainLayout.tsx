@@ -11,6 +11,7 @@ import { HelpDialog } from '../ui/HelpDialog';
 import { OpenCodeStatusDialog } from '../ui/OpenCodeStatusDialog';
 import { SessionSidebar } from '@/components/session/SessionSidebar';
 import { SessionDialogs } from '@/components/session/SessionDialogs';
+import { SessionWorktreeMoveConfirmDialog } from '@/components/session/sidebar/SessionWorktreeMoveConfirmDialog';
 import { ScheduledTasksDialog } from '@/components/session/ScheduledTasksDialog';
 import { ArchiveView } from '@/components/views/ArchiveView';
 import { WorktreesView } from '@/components/views/WorktreesView';
@@ -19,10 +20,17 @@ import { MultiRunLauncher } from '@/components/multirun';
 
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import {
+  cancelSessionTreeMove,
+  confirmSessionTreeMove,
+  useSessionTreeMoveConfirmation,
+} from '@/lib/worktrees/sessionWorktreeMove';
 import { useUpdatePolling } from '@/hooks/useUpdatePolling';
+import { useTerminalSessionKeepalive } from '@/hooks/useTerminalSessionKeepalive';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
+import { useSessionListSync } from '@/components/session/sidebar/list/useSessionListSync';
 
 import { ChatView } from '@/components/views/ChatView';
 
@@ -35,6 +43,8 @@ const SettingsWindow = lazyWithChunkRecovery(() => import('@/components/views/Se
  * crossing the threshold reloads into it (see watchHostedSurfaceViewport).
  */
 export const MainLayout: React.FC = () => {
+    useSessionListSync({ isVSCode: false });
+    useTerminalSessionKeepalive();
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const setIsMobile = useUIStore((state) => state.setIsMobile);
     const isSettingsDialogOpen = useUIStore((state) => state.isSettingsDialogOpen);
@@ -78,6 +88,8 @@ export const MainLayout: React.FC = () => {
 
     useUpdatePolling();
 
+    const sessionTreeMoveConfirmation = useSessionTreeMoveConfirmation();
+
     React.useEffect(() => {
         const previous = useUIStore.getState().isMobile;
         if (previous !== isMobile) {
@@ -95,6 +107,12 @@ export const MainLayout: React.FC = () => {
                 <HelpDialog />
                 <OpenCodeStatusDialog />
                 <SessionDialogs />
+                <SessionWorktreeMoveConfirmDialog
+                    value={sessionTreeMoveConfirmation}
+                    onMoveSessionOnly={() => confirmSessionTreeMove(false)}
+                    onMoveAllChanges={() => confirmSessionTreeMove(true)}
+                    onCancel={cancelSessionTreeMove}
+                />
 
                 {/* Persistent top-left controls (toggle + project actions) that
                     stay put while the sidebar/header animate beneath them. */}

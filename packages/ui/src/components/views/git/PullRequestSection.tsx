@@ -24,6 +24,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useOpenSourceControlSettings } from '@/hooks/useOpenSourceControlSettings';
 import { useWalkthroughStore } from '@/stores/useWalkthroughStore';
 import { WALKTHROUGH_ACTION_CLASS } from '@/components/views/walkthrough/walkthroughAction';
+import { GitHubAccountControl } from '@/components/github/GitHubAccountControl';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { formatDateTimeForPreference } from '@/lib/timeFormat';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -1059,6 +1060,12 @@ export const PullRequestSection: React.FC<{
     attachCommentDraft(target, comment);
   }, [attachCommentDraft, resolveDraftTarget]);
 
+  const [isManualRefreshing, setIsManualRefreshing] = React.useState(false);
+  const manualRefreshMountedRef = React.useRef(true);
+  React.useEffect(() => {
+    manualRefreshMountedRef.current = true;
+    return () => { manualRefreshMountedRef.current = false; };
+  }, []);
   const refresh = React.useCallback(async (options?: { force?: boolean; onlyExistingPr?: boolean; silent?: boolean; markInitialResolved?: boolean }) => {
     await refreshPrStatus(prStatusKey, options);
   }, [prStatusKey, refreshPrStatus]);
@@ -1112,6 +1119,22 @@ export const PullRequestSection: React.FC<{
     sourceControlAuth.connected,
     setPrStatusParams,
   ]);
+
+  // A refresh often answers from the server cache within milliseconds, and a
+  // spinner that never reaches the screen reads as "the button did nothing".
+  const PR_MANUAL_REFRESH_MIN_SPIN_MS = 600;
+  const refreshManually = React.useCallback(async () => {
+    if (isManualRefreshing) return;
+    setIsManualRefreshing(true);
+    const startedAt = Date.now();
+    try {
+      await refresh({ force: true });
+    } finally {
+      const remaining = PR_MANUAL_REFRESH_MIN_SPIN_MS - (Date.now() - startedAt);
+      if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+      if (manualRefreshMountedRef.current) setIsManualRefreshing(false);
+    }
+  }, [isManualRefreshing, refresh]);
 
   React.useEffect(() => {
     if (!readContext || !prStatusKey) return;
@@ -1455,7 +1478,10 @@ export const PullRequestSection: React.FC<{
     return (
       <section className="border-0 bg-transparent rounded-none">
         <div className="space-y-1 pt-3">
-          <div className="typography-ui-header font-semibold text-foreground">{t('gitView.pullRequest.title')}</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="typography-ui-header font-semibold text-foreground">{t('gitView.pullRequest.title')}</div>
+            <GitHubAccountControl />
+          </div>
           <div className="typography-micro text-muted-foreground">
             {t('gitView.pullRequest.availableOnFeatureBranches')}
           </div>
@@ -1533,14 +1559,14 @@ export const PullRequestSection: React.FC<{
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {isLoading ? <Icon name="loader-4" className="size-4 animate-spin text-muted-foreground" /> : null}
+            {isLoading || isManualRefreshing ? <Icon name="loader-4" className="size-4 animate-spin text-muted-foreground" /> : null}
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   className="inline-flex size-5 items-center justify-center rounded hover:bg-interactive-hover/60 disabled:opacity-40"
-                  disabled={isLoading}
-                  onClick={() => void refresh({ force: true })}
+                  disabled={isLoading || isManualRefreshing}
+                  onClick={() => void refreshManually()}
                   aria-label={t('gitView.pr.actions.refreshAria')}
                 >
                   <Icon name="refresh" className="size-3.5 text-muted-foreground" />

@@ -1,7 +1,6 @@
 export type QuotaProviderId =
   | 'openai'
   | 'codex'
-  | 'command-code'
   | 'cursor'
   | 'claude'
   | 'github-copilot'
@@ -19,6 +18,8 @@ export type QuotaProviderId =
   | 'opencode-go'
   | 'crof'
   | 'deepseek'
+  | 'exe-dev'
+  | 'hyper'
   | 'neuralwatt'
   | 'xai';
 

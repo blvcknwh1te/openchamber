@@ -28,19 +28,21 @@ import { dropdownTriggerVariants } from '@/components/ui/dropdown-trigger';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSourceControlAuthEntry } from '@/stores/useSourceControlAuthStore';
 import { GITHUB_SOURCE_CONTROL_IDENTITY } from '@/lib/source-control/identity';
+import { useLinearAuthStore } from '@/stores/useLinearAuthStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
-import { buildLinkedIssue } from '@/lib/linkedIssues';
+import { buildLinkedIssue, buildLinkedLinearIssue } from '@/lib/linkedIssues';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
-import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
+import { validateWorktreeCreate } from '@/lib/worktrees/worktreeManager';
+import { createWorktreeWithDefaults } from '@/lib/worktrees/worktreeCreate';
 import { waitForWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { getWorktreeSetupCommands, getWorktreeSetupWaitEnabled } from '@/lib/openchamberConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
+import { postLinearSessionStarted } from '@/lib/linearSessionStatus';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { rankBranchesForQuery } from '@/lib/worktrees/branchSearch';
 import {
@@ -50,8 +52,9 @@ import {
 } from '@/lib/worktrees/worktreeSourceBranchPreference';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitBranches, useGitStore, useGitLoadingBranches } from '@/stores/useGitStore';
-import { GitHubIntegrationDialog } from './GitHubIntegrationDialog';
+import { GitHubIntegrationDialog, type GitHubWorktreeSelection } from './GitHubIntegrationDialog';
 import { resolvePrWorktreeConfig } from './prWorktreeConfig';
+import { LinearIssuePickerDialog } from './LinearIssuePickerDialog';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Icon } from "@/components/icon/Icon";
@@ -61,6 +64,8 @@ import type {
   Issue,
   IssueComment,
   SourceControlReadContext,
+  LinearIssue,
+  LinearIssueComment,
 } from '@/lib/api/types';
 import type { CreateWorktreeArgs, ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
@@ -74,6 +79,13 @@ interface ValidationState {
   touched: boolean;
 }
 
+type LinkedLinearWorktreeIssue = {
+  identifier: string;
+  title: string;
+  url: string;
+  author?: { login: string; avatarUrl?: string };
+};
+
 // State for New Branch mode
 interface NewBranchState {
   branchName: string;
@@ -84,6 +96,7 @@ interface NewBranchState {
   linkedIssueContext: SourceControlReadContext | null;
   linkedPr: ChangeRequest | null;
   linkedPrContext: SourceControlReadContext | null;
+  linkedLinearIssue: LinkedLinearWorktreeIssue | null;
   includePrDiff: boolean;
 }
 
@@ -138,17 +151,30 @@ const buildPullRequestContextText = (payload: ChangeRequestContext) => {
   return `Source control change request context (JSON)\n${JSON.stringify(payload, null, 2)}`;
 };
 
+const buildLinearIssueContextText = (args: {
+  issue: LinearIssue;
+  comments: LinearIssueComment[];
+}) => {
+  const payload = {
+    issue: args.issue,
+    comments: args.comments,
+  };
+  return `Linear issue context (JSON)\n${JSON.stringify(payload, null, 2)}`;
+};
+
 export function NewWorktreeDialog({
   open,
   onOpenChange,
   onWorktreeCreated,
 }: NewWorktreeDialogProps) {
   const { t } = useI18n();
-  const { git, sourceControl } = useRuntimeAPIs();
+  const { git, sourceControl, linear } = useRuntimeAPIs();
   const isMobile = useUIStore((state) => state.isMobile);
   const githubAuthEntry = useSourceControlAuthEntry(GITHUB_SOURCE_CONTROL_IDENTITY);
   const githubAuthStatus = githubAuthEntry?.status ?? null;
   const githubAuthChecked = githubAuthEntry?.hasChecked ?? false;
+  const linearAuthStatus = useLinearAuthStore((state) => state.status);
+  const linearAuthChecked = useLinearAuthStore((state) => state.hasChecked);
   const activeProject = useProjectsStore((state) => state.getActiveProject());
   
   const projectDirectory = activeProject?.path ?? null;
@@ -172,6 +198,7 @@ export function NewWorktreeDialog({
     linkedIssueContext: null,
     linkedPr: null,
     linkedPrContext: null,
+    linkedLinearIssue: null,
     includePrDiff: false,
   });
   
@@ -222,6 +249,7 @@ export function NewWorktreeDialog({
   }, [existingWorktreeNames]);
   
   const [githubDialogOpen, setGithubDialogOpen] = React.useState(false);
+  const [linearDialogOpen, setLinearDialogOpen] = React.useState(false);
   
   // Desktop branch picker states
   const [existingBranchDropdownOpen, setExistingBranchDropdownOpen] = React.useState(false);
@@ -360,6 +388,7 @@ export function NewWorktreeDialog({
   // Creation state
   const [isCreating, setIsCreating] = React.useState(false);
   const [validationAbortController, setValidationAbortController] = React.useState<AbortController | null>(null);
+  const initializedForCurrentOpen = React.useRef(false);
 
   const resolveDefaultAgentName = React.useCallback((): string | undefined => {
     const configState = useConfigStore.getState();
@@ -397,9 +426,7 @@ export function NewWorktreeDialog({
       : undefined;
 
     const provider = configState.providers.find((p) => p.id === providerID);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
+    const model = provider?.models.find((m) => m.id === modelID);
     const variants = model?.variants;
     if (!variants) return settingsDefaultVariant || currentVariant || undefined;
     if (settingsDefaultVariant && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) return settingsDefaultVariant;
@@ -414,6 +441,7 @@ export function NewWorktreeDialog({
     issueContext: SourceControlReadContext | null;
     pr: ChangeRequest | null;
     prContext: SourceControlReadContext | null;
+    linearIssue: LinkedLinearWorktreeIssue | null;
     includeDiff: boolean;
   }) => {
     const configState = useConfigStore.getState();
@@ -429,6 +457,69 @@ export function NewWorktreeDialog({
     }
 
     const variant = resolveDefaultVariant(providerID, modelID);
+
+    if (args.linearIssue) {
+      if (!linear?.issueGet) {
+        return;
+      }
+
+      const issueRes = await linear.issueGet(args.linearIssue.identifier);
+      if (issueRes.connected === false || !issueRes.issue) {
+        throw new Error('Failed to load issue context');
+      }
+
+      const issue = issueRes.issue;
+      const comments = issue.comments ?? [];
+      const login = issue.assignee?.displayName || issue.assignee?.name;
+      const visiblePromptText = await renderMagicPrompt('linear.issue.review.visible', {
+        identifier: issue.identifier,
+      });
+      const instructionsText = await renderMagicPrompt('linear.issue.review.instructions');
+      const contextText = buildLinearIssueContextText({ issue, comments });
+
+      postLinearSessionStarted(linear, {
+        sessionId: args.sessionId,
+        issueIdentifier: issue.identifier,
+      });
+
+      await useSessionUIStore.getState().sendMessage(
+        visiblePromptText,
+        providerID,
+        modelID,
+        agentName,
+        undefined,
+        undefined,
+        [
+          { text: instructionsText, synthetic: true },
+          { text: contextText, synthetic: true },
+        ],
+        variant,
+        undefined,
+        { sessionId: args.sessionId, directory: args.directory },
+      );
+
+      void sessionActions.setLinkedIssue(
+        args.sessionId,
+        args.directory,
+        buildLinkedLinearIssue({
+          identifier: issue.identifier,
+          title: issue.title,
+          url: issue.url,
+          author: login
+            ? { login, avatarUrl: issue.assignee?.avatarUrl || undefined }
+            : args.linearIssue.author,
+          linkedAt: Date.now(),
+        }),
+        true,
+      ).catch(() => undefined);
+
+      toast.success(t('session.newWorktree.toast.sessionFromIssue'));
+      return;
+    }
+
+    if (!projectDirectory || !sourceControl) {
+      return;
+    }
 
     if (args.issue) {
       if (!args.issueContext) {
@@ -546,6 +637,8 @@ export function NewWorktreeDialog({
       toast.success(t('session.newWorktree.toast.sessionFromPr'));
     }
   }, [
+    linear,
+    projectDirectory,
     resolveDefaultAgentName,
     resolveDefaultModelSelection,
     resolveDefaultVariant,
@@ -605,7 +698,12 @@ export function NewWorktreeDialog({
   // Reset state on each open. Resetting on close would empty the form during
   // the close animation, causing visible flicker.
   React.useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedForCurrentOpen.current = false;
+      return;
+    }
+    if (initializedForCurrentOpen.current) return;
+    initializedForCurrentOpen.current = true;
 
     setMode('new-branch');
     setExistingBranchState({
@@ -635,6 +733,7 @@ export function NewWorktreeDialog({
       linkedIssueContext: null,
       linkedPr: null,
       linkedPrContext: null,
+      linkedLinearIssue: null,
       includePrDiff: false,
     });
   }, [open, generateUniqueSlug]);
@@ -799,10 +898,11 @@ export function NewWorktreeDialog({
       const linkedPr = mode === 'new-branch' ? newBranchState.linkedPr : null;
       const linkedIssue = mode === 'new-branch' ? newBranchState.linkedIssue : null;
       const linkedIssueContext = mode === 'new-branch' ? newBranchState.linkedIssueContext : null;
+      const linkedLinearIssue = mode === 'new-branch' ? newBranchState.linkedLinearIssue : null;
       const linkedPrState = mode === 'new-branch' ? newBranchState.linkedPr : null;
       const linkedPrContext = mode === 'new-branch' ? newBranchState.linkedPrContext : null;
       const includePrDiff = mode === 'new-branch' ? newBranchState.includePrDiff : false;
-      const shouldCreateSession = Boolean(linkedIssue || linkedPrState);
+      const shouldCreateSession = Boolean(linkedIssue || linkedPrState || linkedLinearIssue);
 
       const setupCommands = await getWorktreeSetupCommands(projectRef);
       const sourceBranch = newBranchState.sourceBranch;
@@ -838,9 +938,7 @@ export function NewWorktreeDialog({
         if (sourceBranch && mode === 'new-branch') args.startRef = sourceBranch;
       }
 
-      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
-
-      const metadata = await createWorktree(projectRef, resolvedArgs);
+      const metadata = await createWorktreeWithDefaults(projectRef, args);
 
       if (metadata.provenance?.kind === 'contributor-fork') {
         await waitForWorktreeBootstrap(metadata.path);
@@ -860,7 +958,9 @@ export function NewWorktreeDialog({
           await waitForWorktreeBootstrap(metadata.path);
         }
 
-        const sessionTitle = linkedIssue
+        const sessionTitle = linkedLinearIssue
+          ? `${linkedLinearIssue.identifier} ${linkedLinearIssue.title}`.trim()
+          : linkedIssue
           ? `#${linkedIssue.number} ${linkedIssue.title}`.trim()
           : linkedPrState
             ? `#${linkedPrState.number} ${linkedPrState.title}`.trim()
@@ -914,10 +1014,14 @@ export function NewWorktreeDialog({
           issueContext: linkedIssueContext,
           pr: linkedPrState,
           prContext: linkedPrContext,
+          linearIssue: linkedLinearIssue,
           includeDiff: includePrDiff,
         }).catch((error) => {
-          const message = error instanceof Error ? error.message : t('session.newWorktree.error.sendGitHubContextFailed');
-          toast.error(t('session.newWorktree.error.sendGitHubContextFailed'), { description: message });
+          const fallback = linkedLinearIssue
+            ? t('session.newWorktree.error.sendLinearContextFailed')
+            : t('session.newWorktree.error.sendGitHubContextFailed');
+          const message = error instanceof Error ? error.message : fallback;
+          toast.error(fallback, { description: message });
         });
       } else {
         onWorktreeCreated?.(metadata.path);
@@ -938,11 +1042,7 @@ export function NewWorktreeDialog({
   };
 
   // Handle GitHub selection
-  const handleGitHubSelect = (result:
-    | { type: 'issue'; item: Issue; context: SourceControlReadContext }
-    | { type: 'pr'; item: ChangeRequest; context: SourceControlReadContext; includeDiff?: boolean }
-    | null
-  ) => {
+  const handleGitHubSelect = (result: GitHubWorktreeSelection | null) => {
     if (!result) {
       setNewBranchState(prev => ({
         ...prev,
@@ -950,6 +1050,7 @@ export function NewWorktreeDialog({
         linkedIssueContext: null,
         linkedPr: null,
         linkedPrContext: null,
+        linkedLinearIssue: null,
         includePrDiff: false,
         branchName: '',
       }));
@@ -965,6 +1066,7 @@ export function NewWorktreeDialog({
         linkedIssueContext: result.context,
         linkedPr: null,
         linkedPrContext: null,
+        linkedLinearIssue: null,
         includePrDiff: false,
         branchName: newBranchName,
         worktreeName: slugifyWorktreeName(newBranchName),
@@ -978,6 +1080,7 @@ export function NewWorktreeDialog({
         linkedPrContext: result.context,
         linkedIssue: null,
         linkedIssueContext: null,
+        linkedLinearIssue: null,
         includePrDiff: result.includeDiff ?? false,
         branchName: pr.head,
         worktreeName: slugifyWorktreeName(pr.head),
@@ -986,8 +1089,33 @@ export function NewWorktreeDialog({
     }
   };
 
+  const handleLinearSelect = (issue: {
+    identifier: string;
+    title: string;
+    url: string;
+    author?: { login: string; avatarUrl?: string };
+  }) => {
+    const newBranchName = `issue-${issue.identifier}-${generateBranchSlug()}`;
+    setNewBranchState(prev => ({
+      ...prev,
+      linkedLinearIssue: {
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        author: issue.author,
+      },
+      linkedIssue: null,
+      linkedPr: null,
+      includePrDiff: false,
+      branchName: newBranchName,
+      worktreeName: slugifyWorktreeName(newBranchName),
+      isSyncingWorktreeName: true,
+    }));
+  };
+
   // GitHub connection check
   const isGitHubConnected = githubAuthChecked && githubAuthStatus?.connected === true;
+  const isLinearConnected = Boolean(linear) && linearAuthChecked && linearAuthStatus?.connected === true;
 
   // Check if form is valid for submission
   const isFormValid = mode === 'existing-branch'
@@ -1003,11 +1131,41 @@ export function NewWorktreeDialog({
       linkedIssueContext: null,
       linkedPr: null,
       linkedPrContext: null,
+      linkedLinearIssue: null,
       branchName: '',
       includePrDiff: false,
       isSyncingWorktreeName: true,
     }));
   };
+
+  const startFromIssueButtons = mode === 'new-branch' && (isGitHubConnected || isLinearConnected) ? (
+    <div className="flex items-center gap-0.5 shrink-0">
+      {isGitHubConnected && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setGithubDialogOpen(true)}
+          className="h-8 w-8 px-0"
+          title={t('session.newWorktree.actions.startFromGitHubIssuePr')}
+          aria-label={t('session.newWorktree.actions.startFromGitHubIssuePr')}
+        >
+          <Icon name="github" className="size-4 text-status-success" />
+        </Button>
+      )}
+      {isLinearConnected && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setLinearDialogOpen(true)}
+          className="h-8 w-8 px-0"
+          title={t('session.newWorktree.actions.startFromLinearIssue')}
+          aria-label={t('session.newWorktree.actions.startFromLinearIssue')}
+        >
+          <Icon name="linear" className="size-4" />
+        </Button>
+      )}
+    </div>
+  ) : null;
 
   // Footer content
   const footerContent = (
@@ -1164,10 +1322,10 @@ export function NewWorktreeDialog({
                           </div>
                         )}
 
-                        {existingBranchRankedGroups.otherLocal.length > 0 && (
+                        {!hasExistingBranchQuery && existingBranchRankedGroups.otherLocal.length > 0 && (
                           <div className="space-y-2">
                             <div className="typography-small font-semibold text-foreground px-2">
-                              {hasExistingBranchQuery ? t('session.newWorktree.otherLocalBranches') : t('session.newWorktree.localBranches')}
+                              {t('session.newWorktree.localBranches')}
                             </div>
                             <div className="space-y-1">
                               {existingBranchRankedGroups.otherLocal.map((branch) => (
@@ -1196,10 +1354,10 @@ export function NewWorktreeDialog({
                           </div>
                         )}
 
-                        {existingBranchRankedGroups.otherRemote.length > 0 && (
+                        {!hasExistingBranchQuery && existingBranchRankedGroups.otherRemote.length > 0 && (
                           <div className="space-y-2">
                             <div className="typography-small font-semibold text-foreground px-2">
-                              {hasExistingBranchQuery ? t('session.newWorktree.otherRemoteBranches') : t('session.newWorktree.remoteBranches')}
+                              {t('session.newWorktree.remoteBranches')}
                             </div>
                             <div className="space-y-1">
                               {existingBranchRankedGroups.otherRemote.map((branch) => (
@@ -1234,21 +1392,11 @@ export function NewWorktreeDialog({
               </div>
             ) : (
               <div className="space-y-1.5">
-                <div className="flex flex-col items-start gap-1.5">
-                  <label className="typography-ui-label text-foreground block font-semibold">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="typography-ui-label text-foreground font-semibold shrink-0">
                     {t('session.newWorktree.branchName')}
                   </label>
-                  {mode === 'new-branch' && isGitHubConnected && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setGithubDialogOpen(true)}
-                      className="gap-1.5 h-7"
-                    >
-                      <Icon name="github" className="size-4 text-status-success" />
-                        {newBranchState.linkedIssue || newBranchState.linkedPr ? t('session.newWorktree.actions.change') : t('session.newWorktree.actions.startFromGitHubIssuePr')}
-                    </Button>
-                  )}
+                  {startFromIssueButtons}
                 </div>
                 <Input
                   value={newBranchState.branchName}
@@ -1261,6 +1409,7 @@ export function NewWorktreeDialog({
                       linkedIssueContext: null,
                       linkedPr: null,
                       linkedPrContext: null,
+                      linkedLinearIssue: null,
                     }));
                   }}
                   onBlur={() => setValidation(prev => ({ ...prev, touched: true }))}
@@ -1285,6 +1434,17 @@ export function NewWorktreeDialog({
                     <Icon name="check" className="h-3.5 w-3.5 text-status-success" />
                     <span className="typography-micro">
                       {t('session.newWorktree.fromIssue', { number: newBranchState.linkedIssue.number, title: newBranchState.linkedIssue.title })}
+                    </span>
+                  </div>
+                )}
+                {newBranchState.linkedLinearIssue && (
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Icon name="check" className="h-3.5 w-3.5 text-status-success" />
+                    <span className="typography-micro">
+                      {t('session.newWorktree.fromLinearIssue', {
+                        identifier: newBranchState.linkedLinearIssue.identifier,
+                        title: newBranchState.linkedLinearIssue.title,
+                      })}
                     </span>
                   </div>
                 )}
@@ -1425,10 +1585,10 @@ export function NewWorktreeDialog({
                           </div>
                         )}
 
-                        {sourceBranchRankedGroups.otherLocal.length > 0 && (
+                        {!hasSourceBranchQuery && sourceBranchRankedGroups.otherLocal.length > 0 && (
                           <div className="space-y-2">
                             <div className="typography-small font-semibold text-foreground px-2">
-                              {hasSourceBranchQuery ? t('session.newWorktree.otherLocalBranches') : t('session.newWorktree.localBranches')}
+                              {t('session.newWorktree.localBranches')}
                             </div>
                             <div className="space-y-1">
                               {sourceBranchRankedGroups.otherLocal.map((branch) => (
@@ -1452,10 +1612,10 @@ export function NewWorktreeDialog({
                           </div>
                         )}
 
-                        {sourceBranchRankedGroups.otherRemote.length > 0 && (
+                        {!hasSourceBranchQuery && sourceBranchRankedGroups.otherRemote.length > 0 && (
                           <div className="space-y-2">
                             <div className="typography-small font-semibold text-foreground px-2">
-                              {hasSourceBranchQuery ? t('session.newWorktree.otherRemoteBranches') : t('session.newWorktree.remoteBranches')}
+                              {t('session.newWorktree.remoteBranches')}
                             </div>
                             <div className="space-y-1">
                               {sourceBranchRankedGroups.otherRemote.map((branch) => (
@@ -1486,12 +1646,23 @@ export function NewWorktreeDialog({
             )}
 
             {/* Linked Item Preview - Two row minimal display */}
-            {(newBranchState.linkedIssue || newBranchState.linkedPr) && mode === 'new-branch' && (
+            {(newBranchState.linkedIssue || newBranchState.linkedPr || newBranchState.linkedLinearIssue) && mode === 'new-branch' && (
               <div className="mt-2 px-2 py-1.5 rounded bg-muted/30">
                 {/* Row 1: Type, number, title, actions */}
                 <div className="flex items-center gap-2">
-                  <Icon name="github" className="h-3.5 w-3.5 text-status-success shrink-0" />
+                  <Icon
+                    name={newBranchState.linkedLinearIssue ? 'linear' : 'github'}
+                    className={cn(
+                      'h-3.5 w-3.5 shrink-0',
+                      newBranchState.linkedLinearIssue ? 'text-foreground' : 'text-status-success',
+                    )}
+                  />
                   
+                    {newBranchState.linkedLinearIssue && (
+                      <span className="typography-micro text-muted-foreground shrink-0">
+                        {newBranchState.linkedLinearIssue.identifier}
+                      </span>
+                    )}
                     {newBranchState.linkedIssue && (
                       <span className="typography-micro text-muted-foreground shrink-0">
                         {t('session.newWorktree.issueNumber', { number: newBranchState.linkedIssue.number })}
@@ -1504,11 +1675,11 @@ export function NewWorktreeDialog({
                     )}
                   
                   <span className="typography-micro text-foreground truncate flex-1">
-                    {newBranchState.linkedIssue?.title || newBranchState.linkedPr?.title}
+                    {newBranchState.linkedLinearIssue?.title || newBranchState.linkedIssue?.title || newBranchState.linkedPr?.title}
                   </span>
                   
                   <a
-                    href={newBranchState.linkedIssue?.url || newBranchState.linkedPr?.url}
+                    href={newBranchState.linkedLinearIssue?.url || newBranchState.linkedIssue?.url || newBranchState.linkedPr?.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-muted-foreground hover:text-foreground shrink-0"
@@ -1634,10 +1805,9 @@ export function NewWorktreeDialog({
                                 </div>
                               )}
 
-                              {existingBranchRankedGroups.otherLocal.length > 0 && (
+                              {!hasExistingBranchQuery && existingBranchRankedGroups.otherLocal.length > 0 && (
                                 <>
-                                  {hasExistingBranchQuery && <CommandSeparator />}
-                                  <CommandGroup heading={hasExistingBranchQuery ? t('session.newWorktree.otherLocalBranches') : t('session.newWorktree.localBranches')}>
+                                  <CommandGroup heading={t('session.newWorktree.localBranches')}>
                                     {existingBranchRankedGroups.otherLocal.map((branch) => (
                                       <CommandItem
                                         key={`local-${branch}`}
@@ -1659,12 +1829,12 @@ export function NewWorktreeDialog({
                                 </>
                               )}
 
-                              {existingBranchRankedGroups.otherRemote.length > 0 && (
+                              {!hasExistingBranchQuery && existingBranchRankedGroups.otherRemote.length > 0 && (
                                 <>
-                                  {(existingBranchRankedGroups.otherLocal.length > 0 || hasExistingBranchQuery) && (
+                                  {existingBranchRankedGroups.otherLocal.length > 0 && (
                                     <CommandSeparator />
                                   )}
-                                  <CommandGroup heading={hasExistingBranchQuery ? t('session.newWorktree.otherRemoteBranches') : t('session.newWorktree.remoteBranches')}>
+                                  <CommandGroup heading={t('session.newWorktree.remoteBranches')}>
                                     {existingBranchRankedGroups.otherRemote.map((branch) => (
                                       <CommandItem
                                         key={`remote-${branch}`}
@@ -1705,21 +1875,11 @@ export function NewWorktreeDialog({
                 </div>
             ) : (
               <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="typography-ui-label text-foreground block font-semibold">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="typography-ui-label text-foreground font-semibold shrink-0">
                       {t('session.newWorktree.branchName')}
                     </label>
-                    {mode === 'new-branch' && isGitHubConnected && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setGithubDialogOpen(true)}
-                        className="gap-1.5 h-7"
-                      >
-                        <Icon name="github" className="size-4 text-status-success" />
-                      {newBranchState.linkedIssue || newBranchState.linkedPr ? t('session.newWorktree.actions.change') : t('session.newWorktree.actions.startFromGitHubIssuePr')}
-                      </Button>
-                    )}
+                    {startFromIssueButtons}
                   </div>
                   <Input
                     value={newBranchState.branchName}
@@ -1732,6 +1892,7 @@ export function NewWorktreeDialog({
                         linkedIssueContext: null,
                         linkedPr: null,
                         linkedPrContext: null,
+                        linkedLinearIssue: null,
                       }));
                     }}
                     onBlur={() => setValidation(prev => ({ ...prev, touched: true }))}
@@ -1756,6 +1917,17 @@ export function NewWorktreeDialog({
                       <Icon name="check" className="h-3.5 w-3.5 text-status-success" />
                       <span className="typography-micro">
                         {t('session.newWorktree.fromIssue', { number: newBranchState.linkedIssue.number, title: newBranchState.linkedIssue.title })}
+                      </span>
+                    </div>
+                  )}
+                  {newBranchState.linkedLinearIssue && (
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <Icon name="check" className="h-3.5 w-3.5 text-status-success" />
+                      <span className="typography-micro">
+                        {t('session.newWorktree.fromLinearIssue', {
+                          identifier: newBranchState.linkedLinearIssue.identifier,
+                          title: newBranchState.linkedLinearIssue.title,
+                        })}
                       </span>
                     </div>
                   )}
@@ -1875,10 +2047,9 @@ export function NewWorktreeDialog({
                                 </div>
                               )}
 
-                              {sourceBranchRankedGroups.otherLocal.length > 0 && (
+                              {!hasSourceBranchQuery && sourceBranchRankedGroups.otherLocal.length > 0 && (
                                 <>
-                                  {hasSourceBranchQuery && <CommandSeparator />}
-                                  <CommandGroup heading={hasSourceBranchQuery ? t('session.newWorktree.otherLocalBranches') : t('session.newWorktree.localBranches')}>
+                                  <CommandGroup heading={t('session.newWorktree.localBranches')}>
                                     {sourceBranchRankedGroups.otherLocal.map((branch) => (
                                       <CommandItem
                                         key={`local-${branch}`}
@@ -1895,12 +2066,12 @@ export function NewWorktreeDialog({
                                 </>
                               )}
 
-                              {sourceBranchRankedGroups.otherRemote.length > 0 && (
+                              {!hasSourceBranchQuery && sourceBranchRankedGroups.otherRemote.length > 0 && (
                                 <>
-                                  {(sourceBranchRankedGroups.otherLocal.length > 0 || hasSourceBranchQuery) && (
+                                  {sourceBranchRankedGroups.otherLocal.length > 0 && (
                                     <CommandSeparator />
                                   )}
-                                  <CommandGroup heading={hasSourceBranchQuery ? t('session.newWorktree.otherRemoteBranches') : t('session.newWorktree.remoteBranches')}>
+                                  <CommandGroup heading={t('session.newWorktree.remoteBranches')}>
                                     {sourceBranchRankedGroups.otherRemote.map((branch) => (
                                       <CommandItem
                                         key={`remote-${branch}`}
@@ -1931,12 +2102,23 @@ export function NewWorktreeDialog({
               )}
 
               {/* Linked Item Preview - Two row minimal display */}
-              {(newBranchState.linkedIssue || newBranchState.linkedPr) && mode === 'new-branch' && (
+              {(newBranchState.linkedIssue || newBranchState.linkedPr || newBranchState.linkedLinearIssue) && mode === 'new-branch' && (
                 <div className="mt-2 px-2 py-1.5 rounded bg-muted/30">
                   {/* Row 1: Type, number, title, actions */}
                   <div className="flex items-center gap-2">
-                    <Icon name="github" className="h-3.5 w-3.5 text-status-success shrink-0" />
+                    <Icon
+                      name={newBranchState.linkedLinearIssue ? 'linear' : 'github'}
+                      className={cn(
+                        'h-3.5 w-3.5 shrink-0',
+                        newBranchState.linkedLinearIssue ? 'text-foreground' : 'text-status-success',
+                      )}
+                    />
                     
+                    {newBranchState.linkedLinearIssue && (
+                      <span className="typography-micro text-muted-foreground shrink-0">
+                        {newBranchState.linkedLinearIssue.identifier}
+                      </span>
+                    )}
                     {newBranchState.linkedIssue && (
                       <span className="typography-micro text-muted-foreground shrink-0">
                         {t('session.newWorktree.issueNumber', { number: newBranchState.linkedIssue.number })}
@@ -1949,11 +2131,11 @@ export function NewWorktreeDialog({
                     )}
                     
                     <span className="typography-micro text-foreground truncate flex-1">
-                      {newBranchState.linkedIssue?.title || newBranchState.linkedPr?.title}
+                      {newBranchState.linkedLinearIssue?.title || newBranchState.linkedIssue?.title || newBranchState.linkedPr?.title}
                     </span>
                     
                     <a
-                      href={newBranchState.linkedIssue?.url || newBranchState.linkedPr?.url}
+                      href={newBranchState.linkedLinearIssue?.url || newBranchState.linkedIssue?.url || newBranchState.linkedPr?.url}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-muted-foreground hover:text-foreground shrink-0"
@@ -2029,6 +2211,12 @@ export function NewWorktreeDialog({
         open={githubDialogOpen}
         onOpenChange={setGithubDialogOpen}
         onSelect={handleGitHubSelect}
+      />
+      <LinearIssuePickerDialog
+        open={linearDialogOpen}
+        onOpenChange={setLinearDialogOpen}
+        mode="select"
+        onSelect={handleLinearSelect}
       />
     </>
   );

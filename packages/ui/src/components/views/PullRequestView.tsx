@@ -2,22 +2,29 @@ import React from 'react';
 import { Icon } from '@/components/icon/Icon';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
 import { useDetectedWorktreeMetadata } from '@/hooks/useDetectedWorktreeRoot';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
-import { useGitStatus, useGitBranches, useGitStore } from '@/stores/useGitStore';
+import { useGitStatus, useGitBranches, useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { useShallow } from 'zustand/react/shallow';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { useI18n } from '@/lib/i18n';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { PullRequestSection } from './git/PullRequestSection';
+import { NestedRepoResolutionStates } from './git/NestedRepoResolutionStates';
+import { NestedRepoPicker } from './git/NestedRepoPicker';
 import { deriveBaseBranch } from './git/baseBranch';
 import { useRepositoryBinding } from '@/lib/source-control/repository-binding';
 
 const normalizePath = (value?: string | null): string =>
   (value || '').replace(/\\/g, '/').replace(/\/+$/, '');
 
+// Remotes rarely change; remembering the last fetched list per directory lets
+// a remount pick the same PR-status key immediately instead of flashing
+// through the remote-less "checking status" state while remotes reload.
+// Runtime-scoped so a backend switch never serves another runtime's remotes.
 /**
  * Standalone pull-request surface: resolves the same repository context
  * GitView does (branch, base branch, remotes) from the shared git stores and
@@ -27,10 +34,19 @@ export const PullRequestView: React.FC = () => {
   const { t } = useI18n();
   const { git, sourceControl } = useRuntimeAPIs();
   const currentDirectory = useEffectiveDirectory();
-  const binding = useRepositoryBinding(currentDirectory, sourceControl);
-  const status = useGitStatus(currentDirectory ?? null);
-  const branches = useGitBranches(currentDirectory ?? null);
-  const { ensureAll } = useGitStore(useShallow((state) => ({ ensureAll: state.ensureAll })));
+  // When the root is not itself a repository, the pull-request workflow
+  // operates on the resolved nested repository instead.
+  const { rootIsGitRepo, gitDirectory, nestedRepos } = useNestedGitDirectory(currentDirectory ?? null);
+  const status = useGitStatus(gitDirectory ?? null);
+  const branches = useGitBranches(gitDirectory ?? null);
+  const isGitRepo = useIsGitRepo(gitDirectory ?? null);
+  // The binding follows the repository actually in view.
+  const binding = useRepositoryBinding(gitDirectory, sourceControl);
+  const { ensureAll, ensureNestedRepos, selectNestedRepo } = useGitStore(useShallow((state) => ({
+    ensureAll: state.ensureAll,
+    ensureNestedRepos: state.ensureNestedRepos,
+    selectNestedRepo: state.selectNestedRepo,
+  })));
 
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
   const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
@@ -81,11 +97,11 @@ export const PullRequestView: React.FC = () => {
   const worktreeMetadata = useDetectedWorktreeMetadata(currentDirectory, storeWorktreeMetadata, status?.current ?? undefined);
 
   React.useEffect(() => {
-    if (!currentDirectory || !git) {
+    if (!gitDirectory || !git) {
       return;
     }
-    void ensureAll(currentDirectory, git);
-  }, [currentDirectory, ensureAll, git]);
+    void ensureAll(gitDirectory, git);
+  }, [gitDirectory, ensureAll, git]);
 
   const [rootBranchHint, setRootBranchHint] = React.useState<string | null>(null);
   React.useEffect(() => {
@@ -157,7 +173,7 @@ export const PullRequestView: React.FC = () => {
     worktreeMetadata?.createdFromBranch,
   ]);
 
-  if (!currentDirectory || !currentBranch) {
+  if (!currentDirectory) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <Icon name="git-pull-request" className="h-12 w-12 text-muted-foreground/50" />
@@ -167,21 +183,66 @@ export const PullRequestView: React.FC = () => {
     );
   }
 
-  return (
-    <ScrollableOverlay
-      as={ScrollShadow}
-      outerClassName="h-full min-h-0"
-      className="px-4 py-3"
-      disableHorizontal
-      preventOverscroll
-    >
-      <PullRequestSection
-        directory={currentDirectory}
-        branch={currentBranch}
-        baseBranch={baseBranch}
-        trackingBranch={status?.tracking ?? undefined}
-        remoteBranches={remoteBranches}
+  // Non-repo root: surface nested-repository resolution while the operating
+  // directory has not proven to be a repository (discovering, failed,
+  // unsupported, none found, or settling on the auto-selected one).
+  if (rootIsGitRepo === false && isGitRepo !== true) {
+    return (
+      <NestedRepoResolutionStates
+        rootIsGitRepo={rootIsGitRepo}
+        resolvedIsGitRepo={isGitRepo}
+        nestedRepos={nestedRepos}
+        onRetryDiscovery={() => {
+          void ensureNestedRepos(currentDirectory, { force: true });
+        }}
       />
-    </ScrollableOverlay>
+    );
+  }
+
+  if (!currentBranch) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <Icon name="git-pull-request" className="h-12 w-12 text-muted-foreground/50" />
+        <div className="typography-ui-header text-foreground">{t('gitView.pullRequest.title')}</div>
+        <div className="max-w-sm typography-micro text-muted-foreground">{t('gitView.pullRequest.createHint')}</div>
+      </div>
+    );
+  }
+
+  // Repository switcher for non-repo roots with discovered nested
+  // repositories; the pick is shared per root across git surfaces.
+  const showRepositoryPicker =
+    rootIsGitRepo === false && Array.isArray(nestedRepos) && nestedRepos.length > 0;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {showRepositoryPicker ? (
+        <div className="flex shrink-0 items-center border-b border-border/60 px-4 py-2">
+          <NestedRepoPicker
+            repositories={nestedRepos}
+            selectedRepository={gitDirectory ?? null}
+            onSelectRepository={(repository) => {
+              if (currentDirectory) selectNestedRepo(currentDirectory, repository);
+            }}
+            repositoryRoot={currentDirectory ?? undefined}
+          />
+        </div>
+      ) : null}
+      <ScrollableOverlay
+        as={ScrollShadow}
+        outerClassName="h-full min-h-0 flex-1"
+        className="px-4 py-3"
+        disableHorizontal
+        preventOverscroll
+      >
+        <PullRequestSection
+          directory={gitDirectory ?? currentDirectory}
+          branch={currentBranch}
+          baseBranch={baseBranch}
+          trackingBranch={status?.tracking ?? undefined}
+          remoteBranches={remoteBranches}
+        />
+      </ScrollableOverlay>
+    </div>
   );
 };

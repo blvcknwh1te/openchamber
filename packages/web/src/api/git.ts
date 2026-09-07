@@ -29,6 +29,7 @@ export const createWebGitAPI = (): GitAPI => ({
   revertGitHunk: gitApiHttp.revertGitHunk,
   isLinkedWorktree: gitApiHttp.isLinkedWorktree,
   getGitBranches: gitApiHttp.getGitBranches,
+  getGitUnpushedBranchCounts: gitApiHttp.getGitUnpushedBranchCounts,
   deleteGitBranch: gitApiHttp.deleteGitBranch as GitAPI['deleteGitBranch'],
   removeRemote: gitApiHttp.removeRemote as GitAPI['removeRemote'],
   generateCommitMessage: gitApiHttp.generateCommitMessage,

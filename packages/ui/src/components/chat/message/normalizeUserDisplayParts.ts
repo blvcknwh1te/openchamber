@@ -4,6 +4,7 @@ import { formatChangeRequestReference } from '@/lib/source-control/identity';
 
 const GITHUB_ISSUE_CONTEXT_PREFIX = 'GitHub issue context (JSON)';
 const GITHUB_PR_CONTEXT_PREFIX = 'GitHub pull request context (JSON)';
+const LINEAR_ISSUE_CONTEXT_PREFIX = 'Linear issue context (JSON)';
 
 type GitHubIssueContextPayload = {
     issue?: {
@@ -16,6 +17,14 @@ type GitHubIssueContextPayload = {
 type GitHubPrContextPayload = {
     pr?: {
         number?: unknown;
+        title?: unknown;
+        url?: unknown;
+    };
+};
+
+type LinearIssueContextPayload = {
+    issue?: {
+        identifier?: unknown;
         title?: unknown;
         url?: unknown;
     };
@@ -80,6 +89,24 @@ const buildGitHubAttachmentPart = (text: string): Part | null => {
         } as Part;
     }
 
+    const linearPayload = parseSyntheticJsonPayload<LinearIssueContextPayload>(text, LINEAR_ISSUE_CONTEXT_PREFIX);
+    if (linearPayload) {
+        const issue = linearPayload.issue;
+        const identifier = issue?.identifier;
+        const title = issue?.title;
+        const url = issue?.url;
+        if (typeof identifier !== 'string' || identifier.trim().length === 0 || typeof title !== 'string' || typeof url !== 'string') {
+            return null;
+        }
+
+        return {
+            type: 'file',
+            mime: 'application/vnd.openchamber.linear-issue-link',
+            filename: `${identifier}: ${title}`,
+            url,
+        } as Part;
+    }
+
     return null;
 };
 
@@ -91,10 +118,43 @@ const shouldKeepSyntheticUserText = (text: string, planModeEnabled: boolean): bo
     return false;
 };
 
+const redundantCommentFileUrls = (parts: Part[]): Set<string> => {
+    const comments = parts
+        .map((part) => readContextPart(part))
+        .filter((payload) => payload?.kind === 'code-comment');
+    if (comments.length === 0) return new Set();
+
+    const redundant = new Set<string>();
+    for (const part of parts) {
+        if (part.type !== 'file') continue;
+        const { url } = part;
+        const range = url.match(/[?&]start=(\d+)&end=(\d+)/);
+        if (!range) continue;
+        const encodedPath = url.replace(/^file:\/\//, '').split('?')[0];
+        let path = encodedPath;
+        try {
+            path = decodeURIComponent(encodedPath);
+        } catch {
+            // Keep the encoded path; malformed URLs must not break rendering.
+        }
+        path = path.replace(/\\/g, '/');
+        const matches = comments.some((comment) => {
+            const commentPath = comment.fileLabel.replace(/\\/g, '/');
+            return comment.startLine === Number(range[1])
+                && comment.endLine === Number(range[2])
+                && (path === commentPath || path.endsWith(`/${commentPath}`));
+        });
+        if (matches) redundant.add(url);
+    }
+    return redundant;
+};
+
 export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEnabled?: boolean }): Part[] => {
     const planModeEnabled = options?.planModeEnabled === true;
+    const redundantFileUrls = redundantCommentFileUrls(parts);
     return parts
         .filter((part) => {
+            if (part.type === 'file' && redundantFileUrls.has(part.url)) return false;
             const synthetic = (part as { synthetic?: boolean }).synthetic === true;
             if (!synthetic) return true;
             if (part.type !== 'text') return false;
@@ -107,7 +167,8 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
             const normalizedText = text.trimStart();
             return shouldKeepSyntheticUserText(text, planModeEnabled)
                 || normalizedText.startsWith(GITHUB_ISSUE_CONTEXT_PREFIX)
-                || normalizedText.startsWith(GITHUB_PR_CONTEXT_PREFIX);
+                || normalizedText.startsWith(GITHUB_PR_CONTEXT_PREFIX)
+                || normalizedText.startsWith(LINEAR_ISSUE_CONTEXT_PREFIX);
         })
         .map((part) => {
             const rawPart = part as Record<string, unknown>;
@@ -120,10 +181,19 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
 
                 if (synthetic) {
                     const contextPayload = readContextPart(part);
-                    if (contextPayload?.kind === 'repository-issue' || contextPayload?.kind === 'change-request') {
+                    if (contextPayload?.kind === 'repository-issue' || contextPayload?.kind === 'change-request'
+                        || contextPayload?.kind === 'linear-issue') {
                         // SAFETY: same display-only file-part shape the legacy
                         // buildGitHubAttachmentPart produces; consumed by
                         // FileAttachment, which matches on the mime type.
+                        if (contextPayload.kind === 'linear-issue') {
+                            return {
+                                type: 'file',
+                                mime: 'application/vnd.openchamber.linear-issue-link',
+                                filename: `${contextPayload.identifier}: ${contextPayload.title}`,
+                                url: contextPayload.url,
+                            } as Part;
+                        }
                         return {
                             type: 'file',
                             mime: contextPayload.kind === 'repository-issue'

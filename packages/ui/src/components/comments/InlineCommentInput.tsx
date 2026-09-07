@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
 import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
+import { isIMECompositionEvent } from '@/lib/ime';
+import { formatShortcutForDisplay } from '@/lib/shortcuts';
 
 export interface InlineCommentInputProps {
   initialText?: string;
@@ -37,6 +39,7 @@ export function InlineCommentInput({
   const { isMobile } = useDeviceInfo();
   const [text, setText] = React.useState(initialText);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const saveShortcut = formatShortcutForDisplay('mod+enter');
   void isEditing;
 
   const handleTextChange = (value: string) => {
@@ -119,6 +122,8 @@ export function InlineCommentInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isIMECompositionEvent(e)) return;
+
     // As the placeholder promises: Cmd/Ctrl+Enter attaches, plain Enter
     // breaks the line, Escape cancels.
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -166,7 +171,9 @@ export function InlineCommentInput({
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isMobile ? t('inlineComment.input.placeholderShort') : t('inlineComment.input.placeholder')}
+          placeholder={isMobile
+            ? t('inlineComment.input.placeholderShort')
+            : t('inlineComment.input.placeholder', { shortcut: saveShortcut })}
           className={cn(
             'min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 text-[var(--surface-foreground)] outline-none placeholder:text-[var(--surface-mutedForeground)] placeholder:opacity-60',
             isMobile ? 'py-1.5 text-base leading-6' : 'py-1.5'

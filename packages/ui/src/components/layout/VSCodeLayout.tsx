@@ -5,7 +5,8 @@ import { SessionDialogs } from '@/components/session/SessionDialogs';
 import { ChatView } from '@/components/views/ChatView';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
-import { useSessions, useDirectorySync, useSession, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
+import { useSessions, useDirectorySync, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
+import { useSubagentCostRollup } from '@/components/chat/work-status/useSubagentCostRollup';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { contextTokensFromBreakdown } from '@/stores/utils/tokenUtils';
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { useTerminalSessionKeepalive } from '@/hooks/useTerminalSessionKeepalive';
 import { useUpdatePolling } from '@/hooks/useUpdatePolling';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/components/ui';
@@ -41,6 +43,7 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import type { UsageWindow } from '@/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { useUIStore, type TimeFormatPreference } from '@/stores/useUIStore';
+import { useSessionListSync } from '@/components/session/sidebar/list/useSessionListSync';
 
 const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 
@@ -526,8 +529,12 @@ export const VSCodeLayout: React.FC = () => {
     }
   }, [usesExpandedLayout, currentView, viewMode]);
 
+  useSessionListSync({ isVSCode: true });
+  useTerminalSessionKeepalive();
+
   return (
-    <div ref={containerRef} className="h-full w-full bg-background text-foreground flex flex-col">
+    <>
+      <div ref={containerRef} className="h-full w-full bg-background text-foreground flex flex-col">
       {viewMode === 'editor' ? (
         // Editor mode: just chat, no sidebar
         <div className="flex flex-col h-full">
@@ -639,7 +646,8 @@ export const VSCodeLayout: React.FC = () => {
         </>
       )}
       <SessionDialogs />
-    </div>
+      </div>
+    </>
   );
 };
 
@@ -666,7 +674,9 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const providers = useConfigStore((state) => state.providers);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
-  const currentSession = useSession(currentSessionId ?? '');
+  // Same rollup the work-status panel reports, so the header and the panel
+  // never disagree about what this session has cost.
+  const { totalCost: sessionTotalCost } = useSubagentCostRollup(currentSessionId ?? null);
   const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
   const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
   const quotaResults = useQuotaStore((state) => state.results);
@@ -1023,7 +1033,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           percentage={stableContextUsage.percentage}
           contextLimit={stableContextUsage.contextLimit}
           outputLimit={stableContextUsage.outputLimit ?? 0}
-          cost={(currentSession?.cost ?? 0) > 0 ? currentSession?.cost : null}
+          cost={(sessionTotalCost ?? 0) > 0 ? sessionTotalCost : null}
           className="h-9 shrink-0 pl-1 pr-1 typography-ui-label"
           valueClassName="font-semibold leading-none"
           hideIcon

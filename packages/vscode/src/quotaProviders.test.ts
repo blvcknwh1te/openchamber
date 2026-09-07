@@ -17,15 +17,16 @@ const AUTH = JSON.stringify({
   crof: { key: 'test-token' },
   neuralwatt: { key: 'test-token' },
   'opencode-go': { key: 'test-token' },
-  'command-code': { type: 'oauth', access: 'test-token' },
   'zai-coding-plan': { key: 'test-token' },
   deepseek: { key: 'test-token' },
+  hyper: { key: 'test-token' },
+  'github-copilot': { access: 'test-token' },
   anthropic: { access: 'test-token', refresh: 'test-refresh' },
 });
 ((fs as unknown) as { existsSync: () => boolean }).existsSync = () => true;
 ((fs as unknown) as { readFileSync: () => string }).readFileSync = () => AUTH;
 
-import { fetchQuotaForProvider } from './quotaProviders';
+import { fetchHyperQuota, fetchQuotaForProvider } from './quotaProviders';
 
 type MockResponseInit = { ok?: boolean; status?: number };
 
@@ -84,6 +85,13 @@ const stubFetchFailing = (json: () => Promise<unknown>, init: MockResponseInit):
   globalThis.fetch = (async () => ({ json, ...init }) as unknown as Response) as typeof fetch;
 };
 
+test('dispatches Charm Hyper through the generic quota API', async () => {
+  stubFetchReturning(async () => Response.json({ balance: 100 }));
+  const result = await fetchQuotaForProvider('hyper');
+  assert.equal(result.ok, true);
+  assert.equal(result.usage?.windows.credits?.valueLabel, '100');
+});
+
 describe('OpenCode Go quota provider (VS Code parity)', () => {
   test('uses the opencode-go key from auth.json', async () => {
     let request: RequestInit | undefined;
@@ -99,62 +107,12 @@ describe('OpenCode Go quota provider (VS Code parity)', () => {
 
     assert.equal(result.ok, true);
     assert.equal((request?.headers as Record<string, string>).Authorization, 'Bearer test-token');
+    assert.equal((request?.headers as Record<string, string>)['x-opencode-session'], 'openchamber-usage');
     assert.equal(result.usage!.windows['5h']!.usedPercent, 25);
     assert.throws(() => fs.statSync(legacyPath));
   });
 });
 
-describe('Command Code quota provider (VS Code parity)', () => {
-  test('uses the OAuth access token and resolves server-backed limits', async () => {
-    const requests: Array<{ url: string; init?: RequestInit }> = [];
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      requests.push({ url, init });
-      return mockResponse(url.endsWith('/alpha/whoami')
-        ? { org: { id: 'org/a' } }
-        : { credits: { monthlyCredits: 120 }, windowLimits: { fiveHour: { used: 25, cap: 100, resetAt: 1_776_000_000 } } });
-    }) as typeof fetch;
-
-    const result = await fetchQuotaForProvider('command-code');
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(requests.map(({ url }) => url), [
-      'https://api.commandcode.ai/alpha/whoami',
-      'https://api.commandcode.ai/alpha/billing/credits?orgId=org%2Fa',
-    ]);
-    assert.equal((requests[0].init?.headers as Record<string, string>).Authorization, 'Bearer test-token');
-    assert.equal(result.usage!.windows['5h']!.usedPercent, 25);
-    assert.equal(result.usage!.windows.monthly_credits!.valueLabel, '120');
-  });
-
-  test('omits orgId for personal accounts', async () => {
-    const urls: string[] = [];
-    globalThis.fetch = (async (url: string) => {
-      urls.push(url);
-      return mockResponse(url.endsWith('/alpha/whoami')
-        ? { user: { id: 'user-1' }, org: null }
-        : { credits: { monthlyCredits: 120 } });
-    }) as typeof fetch;
-
-    const result = await fetchQuotaForProvider('command-code');
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(urls, [
-      'https://api.commandcode.ai/alpha/whoami',
-      'https://api.commandcode.ai/alpha/billing/credits',
-    ]);
-  });
-
-  test('formats fractional credit values for display', async () => {
-    globalThis.fetch = (async (url: string) => mockResponse(url.endsWith('/alpha/whoami')
-      ? { org: null }
-      : { credits: { monthlyCredits: 69.7947070034 }, windowLimits: { fiveHour: { used: 0.2052929966, cap: 14 } } })) as typeof fetch;
-
-    const result = await fetchQuotaForProvider('command-code');
-
-    assert.equal(result.usage!.windows.monthly_credits!.valueLabel, '69.79');
-    assert.equal(result.usage!.windows['5h']!.valueLabel, '0.21 / 14');
-  });
-});
 
 describe('Crof quota provider (VS Code parity)', () => {
   test('reports credits balance as valueLabel with null percent', async () => {
@@ -245,6 +203,71 @@ describe('Codex quota provider (VS Code parity)', () => {
     assert.equal(result.ok, true);
     assert.equal(result.usage!.windows.credits!.usedPercent, 36);
     assert.equal(result.usage!.windows.credits!.valueLabel, '2675 / 7500 used');
+  });
+});
+
+describe('GitHub Copilot quota provider (VS Code parity)', () => {
+  test('exposes only premium interactions as the primary usage window', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({
+      quota_reset_date: '2026-09-01T00:00:00Z',
+      quota_snapshots: {
+        chat: { entitlement: 100, remaining: 80 },
+        completions: { entitlement: 1000, remaining: 900 },
+        premium_interactions: { entitlement: 300, remaining: 225 },
+      },
+    })));
+
+    const result = await fetchQuotaForProvider('github-copilot');
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(Object.keys(result.usage!.windows), ['premium_interactions']);
+    assert.equal(result.usage!.windows.premium_interactions!.usedPercent, 25);
+    assert.equal(result.usage!.windows.premium_interactions!.valueLabel, '225 / 300 left');
+  });
+
+  test('add-on path mirrors the primary window shaping', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({
+      quota_reset_date: '2026-09-01T00:00:00Z',
+      quota_snapshots: {
+        premium_interactions: { entitlement: 300, remaining: 225 },
+      },
+    })));
+
+    const result = await fetchQuotaForProvider('github-copilot-addon');
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(Object.keys(result.usage!.windows), ['premium_interactions']);
+    assert.equal(result.usage!.windows.premium_interactions!.usedPercent, 25);
+  });
+
+  test('reports unlimited plans without a percent', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({
+      quota_reset_date: '2026-09-01T00:00:00Z',
+      quota_snapshots: {
+        premium_interactions: { unlimited: true, entitlement: -1, remaining: -1 },
+      },
+    })));
+
+    const result = await fetchQuotaForProvider('github-copilot');
+
+    assert.equal(result.ok, true);
+    assert.equal(result.usage!.windows.premium_interactions!.usedPercent, null);
+    assert.equal(result.usage!.windows.premium_interactions!.valueLabel, 'Unlimited');
+  });
+
+  test('falls back to percent_remaining when entitlement is unusable', async () => {
+    stubFetchReturning(() => Promise.resolve(mockResponse({
+      quota_reset_date: '2026-09-01T00:00:00Z',
+      quota_snapshots: {
+        premium_interactions: { entitlement: 0, remaining: 0, percent_remaining: 75.5 },
+      },
+    })));
+
+    const result = await fetchQuotaForProvider('github-copilot');
+
+    assert.equal(result.ok, true);
+    assert.ok(Math.abs(result.usage!.windows.premium_interactions!.usedPercent! - 24.5) < 1e-9);
+    assert.equal(result.usage!.windows.premium_interactions!.valueLabel, undefined);
   });
 });
 
@@ -698,4 +721,131 @@ describe('DeepSeek quota provider (VS Code parity)', () => {
     fsMock.existsSync = ORIGINAL_FS.existsSync;
     fsMock.readFileSync = ORIGINAL_FS.readFileSync;
   });
+});
+
+describe('Charm Hyper quota provider (VS Code parity)', () => {
+  const readAuth = () => ({ hyper: { key: 'test-token' } });
+
+  for (const { balance, credits, dollars } of [
+    { balance: 100, credits: '100', dollars: '$5.00' },
+    { balance: '50', credits: '50', dollars: '$2.50' },
+    { balance: 25.5, credits: '25.50', dollars: '$1.28' },
+    { balance: 0, credits: '0', dollars: '$0.00' },
+    { balance: '0', credits: '0', dollars: '$0.00' },
+  ]) {
+    test(`formats balance ${JSON.stringify(balance)} without an untranslated unit`, async () => {
+      const result = await fetchHyperQuota({ readAuth, fetchImpl: async () => Response.json({ balance }) });
+      assert.equal(result.ok, true);
+      assert.equal(result.providerId, 'hyper');
+      assert.equal(result.configured, true);
+      assert.ok(result.usage);
+      assert.equal(result.usage.windows.credits?.valueLabel, credits);
+      assert.equal(result.usage.windows.credits_balance?.valueLabel, dollars);
+      for (const window of Object.values(result.usage.windows)) {
+        assert.equal(window.usedPercent, null);
+        assert.equal(window.remainingPercent, null);
+        assert.equal(window.windowSeconds, null);
+        assert.equal(window.resetAt, null);
+        assert.equal(window.resetAfterSeconds, null);
+      }
+    });
+  }
+
+  for (const payload of [
+    {}, null, [], { balance: '' }, { balance: ' \t ' }, { balance: 'NaN' },
+    { balance: 'Infinity' }, { balance: null }, { balance: true }, { balance: [] },
+    { balance: {} },
+  ]) {
+    test(`rejects invalid payload ${JSON.stringify(payload)} instead of showing zero`, async () => {
+      const result = await fetchHyperQuota({ readAuth, fetchImpl: async () => Response.json(payload) });
+      assert.equal(result.ok, false);
+      assert.equal(result.configured, true);
+      assert.equal(result.error, 'No quota data in response');
+      assert.equal(result.usage, null);
+    });
+  }
+
+  for (const [index, auth] of [
+    { hyper: { key: 'test-token' } },
+    { hyper: { token: 'test-token' } },
+    { hyper: 'test-token' },
+    { hyper: { key: '  ', token: 'test-token' } },
+    { hyper: { key: 42, token: 'test-token' } },
+  ].entries()) {
+    test(`uses validated credential variant ${index} for the documented request`, async () => {
+      let requests = 0;
+      const result = await fetchHyperQuota({
+        readAuth: () => auth,
+        fetchImpl: async (url, options) => {
+          requests += 1;
+          assert.equal(url, 'https://hyper.charm.land/v1/credits');
+          assert.equal(options.method, 'GET');
+          assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer test-token');
+          assert.ok(options.signal instanceof AbortSignal);
+          return Response.json({ balance: 100 });
+        },
+      });
+      assert.equal(requests, 1);
+      assert.equal(result.ok, true);
+      assert.equal(JSON.stringify(result).includes('test-token'), false);
+    });
+  }
+
+  for (const [index, readInvalidAuth] of [
+    () => ({}),
+    () => ({ hyper: { key: '' } }),
+    () => ({ hyper: { key: '  ' } }),
+    () => ({ hyper: { key: 42 } }),
+  ].entries()) {
+    test(`does not request usage with missing or invalid credential variant ${index}`, async () => {
+      let requests = 0;
+      const result = await fetchHyperQuota({
+        readAuth: readInvalidAuth,
+        fetchImpl: async () => {
+          requests += 1;
+          return Response.json({ balance: 100 });
+        },
+      });
+      assert.equal(requests, 0);
+      assert.equal(result.ok, false);
+      assert.equal(result.configured, false);
+      assert.equal(result.error, 'Not configured');
+    });
+  }
+
+  for (const { status, error } of [
+    { status: 401, error: 'Session expired — please re-authenticate with Charm Hyper' },
+    { status: 403, error: 'Session expired — please re-authenticate with Charm Hyper' },
+    { status: 429, error: 'API error: 429' },
+    { status: 500, error: 'API error: 500' },
+  ]) {
+    test(`reports HTTP ${status} as a failure`, async () => {
+      const result = await fetchHyperQuota({ readAuth, fetchImpl: async () => new Response(null, { status }) });
+      assert.equal(result.ok, false);
+      assert.equal(result.configured, true);
+      assert.equal(result.error, error);
+      assert.equal(result.usage, null);
+    });
+  }
+
+  test('reports invalid JSON as a parse failure', async () => {
+    const result = await fetchHyperQuota({ readAuth, fetchImpl: async () => new Response('{') });
+    assert.equal(result.error, 'Invalid response from provider');
+    assert.equal(result.ok, false);
+    assert.equal(result.configured, true);
+    assert.equal(result.usage, null);
+  });
+
+  for (const { failure, message } of [
+    { failure: new DOMException('Timed out', 'TimeoutError'), message: 'Request timed out' },
+    { failure: new Error('Network unavailable'), message: 'Network unavailable' },
+  ]) {
+    test(`reports ${message}`, async () => {
+      const result = await fetchHyperQuota({ readAuth, fetchImpl: async () => { throw failure; } });
+      assert.equal(result.error, message);
+      assert.equal(result.ok, false);
+      assert.equal(result.configured, true);
+      assert.equal(result.usage, null);
+    });
+  }
 });

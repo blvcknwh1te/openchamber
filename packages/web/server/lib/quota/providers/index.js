@@ -9,12 +9,13 @@ import { buildResult } from '../utils/index.js';
 
 import * as claude from './claude/index.js';
 import * as codex from './codex.js';
-import * as commandCode from './command-code.js';
 import * as copilot from './copilot.js';
 import * as crof from './crof.js';
 import * as cursor from './cursor.js';
 import * as deepseek from './deepseek.js';
+import * as exeDev from './exe-dev.js';
 import * as google from './google/index.js';
+import * as hyper from './hyper.js';
 import * as kimi from './kimi.js';
 import * as nanogpt from './nanogpt.js';
 import * as openai from './openai.js';
@@ -30,12 +31,6 @@ import * as opencodeGo from './opencode-go.js';
 import * as xai from './xai.js';
 
 const registry = {
-  'command-code': {
-    providerId: commandCode.providerId,
-    providerName: commandCode.providerName,
-    isConfigured: commandCode.isConfigured,
-    fetchQuota: commandCode.fetchQuota
-  },
   claude: {
     providerId: claude.providerId,
     providerName: claude.providerName,
@@ -66,11 +61,23 @@ const registry = {
     isConfigured: deepseek.isConfigured,
     fetchQuota: deepseek.fetchQuota
   },
+  'exe-dev': {
+    providerId: exeDev.providerId,
+    providerName: exeDev.providerName,
+    isConfigured: exeDev.isConfigured,
+    fetchQuota: exeDev.fetchQuota
+  },
   google: {
     providerId: google.providerId,
     providerName: google.providerName,
     isConfigured: google.isConfigured,
     fetchQuota: google.fetchGoogleQuota
+  },
+  hyper: {
+    providerId: hyper.providerId,
+    providerName: hyper.providerName,
+    isConfigured: hyper.isConfigured,
+    fetchQuota: hyper.fetchQuota
   },
   'zai-coding-plan': {
     providerId: zai.providerId,
@@ -160,12 +167,6 @@ const registry = {
 
 const pendingFetches = new Map();
 
-const normalizeQuotaProviderId = (providerId) => {
-  if (typeof providerId !== 'string') return providerId;
-  return ['command-code', 'commandcode', 'command_code', 'command code'].includes(providerId.trim().toLowerCase())
-    ? 'command-code'
-    : providerId;
-};
 
 export const listConfiguredQuotaProviders = () => {
   const configured = [];
@@ -210,14 +211,13 @@ const fetchQuotaForProviderUncoalesced = async (providerId) => {
 };
 
 export const fetchQuotaForProvider = (providerId) => {
-  const normalizedProviderId = normalizeQuotaProviderId(providerId);
-  const existing = pendingFetches.get(normalizedProviderId);
+  const existing = pendingFetches.get(providerId);
   if (existing) return existing;
 
-  const pending = fetchQuotaForProviderUncoalesced(normalizedProviderId).finally(() => {
-    if (pendingFetches.get(normalizedProviderId) === pending) pendingFetches.delete(normalizedProviderId);
+  const pending = fetchQuotaForProviderUncoalesced(providerId).finally(() => {
+    if (pendingFetches.get(providerId) === pending) pendingFetches.delete(providerId);
   });
-  pendingFetches.set(normalizedProviderId, pending);
+  pendingFetches.set(providerId, pending);
   return pending;
 };
 
@@ -227,6 +227,7 @@ export const fetchGoogleQuota = google.fetchGoogleQuota;
 export const fetchCodexQuota = codex.fetchQuota;
 export const fetchCursorQuota = cursor.fetchQuota;
 export const fetchDeepseekQuota = deepseek.fetchQuota;
+export const fetchHyperQuota = hyper.fetchQuota;
 export const fetchCopilotQuota = copilot.fetchQuota;
 export const fetchCopilotAddonQuota = copilot.fetchQuotaAddon;
 export const fetchKimiQuota = kimi.fetchQuota;

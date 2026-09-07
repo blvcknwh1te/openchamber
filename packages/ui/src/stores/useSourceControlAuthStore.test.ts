@@ -280,10 +280,17 @@ describe('source-control auth store', () => {
 
   test('App auth bootstrap follows reachability and endpoint epochs without subscribing to auth results', () => {
     const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-    const effect = appSource.match(/React\.useEffect\(\(\) => \{\s*if \(embeddedSessionChat \|\| !isConnected\)[\s\S]*?void refreshSourceControlAuth\(apis\.sourceControl, \{ force: true \}\);\s*\}, \[([^\]]+)\]\);/);
+    // The effect also bootstraps Linear, which is not a source-control
+    // provider; only the source-control call and the dependency array matter.
+    const effect = appSource.match(/React\.useEffect\(\(\) => \{\s*if \(embeddedSessionChat \|\| !isConnected\)[\s\S]*?void refreshSourceControlAuth\(apis\.sourceControl, \{ force: true \}\);[\s\S]*?\}, \[([^\]]+)\]\);/);
     expect(effect).not.toBeNull();
-    expect(effect?.[1].split(',').map((dependency) => dependency.trim())).toEqual([
-      'apis.sourceControl', 'embeddedSessionChat', 'isConnected', 'refreshSourceControlAuth', 'runtimeEndpointEpoch',
-    ]);
+    const dependencies = effect?.[1].split(',').map((dependency) => dependency.trim()) ?? [];
+    expect(dependencies).toContain('apis.sourceControl');
+    expect(dependencies).toContain('embeddedSessionChat');
+    expect(dependencies).toContain('isConnected');
+    expect(dependencies).toContain('refreshSourceControlAuth');
+    expect(dependencies).toContain('runtimeEndpointEpoch');
+    // Auth results must not feed back into the effect that requests them.
+    expect(dependencies.some((dependency) => /authEntries|authStatus|entries/.test(dependency))).toBe(false);
   });
 });

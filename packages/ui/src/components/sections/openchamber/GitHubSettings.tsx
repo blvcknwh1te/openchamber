@@ -14,7 +14,12 @@ import { GITHUB_SOURCE_CONTROL_IDENTITY } from '@/lib/source-control/identity';
 import { getRuntimeKey, subscribeRuntimeEndpointWillChange } from '@/lib/runtime-switch';
 import { SourceControlAccountList } from './SourceControlAccountList';
 
-export const GitHubSettings: React.FC = () => {
+type GitHubSettingsProps = {
+  /** Rendered inside the Integrations card: no section chrome of its own. */
+  embedded?: boolean;
+};
+
+export const GitHubSettings: React.FC<GitHubSettingsProps> = ({ embedded = false }) => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
   const sourceControl = getRegisteredRuntimeAPIs()?.sourceControl;
@@ -210,7 +215,7 @@ export const GitHubSettings: React.FC = () => {
     }
   }, [captureRuntime, refreshInstances, refreshStatus, sourceControl, stopFlow, t]);
 
-  if (isLoading && !status) {
+  if (isLoading && !hasChecked) {
     return null;
   }
 
@@ -220,7 +225,7 @@ export const GitHubSettings: React.FC = () => {
     ? status.message || t('sessionAuth.error.networkRetry')
     : null;
 
-  return (
+  const sections = (
     <>
       <SettingsSection
         title={t('settings.github.title')}
@@ -374,4 +379,6 @@ export const GitHubSettings: React.FC = () => {
       )}
     </>
   );
+
+  return embedded ? <div className="space-y-4">{sections}</div> : sections;
 };

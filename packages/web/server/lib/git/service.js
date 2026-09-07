@@ -705,6 +705,15 @@ const parseWorktreePorcelain = (raw) => {
       const branchRef = line.substring('branch '.length).trim();
       current.branchRef = branchRef;
       current.branch = cleanBranchName(branchRef);
+      continue;
+    }
+
+    // git marks a worktree whose directory is gone (deleted outside git) as
+    // prunable; it stays registered until `git worktree prune`. The sidebar
+    // needs that distinction: the directory is missing, but the sessions that
+    // lived there are not.
+    if (line === 'prunable' || line.startsWith('prunable ')) {
+      current.prunable = true;
     }
   }
 
@@ -2746,6 +2755,25 @@ export async function getUntrackedDiffs(directory, filePaths = [], { concurrency
   return results;
 }
 
+const refResolvesToCommit = async (git, ref) => git
+  .raw(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+  .then((value) => Boolean(String(value || '').trim()))
+  .catch(() => false);
+
+/**
+ * The branch list includes remote-only branches that `ls-remote` reported but
+ * the repository never fetched (#2098), so a comparison can name a ref that does
+ * not exist locally. Say that plainly instead of letting git's "ambiguous
+ * argument" surface as an opaque failure.
+ */
+async function assertRangeRefsResolve(git, refs) {
+  for (const ref of refs) {
+    if (!(await refResolvesToCommit(git, ref))) {
+      throw new Error(`Ref "${ref}" is not available locally. Fetch it before comparing.`);
+    }
+  }
+}
+
 export async function getRangeDiff(directory, { base, head, path: filePath, contextLines = 3 } = {}) {
   const { directoryPath, directoryGit, repoRoot, git } = await createRepositoryGitContext(directory);
   const baseRef = typeof base === 'string' ? base.trim() : '';
@@ -2753,6 +2781,42 @@ export async function getRangeDiff(directory, { base, head, path: filePath, cont
   if (!baseRef || !headRef) {
     throw new Error('base and head are required');
   }
+
+  // Prefer remote-tracking base ref so merged commits don't reappear
+  // when local base branch is stale (common when user stays on feature branch).
+  let resolvedBase = baseRef;
+  const originCandidate = `refs/remotes/origin/${baseRef}`;
+  try {
+    const verified = await git.raw(['rev-parse', '--verify', originCandidate]);
+    if (verified && verified.trim()) {
+      resolvedBase = `origin/${baseRef}`;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Not every repository has an `origin`. When the base names a branch that
+  // exists only on another remote, a bare name does not resolve — git looks in
+  // refs/heads, not across remotes — and the diff fails with "ambiguous
+  // argument". Fall back to whichever remote actually carries it.
+  if (resolvedBase === baseRef && !/[*?[\]^~:\\]/.test(baseRef)) {
+    const resolvesLocally = await git
+      .raw(['rev-parse', '--verify', `refs/heads/${baseRef}`])
+      .then((value) => Boolean(String(value || '').trim()))
+      .catch(() => false);
+
+    if (!resolvesLocally) {
+      const remoteMatch = await git
+        .raw(['for-each-ref', '--count=1', '--format=%(refname:short)', `refs/remotes/*/${baseRef}`])
+        .then((value) => String(value || '').trim())
+        .catch(() => '');
+      if (remoteMatch) {
+        resolvedBase = remoteMatch;
+      }
+    }
+  }
+
+  await assertRangeRefsResolve(git, [resolvedBase, headRef]);
 
   const args = ['diff', '--no-color'];
   if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
@@ -2773,7 +2837,8 @@ const BRANCH_CREATION_SOURCE_RE = /^branch: Created from (.+)$/;
  * Parse a branch reflog (`git reflog show --format=%gs <branch>`) and return the
  * ref the branch was created from, when that source is itself a named ref.
  *
- * Returns null when the branch was created from `HEAD@{...}` or a raw commit
+ * Returns null when the branch was created from `HEAD` (bare, as `git switch -c`
+ * / `git checkout -b` without an explicit start point record) or a raw commit
  * (detached start): the original branch name is not recorded anywhere in that
  * case, and guessing a base from commit topology would be a heuristic, not an
  * answer. Callers should ask the user to pick a base instead.
@@ -2788,7 +2853,9 @@ export function parseBranchCreationSource(reflogText) {
     const match = lines[index].match(BRANCH_CREATION_SOURCE_RE);
     if (!match) continue;
     const source = match[1].trim();
-    if (!source || /^HEAD@/.test(source) || /^[0-9a-f]{7,40}$/i.test(source)) {
+    // Bare `HEAD` (`git switch -c` from the current branch) and `HEAD@{...}`
+    // (detached start) both lack a named source; a raw commit hash does too.
+    if (!source || /^HEAD(@|$)/.test(source) || /^[0-9a-f]{7,40}$/i.test(source)) {
       return null;
     }
     return source;
@@ -2839,6 +2906,19 @@ export async function getRangeFiles(directory, { base, head } = {}) {
   if (!baseRef || !headRef) {
     throw new Error('base and head are required');
   }
+
+  let resolvedBase = baseRef;
+  const originCandidate = `refs/remotes/origin/${baseRef}`;
+  try {
+    const verified = await git.raw(['rev-parse', '--verify', originCandidate]);
+    if (verified && verified.trim()) {
+      resolvedBase = `origin/${baseRef}`;
+    }
+  } catch {
+    // ignore
+  }
+
+  await assertRangeRefsResolve(git, [resolvedBase, headRef]);
 
   // `-C` (copy detection among changed files only, so cheap) makes copies
   // surface as C entries instead of plain additions; rename detection is on
@@ -3530,10 +3610,18 @@ export async function getBranches(directory) {
     const result = await git.branch();
 
     const allBranches = result.all;
+    // Read-only ref discovery, not a transfer: it never writes refs and never
+    // takes the planned-operation path, so a branch pushed from elsewhere is
+    // listed and a ref deleted on the remote is pruned without a fetch first.
+    const remoteBranches = allBranches.filter(branch => branch.startsWith('remotes/'));
+    const activeRemoteBranches = await filterActiveRemoteBranches(git, remoteBranches);
     const defaultBranches = await getRemoteDefaultBranches(git);
 
     return {
-      all: allBranches,
+      all: [
+        ...allBranches.filter(branch => !branch.startsWith('remotes/')),
+        ...activeRemoteBranches,
+      ],
       current: result.current,
       branches: result.branches,
       defaultBranches,
@@ -3542,6 +3630,35 @@ export async function getBranches(directory) {
     console.error('Failed to get branches:', error);
     throw error;
   }
+}
+
+/**
+ * Counts locally unpushed commits for a small caller-supplied set of local
+ * branches. This deliberately reads only local refs: the branch picker calls
+ * it when opened, never polls, and never fetches a remote behind the user's
+ * back. Unknown, remote, and upstream-less branches are omitted.
+ */
+export async function getUnpushedBranchCounts(directory, branchNames) {
+  const { git } = await createRepositoryGitContext(directory);
+  const requested = [...new Set(Array.isArray(branchNames) ? branchNames : [])]
+    .filter((name) => typeof name === 'string' && name.length > 0)
+    .slice(0, 5);
+  if (requested.length === 0) return { counts: {} };
+
+  const local = new Set((await git.branchLocal()).all);
+  const counts = {};
+  await Promise.all(requested.map(async (branch) => {
+    if (!local.has(branch)) return;
+    const upstream = await git.raw(['rev-parse', '--abbrev-ref', '--symbolic-full-name', `${branch}@{upstream}`])
+      .then((value) => value.trim())
+      .catch(() => '');
+    if (!upstream) return;
+    const count = await git.raw(['rev-list', '--count', `${upstream}..${branch}`])
+      .then((value) => Number.parseInt(value.trim(), 10))
+      .catch(() => 0);
+    if (Number.isFinite(count) && count > 0) counts[branch] = count;
+  }));
+  return { counts };
 }
 
 async function getRemoteDefaultBranches(git) {
@@ -3570,6 +3687,68 @@ async function getRemoteDefaultBranches(git) {
   return defaults;
 }
 
+async function filterActiveRemoteBranches(git, remoteBranches) {
+  try {
+    const remotes = await git.getRemotes();
+    const branchesByRemote = new Map();
+
+    // A remote that did not answer says nothing about its branches. Dropping
+    // them would turn "we could not ask" into "these branches are gone", and
+    // callers use this list to decide whether a base branch exists at all — so
+    // offline would silently remove comparisons that work perfectly well
+    // against the local remote-tracking refs.
+    const unreachableRemotes = new Set();
+
+    await Promise.all(remotes.map(async (remote) => {
+      try {
+        const lsRemoteResult = await git.raw(['ls-remote', '--heads', remote.name]);
+        const actualRemoteBranches = new Set();
+        const lines = lsRemoteResult.trim().split('\n');
+        for (const line of lines) {
+          if (line.includes('\trefs/heads/')) {
+            const branchName = line.split('\t')[1].replace('refs/heads/', '');
+            actualRemoteBranches.add(branchName);
+          }
+        }
+        branchesByRemote.set(remote.name, actualRemoteBranches);
+      } catch {
+        unreachableRemotes.add(remote.name);
+      }
+    }));
+
+    const activeBranches = remoteBranches.filter(remoteBranch => {
+      const match = remoteBranch.match(/^remotes\/[^\/]+\/(.+)$/);
+      if (!match) return false;
+      const remoteName = remoteBranch.split('/')[1];
+      const branchName = match[1];
+      if (unreachableRemotes.has(remoteName)) return true;
+      return branchesByRemote.get(remoteName)?.has(branchName) ?? false;
+    });
+
+    // A branch pushed to the remote that was never fetched locally has no
+    // remote-tracking ref, so `git branch` never reports it — but ls-remote
+    // just told us it exists. Add those so a freshly pushed branch shows up
+    // without requiring a fetch first (#2098). Unreachable remotes have no
+    // ls-remote data and therefore add nothing here; their local view above
+    // is preserved unchanged.
+    const seenBranches = new Set(activeBranches);
+    for (const [remoteName, actualRemoteBranches] of branchesByRemote) {
+      for (const branchName of actualRemoteBranches) {
+        const qualifiedBranch = `remotes/${remoteName}/${branchName}`;
+        if (!seenBranches.has(qualifiedBranch)) {
+          seenBranches.add(qualifiedBranch);
+          activeBranches.push(qualifiedBranch);
+        }
+      }
+    }
+
+    return activeBranches;
+  } catch (error) {
+    console.warn('Failed to filter active remote branches, returning all:', error.message);
+    return remoteBranches;
+  }
+}
+
 export async function createBranch(directory, branchName, options = {}) {
   const { git } = await createRepositoryGitContext(directory);
 
@@ -3582,12 +3761,81 @@ export async function createBranch(directory, branchName, options = {}) {
   }
 }
 
+// Deliberately not `--quiet`: simple-git resolves a quiet non-zero exit as
+// success, so the ref itself has to be echoed for the answer to mean anything.
+const gitRefExists = async (git, ref) => {
+  try {
+    const output = await git.raw(['show-ref', '--verify', ref]);
+    return String(output).trim().length > 0;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The branch selector lists remote-tracking branches beside local ones, so
+ * picking `origin/main` means "work on main", not "detach HEAD at the remote's
+ * commit" — which is what a literal checkout of a remote-tracking ref does.
+ * Resolve such a pick to the local branch, creating it with tracking when it
+ * does not exist yet. Anything we cannot resolve is checked out as requested,
+ * leaving git's own DWIM behavior intact.
+ */
+const resolveBranchCheckoutTarget = async (git, branchName) => {
+  const requested = String(branchName || '').trim();
+  if (!requested) {
+    throw new Error('Branch name is required');
+  }
+
+  const asRequested = { branch: requested, remoteRef: null };
+
+  if (await gitRefExists(git, `refs/heads/${requested}`)) {
+    return asRequested;
+  }
+
+  const remoteRef = requested.replace(/^remotes\//, '');
+  const remotes = await git.getRemotes();
+  const remote = remotes.find((entry) => entry?.name && remoteRef.startsWith(`${entry.name}/`));
+  if (!remote) {
+    return asRequested;
+  }
+
+  const localBranch = remoteRef.slice(remote.name.length + 1);
+  // `origin/HEAD` names no branch of its own; it is a pointer to one.
+  if (!localBranch || localBranch === 'HEAD') {
+    return asRequested;
+  }
+
+  // The branch list also carries branches that only `ls-remote` knows about
+  // (#2098): they exist on the remote but were never fetched, so there is no
+  // remote-tracking ref and a literal checkout fails with a pathspec error.
+  // Fetch the single branch first so the tracking ref exists, then fall through
+  // to the normal create-with-tracking path.
+  if (!(await gitRefExists(git, `refs/remotes/${remoteRef}`))) {
+    try {
+      await git.fetch(remote.name, localBranch);
+    } catch (error) {
+      throw new Error(`Failed to fetch ${localBranch} from ${remote.name}: ${error?.message || error}`);
+    }
+    if (!(await gitRefExists(git, `refs/remotes/${remoteRef}`))) {
+      throw new Error(`Branch ${localBranch} no longer exists on remote ${remote.name}`);
+    }
+  }
+
+  const localExists = await gitRefExists(git, `refs/heads/${localBranch}`);
+  return { branch: localBranch, remoteRef: localExists ? null : remoteRef };
+};
+
 export async function checkoutBranch(directory, branchName) {
   const { git } = await createRepositoryGitContext(directory);
 
   try {
-    await git.checkout(branchName);
-    return { success: true, branch: branchName };
+    const target = await resolveBranchCheckoutTarget(git, branchName);
+    if (target.remoteRef) {
+      await git.raw(['checkout', '-b', target.branch, '--track', target.remoteRef]);
+    } else {
+      await git.checkout(target.branch);
+    }
+    return { success: true, branch: target.branch };
   } catch (error) {
     console.error('Failed to checkout branch:', error);
     throw error;
@@ -3705,9 +3953,18 @@ export async function getWorktrees(directory) {
       name: path.basename(entry.worktree || ''),
       branch: entry.branch || '',
       path: entry.worktree,
+      prunable: entry.prunable === true,
     }));
   } catch (error) {
-    console.warn('Failed to list worktrees, returning empty list:', error?.message || error);
+    // Worktrees are an optional feature. When the caller passes a directory
+    // that is not inside any git repository (for example, the managed
+    // OpenCode's working directory or an unconfigured project path), git
+    // exits with "fatal: not a git repository ...". Treat that as an
+    // authoritative empty result so the route handler can still respond
+    // 200 [] and the desktop main.log stays free of noise.
+    if (!isNotGitRepositoryError(error)) {
+      console.warn('Failed to list worktrees, returning empty list:', error?.message || error);
+    }
     return [];
   }
 }
@@ -4008,6 +4265,7 @@ async function attachGitWorktreeToCandidateWithoutRemoteRollback(context, candid
 
     const parsedRemoteStartRef = await resolveRemoteBranchRef(context.primaryWorktree, startRef);
     if (parsedRemoteStartRef) {
+      worktreeAddArgs.splice(2, 0, '--no-track');
       inferredUpstream = {
         remote: parsedRemoteStartRef.remote,
         branch: parsedRemoteStartRef.branch,
@@ -4016,7 +4274,7 @@ async function attachGitWorktreeToCandidateWithoutRemoteRollback(context, candid
     }
   }
 
-  if (ensureRemoteName && ensureRemoteUrl) {
+  if (mode === 'existing' && ensureRemoteName && ensureRemoteUrl) {
     await ensureRemoteWithUrlUnlocked(context.primaryWorktree, ensureRemoteName, ensureRemoteUrl);
   }
 
@@ -4068,10 +4326,10 @@ async function attachGitWorktreeToCandidateWithoutRemoteRollback(context, candid
   }
 
   const upstreamRemote = shouldSetUpstream
-    ? String(inferredUpstream?.remote || input?.upstreamRemote || '').trim()
+    ? String(input?.upstreamRemote || inferredUpstream?.remote || '').trim()
     : '';
   const upstreamBranch = shouldSetUpstream
-    ? String(inferredUpstream?.branch || input?.upstreamBranch || '').trim()
+    ? String(input?.upstreamBranch || inferredUpstream?.branch || '').trim()
     : '';
 
   let bootstrapStatus;
@@ -4154,6 +4412,69 @@ async function attachGitWorktreeToCandidate(context, candidate, input = {}, serv
   });
 }
 
+
+// Refreshes one remote-tracking ref before a worktree is created from it.
+// This is server-internal maintenance of an already-configured remote, not a
+// user-initiated transfer, so it stays outside the planned-operation flow.
+const fetchRemoteBranchRef = async (primaryWorktree, remoteName, branchName) => {
+  const remote = String(remoteName || '').trim();
+  const branch = String(branchName || '').trim();
+  if (!remote || !branch) {
+    return;
+  }
+
+  const refspec = `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`;
+  await runGitCommandOrThrow(
+    primaryWorktree,
+    ['fetch', remote, refspec],
+    `Failed to fetch ${remote}/${branch}`
+  );
+};
+
+const prepareWorktreeCreateSource = async (context, input = {}) => {
+  if (input?.mode === 'existing') {
+    return { input, sourceFetchFailed: false };
+  }
+
+  const startRef = normalizeStartRef(input?.startRef);
+  const remoteStartRef = await resolveRemoteBranchRef(context.primaryWorktree, startRef);
+  if (!remoteStartRef) {
+    return { input, sourceFetchFailed: false };
+  }
+
+  const status = await getStatus(context.primaryWorktree, { mode: 'light' }).catch(() => null);
+  const trackingRef = status?.tracking
+    ? await resolveRemoteBranchRef(context.primaryWorktree, status.tracking)
+    : null;
+  const canFallbackToLocal = Boolean(
+    status?.current
+    && status.ahead === 0
+    && trackingRef?.fullRef === remoteStartRef.fullRef
+  );
+
+  try {
+    await fetchRemoteBranchRef(context.primaryWorktree, remoteStartRef.remote, remoteStartRef.branch);
+    return { input, sourceFetchFailed: false };
+  } catch (error) {
+    if (canFallbackToLocal) {
+      return {
+        input: { ...input, startRef: status.current },
+        sourceFetchFailed: true,
+      };
+    }
+
+    const refExists = await runGitCommand(
+      context.primaryWorktree,
+      ['show-ref', '--verify', '--quiet', remoteStartRef.fullRef]
+    );
+    if (!refExists.success) {
+      throw error;
+    }
+    console.warn(`Worktree create: failed to refresh ${remoteStartRef.remote}/${remoteStartRef.branch}, proceeding with the existing remote-tracking ref`);
+    return { input, sourceFetchFailed: false };
+  }
+};
+
 export async function createWorktree(directory, input = {}, serverOptions = {}) {
   const mode = input?.mode === 'existing' ? 'existing' : 'new';
   const context = await resolveWorktreeProjectContext(directory);
@@ -4162,10 +4483,22 @@ export async function createWorktree(directory, input = {}, serverOptions = {}) 
     await assertWorktreeCreatePreflight(directory, input);
   }
 
+  // Only the non-existing path consults a remote before the attach step, and
+  // only that path needs the remote provisioned this early. In existing mode
+  // the attach step provisions it inside the rollback scope, so a failed
+  // creation cannot leave a contributor remote behind.
+  const ensureRemoteName = String(input?.ensureRemoteName || '').trim();
+  const ensureRemoteUrl = String(input?.ensureRemoteUrl || '').trim();
+  if (mode !== 'existing' && ensureRemoteName && ensureRemoteUrl) {
+    await ensureRemoteWithUrl(context.primaryWorktree, ensureRemoteName, ensureRemoteUrl);
+  }
+  const prepared = await prepareWorktreeCreateSource(context, input);
+  const preparedInput = prepared.input;
+
   await fsp.mkdir(context.worktreeRoot, { recursive: true });
 
-  const preferredName = String(input?.worktreeName || input?.name || '').trim();
-  const preferredBranchName = cleanBranchName(String(input?.branchName || '').trim());
+  const preferredName = String(preparedInput?.worktreeName || preparedInput?.name || '').trim();
+  const preferredBranchName = cleanBranchName(String(preparedInput?.branchName || '').trim());
 
   const candidate = await resolveCandidateDirectory(
     context.worktreeRoot,
@@ -4174,7 +4507,7 @@ export async function createWorktree(directory, input = {}, serverOptions = {}) 
     context.primaryWorktree
   );
 
-  if (input?.returnAfterDirectoryCreated === true && input?.contributorFork !== true) {
+  if (preparedInput?.returnAfterDirectoryCreated === true && preparedInput?.contributorFork !== true) {
     await fsp.mkdir(candidate.directory, { recursive: false });
 
     let bootstrapStatus;
@@ -4193,11 +4526,11 @@ export async function createWorktree(directory, input = {}, serverOptions = {}) 
       bootstrapStatus = error.bootstrapStatus;
     }
     const localBranch = mode === 'existing'
-      ? cleanBranchName(String(input?.branchName || input?.existingBranch || candidate.branch || '').trim())
+      ? cleanBranchName(String(preparedInput?.branchName || preparedInput?.existingBranch || candidate.branch || '').trim())
       : candidate.branch;
 
     const task = bootstrapStatus.status === WORKTREE_BOOTSTRAP_PENDING
-      ? attachGitWorktreeToCandidate(context, candidate, input, serverOptions).catch(async (error) => {
+      ? attachGitWorktreeToCandidate(context, candidate, preparedInput, serverOptions).catch(async (error) => {
       await setWorktreeBootstrapState(
         candidate.directory,
         WORKTREE_BOOTSTRAP_FAILED,
@@ -4213,7 +4546,7 @@ export async function createWorktree(directory, input = {}, serverOptions = {}) 
       : null;
     if (task) trackWorktreeBootstrapTask(candidate.directory, task);
 
-    return {
+    const result = {
       head: '',
       name: candidate.name,
       branch: localBranch,
@@ -4221,9 +4554,14 @@ export async function createWorktree(directory, input = {}, serverOptions = {}) 
       directoryCreated: true,
       bootstrapStatus,
     };
+    if (prepared.sourceFetchFailed) {
+      result.sourceFetchFailed = true;
+    }
+    return result;
   }
 
-  return attachGitWorktreeToCandidate(context, candidate, input, serverOptions);
+  const result = await attachGitWorktreeToCandidate(context, candidate, preparedInput, serverOptions);
+  return prepared.sourceFetchFailed ? { ...result, sourceFetchFailed: true } : result;
 }
 
 const inspectWorktreeBootstrapRecovery = async (directory) => {

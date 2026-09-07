@@ -19,7 +19,6 @@ import { SaveProjectPlanDialog } from '@/components/session/SaveProjectPlanDialo
 import { ForkSessionDialog, type ForkSessionExecution } from '@/components/session/ForkSessionDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ArrowsMerge } from '@/components/icons/ArrowsMerge';
-import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 
 import { MarkdownImageGallery, SimpleMarkdownRenderer } from '../MarkdownRenderer';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -59,6 +58,7 @@ import { getAgentColor } from '@/lib/agentColors';
 import { isCapacitorMobileApp } from '@/apps/mobileNativeChrome';
 import ShellBoundaryIndicator from './parts/ShellBoundaryIndicator';
 import { getShellOperationBoundary } from './parts/shellOperationBoundary';
+import { WorktreeRequiresGitRepositoryError } from '@/lib/worktrees/worktreeCreate';
 
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
@@ -423,13 +423,10 @@ interface MessageBodyProps {
     onShowPopup: (content: ToolPopupContent) => void;
     streamPhase: StreamPhase;
     allowAnimation: boolean;
-    onContentChange?: (reason?: ContentChangeReason, messageId?: string) => void;
-
     shouldShowHeader?: boolean;
     hasTextContent?: boolean;
     onCopyMessage?: () => void | boolean | Promise<void | boolean>;
     copiedMessage?: boolean;
-    onAuxiliaryContentComplete?: () => void;
     showReasoningTraces?: boolean;
     agentMention?: AgentMentionInfo;
     turnGroupingContext?: TurnGroupingContext;
@@ -1116,10 +1113,8 @@ const AssistantMessageBody = React.memo(({
     onShowPopup,
     streamPhase: _streamPhase,
     allowAnimation: _allowAnimation,
-    onContentChange,
     hasTextContent = false,
     onCopyMessage,
-    onAuxiliaryContentComplete,
     showReasoningTraces = false,
     turnGroupingContext,
     errorMessage,
@@ -1341,27 +1336,14 @@ const AssistantMessageBody = React.memo(({
     const effectiveStreamPhase: StreamPhase = hasStopFinish ? 'completed' : streamPhase;
 
     const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
-    const currentProjectRef = React.useMemo(() => {
-        if (!canUseProjectPlanActions) {
-            return null;
-        }
-
+    const sessionProjectRef = React.useMemo(() => {
         const directory = effectiveDirectory
             ?? (currentSessionId ? getDirectoryForSession(currentSessionId) : null)
             ?? '';
         const resolved = resolveProjectForSessionDirectory(projects, availableWorktreesByProject, directory);
         return resolved ? { id: resolved.id, path: resolved.path } : null;
-    }, [availableWorktreesByProject, canUseProjectPlanActions, currentSessionId, effectiveDirectory, getDirectoryForSession, projects]);
-
-    const hasTools = toolParts.length > 0;
-
-    const hasPendingTools = React.useMemo(() => {
-        return toolParts.some((toolPart) => {
-            const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
-            const status = state?.status;
-            return status === 'pending' || status === 'running' || status === 'started';
-        });
-    }, [toolParts]);
+    }, [availableWorktreesByProject, currentSessionId, effectiveDirectory, getDirectoryForSession, projects]);
+    const currentProjectRef = canUseProjectPlanActions ? sessionProjectRef : null;
 
     const isActiveTool = React.useCallback((toolPart: ToolPartType): boolean => {
         const state = (toolPart as Record<string, unknown>).state as Record<string, unknown> | undefined ?? {};
@@ -1391,114 +1373,54 @@ const AssistantMessageBody = React.memo(({
         return isActiveTool(toolPart) || isToolFinalized(toolPart);
     }, [isActiveTool, isToolFinalized]);
 
-    const allToolsFinalized = React.useMemo(() => {
-        if (toolParts.length === 0) {
-            return true;
-        }
-        if (hasPendingTools) {
-            return false;
-        }
-        return toolParts.every((toolPart) => isToolFinalized(toolPart));
-    }, [toolParts, hasPendingTools, isToolFinalized]);
-
-    const reasoningParts = React.useMemo(() => {
-        return visibleParts.filter((part) => part.type === 'reasoning');
-    }, [visibleParts]);
-
-    const reasoningComplete = React.useMemo(() => {
-        if (reasoningParts.length === 0) {
-            return true;
-        }
-        return reasoningParts.every((part) => {
-            const time = (part as Record<string, unknown>).time as { end?: number } | undefined;
-            return typeof time?.end === 'number';
-        });
-    }, [reasoningParts]);
-
-    // Message is considered to have an "open step" if info.finish is not yet present
-    const hasOpenStep = typeof messageFinish !== 'string';
-
-    const shouldHoldForReasoning =
-        reasoningParts.length > 0 &&
-        hasTools &&
-        (hasPendingTools || hasOpenStep || !allToolsFinalized);
-
-    const shouldHoldTools = awaitingMessageCompletion
-        || (hasTools && (hasPendingTools || hasOpenStep || !allToolsFinalized));
-    const shouldHoldReasoning = awaitingMessageCompletion || shouldHoldForReasoning;
-
-    const hasAuxiliaryContent = hasTools || reasoningParts.length > 0;
-    const isTextlessAssistantMessage = assistantTextParts.length === 0;
-    const auxiliaryContentComplete = hasAuxiliaryContent && isTextlessAssistantMessage && !shouldHoldTools && !shouldHoldReasoning && allToolsFinalized && reasoningComplete;
-    const auxiliaryCompletionAnnouncedRef = React.useRef(false);
-    const soloReasoningScrollTriggeredRef = React.useRef(false);
-
-    React.useEffect(() => {
-        soloReasoningScrollTriggeredRef.current = false;
-    }, [messageId]);
-
-    React.useEffect(() => {
-        if (!auxiliaryContentComplete) {
-            auxiliaryCompletionAnnouncedRef.current = false;
-            return;
-        }
-        if (auxiliaryCompletionAnnouncedRef.current) {
-            return;
-        }
-        auxiliaryCompletionAnnouncedRef.current = true;
-        onAuxiliaryContentComplete?.();
-    }, [auxiliaryContentComplete, onAuxiliaryContentComplete]);
-
-    React.useEffect(() => {
-        if (awaitingMessageCompletion) {
-            soloReasoningScrollTriggeredRef.current = false;
-            return;
-        }
-        if (hasTools) {
-            soloReasoningScrollTriggeredRef.current = false;
-            return;
-        }
-        if (reasoningParts.length === 0) {
-            return;
-        }
-        if (shouldHoldReasoning || !reasoningComplete) {
-            return;
-        }
-        if (soloReasoningScrollTriggeredRef.current) {
-            return;
-        }
-        soloReasoningScrollTriggeredRef.current = true;
-        onContentChange?.('structural');
-    }, [awaitingMessageCompletion, hasTools, onContentChange, reasoningComplete, reasoningParts.length, shouldHoldReasoning]);
-
     const hasCopyableText = Boolean(hasTextContent) && !awaitingMessageCompletion;
 
     const handleForkClick = React.useCallback(
         (event: React.MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
             event.preventDefault();
-            if (!createSessionFromAssistantMessage || !assistantPlanText.trim()) {
+            if (!assistantPlanText.trim()) {
                 return;
             }
             setIsForkDialogOpen(true);
         },
-        [createSessionFromAssistantMessage, assistantPlanText]
+        [assistantPlanText]
     );
 
     const handleConfirmFork = React.useCallback(
         async (execution: ForkSessionExecution) => {
-            if (!createSessionFromAssistantMessage) {
-                return;
-            }
             setIsForkSubmitting(true);
             try {
-                await createSessionFromAssistantMessage(messageId, execution);
+                if (!sessionId) {
+                    throw new Error('Source session is unavailable');
+                }
+                const sourceDirectory = effectiveDirectory ?? getDirectoryForSession(sessionId);
+                if (!sourceDirectory) {
+                    throw new Error('Source session directory is unavailable');
+                }
+                await createSessionFromAssistantMessage({
+                    sessionId,
+                    directory: sourceDirectory,
+                    text: assistantPlanText,
+                }, execution);
                 setIsForkDialogOpen(false);
+            } catch (error) {
+                console.error('Failed to start a session from an assistant message:', error);
+                if (error instanceof WorktreeRequiresGitRepositoryError) {
+                    toast.error(t('rightSidebar.contextNotesTodo.toast.worktreeRequiresGitRepo'));
+                    return;
+                }
+
+                const description = error instanceof Error ? error.message : undefined;
+                toast.error(
+                    t('rightSidebar.contextNotesTodo.toast.createSessionFailed'),
+                    description ? { description } : undefined
+                );
             } finally {
                 setIsForkSubmitting(false);
             }
         },
-        [createSessionFromAssistantMessage, messageId]
+        [assistantPlanText, createSessionFromAssistantMessage, effectiveDirectory, getDirectoryForSession, sessionId, t]
     );
 
     const handleForkMultiRunClick = React.useCallback(
@@ -1730,7 +1652,16 @@ const AssistantMessageBody = React.memo(({
         && hasAnchoredActivitySegments
         && Boolean(toggleActivityGroup);
 
-    const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish;
+    // A message that asked a question is blocked until the user answers — it
+    // never reaches finish === 'stop', so the normal "defer text until final
+    // output" rule would hide the context the model produced before the
+    // question indefinitely (OPE-199). Render such messages' text inline,
+    // matching OpenCode's display.
+    const hasQuestionTool = React.useMemo(() => {
+        return toolParts.some((toolPart) => toolPart.tool === 'question');
+    }, [toolParts]);
+
+    const shouldDeferSortedInlineText = isSortedRenderMode && !hasStopFinish && !hasQuestionTool;
     const showErrorMessage = Boolean(errorMessage);
     const isPeekSurface = chatSurfaceMode === 'peek';
     const shouldShowMessageActions = hasCopyableText && !isPeekSurface;
@@ -1825,7 +1756,6 @@ const AssistantMessageBody = React.memo(({
                         expandedTools={expandedTools}
                         onToggleTool={onToggleTool}
                         onShowPopup={onShowPopup}
-                        onContentChange={onContentChange}
                         streamPhase={effectiveStreamPhase}
                         showHeader={true}
                         animateRows={animateActivityRows}
@@ -1902,7 +1832,6 @@ const AssistantMessageBody = React.memo(({
                             messageId={messageId}
                             streamPhase={effectiveStreamPhase}
                             chatRenderMode={chatRenderMode}
-                            onContentChange={onContentChange}
                             onShowPopup={onShowPopup}
                         />
                     </div>
@@ -1937,7 +1866,6 @@ const AssistantMessageBody = React.memo(({
                                 messageId={messageId}
                                 streamPhase={effectiveStreamPhase}
                                 chatRenderMode={chatRenderMode}
-                                onContentChange={onContentChange}
                                 onShowPopup={onShowPopup}
                             />
                         );
@@ -1949,7 +1877,6 @@ const AssistantMessageBody = React.memo(({
                                 part={part}
                                 messageId={messageId}
                                 streamPhase={effectiveStreamPhase}
-                                onContentChange={onContentChange}
                             />
                         );
                     }
@@ -1993,7 +1920,6 @@ const AssistantMessageBody = React.memo(({
                                     onToggle={onToggleTool}
                                     isMobile={isMobile}
                                     alwaysShowActions={alwaysShowMessageActions}
-                                    onContentChange={onContentChange}
                                     onShowPopup={onShowPopup}
                                     animateTailText={animatedToolIdsLookup.has(toolPart.id)}
                                 />
@@ -2065,7 +1991,6 @@ const AssistantMessageBody = React.memo(({
         messageActionButtons,
         renderJustificationActions,
         sessionId,
-        onContentChange,
         onShowPopup,
         onToggleTool,
         shouldRenderActivityGroup,
@@ -2233,6 +2158,8 @@ const AssistantMessageBody = React.memo(({
                      open={isForkDialogOpen}
                      onOpenChange={setIsForkDialogOpen}
                      projectDirectory={effectiveDirectory ?? null}
+                     sourceSessionId={sessionId ?? null}
+                     worktreeProjectDirectory={sessionProjectRef?.path ?? null}
                      submitting={isForkSubmitting}
                      onConfirm={handleConfirmFork}
                  />

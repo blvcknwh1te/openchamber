@@ -7,8 +7,10 @@ import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { getWorktreeStatus } from '@/lib/worktrees/worktreeStatus';
-import { removeProjectWorktree, type ProjectRef } from '@/lib/worktrees/worktreeManager';
+import { removeProjectWorktree, type ProjectRef, getWorktreeDisplayName } from '@/lib/worktrees/worktreeManager';
 import { removeWorktreeThenArchiveSessions } from '@/lib/worktrees/worktreeRemovalFlow';
+import { GitOperationResultError } from '@/lib/boundGitNetworkOperation';
+import { PendingGitOperationError } from '@/lib/source-control/git-operation-recovery';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -113,47 +115,58 @@ export const MobileDeleteWorktreeDialog: React.FC<MobileDeleteWorktreeDialogProp
     }
     return true;
   }, [currentDirectory, deleteLocalBranch, deleteRemoteBranch, git, hasBranch, project, remoteName, sourceControl, worktreePath]);
+  // The worktree goes first: archiving sessions ahead of a removal that then
+  // fails would leave archived sessions attached to a worktree still on disk.
+  const removeWorktreeInBackground = React.useCallback((target: WorktreeMetadata, sessionIds: string[]) => {
+    const name = getWorktreeDisplayName(target);
+    const toastId = toast.loading(t('sessions.sidebar.sessionDialogs.worktree.removingTitle', { name }));
+    void (async () => {
+      try {
+        const result = await removeWorktreeThenArchiveSessions({
+          sessionIds,
+          removeWorktree: () => removeWorktree(target),
+          archiveSessions,
+        });
+        if (!result.removed) {
+          toast.dismiss(toastId);
+          return;
+        }
+        const { failedIds } = result.archive;
+        if (failedIds.length > 0) {
+          toast.error(
+            failedIds.length === 1
+              ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
+              : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }),
+            { id: toastId, description: t('sessions.sidebar.dialogs.deleteResult.tryAgain') },
+          );
+          return;
+        }
 
-  const handleConfirm = async () => {
-    if (!worktree || isProcessing) return;
-    setIsProcessing(true);
-    try {
-      const result = await removeWorktreeThenArchiveSessions({
-        sessionIds: linkedSessions.map((session) => session.id),
-        removeWorktree: () => removeWorktree(worktree),
-        archiveSessions,
-      });
-      if (!result.removed) return;
-      const { archivedIds, failedIds } = result.archive;
-      if (archivedIds.length > 0) {
-        toast.success(archivedIds.length === 1
-          ? t('sessions.sidebar.bulkActions.archivedSingle', { count: archivedIds.length })
-          : t('sessions.sidebar.bulkActions.archivedPlural', { count: archivedIds.length }));
-      }
-      if (failedIds.length > 0) {
-        toast.error(failedIds.length === 1
-          ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
-          : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }), {
-          description: t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+        toast.success(t('sessions.sidebar.sessionDialogs.worktree.removedTitle', { name }), {
+          id: toastId,
+          description:
+            hasBranch && deleteRemoteBranch
+              ? t('sessions.sidebar.sessionDialogs.worktree.removedWithRemote')
+              : t('sessions.sidebar.sessionDialogs.worktree.removed'),
+        });
+        onDeleted?.();
+      } catch (error) {
+        if (error instanceof GitOperationResultError || error instanceof PendingGitOperationError) {
+          toast.dismiss(toastId);
+          return;
+        }
+        toast.error(t('sessions.sidebar.sessionDialogs.worktree.errorRemoveTitle', { name }), {
+          id: toastId,
+          description: error instanceof Error ? error.message : t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
         });
       }
-      toast.success(t('sessions.sidebar.sessionDialogs.worktree.removedTitle'), {
-        description: hasBranch && deleteRemoteBranch
-          ? t('sessions.sidebar.sessionDialogs.worktree.removedWithRemote')
-          : t('sessions.sidebar.sessionDialogs.worktree.removed'),
-      });
-      onDeleted?.();
-      onClose();
-    } catch (error) {
-      toast.error(t('sessions.sidebar.sessionDialogs.worktree.errorRemoveTitle'), {
-        description: error instanceof Error ? error.message : t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
-      });
-      setIsProcessing(false);
-    } finally {
-      if (!open) {
-        setIsProcessing(false);
-      }
-    }
+    })();
+  }, [archiveSessions, deleteRemoteBranch, hasBranch, onDeleted, removeWorktree, t]);
+
+  const handleConfirm = () => {
+    if (!worktree || isProcessing) return;
+    removeWorktreeInBackground(worktree, linkedSessions.map((session) => session.id));
+    onClose();
   };
 
   if (!worktree) return null;

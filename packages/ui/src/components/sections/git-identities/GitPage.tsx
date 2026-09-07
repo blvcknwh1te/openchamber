@@ -19,8 +19,6 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { useGitIdentitiesStore, type GitIdentityProfile } from '@/stores/useGitIdentitiesStore';
 import { useShallow } from 'zustand/react/shallow';
 import { GitSettings } from '@/components/sections/openchamber/GitSettings';
-import { GitHubSettings } from '@/components/sections/openchamber/GitHubSettings';
-import { GitLabSettings } from '@/components/sections/openchamber/GitLabSettings';
 import { ManagedSshCredentials } from '@/components/sections/openchamber/ManagedSshCredentials';
 import { GitIdentityEditorDialog } from './GitIdentityEditorDialog';
 import { Icon } from "@/components/icon/Icon";
@@ -117,13 +115,12 @@ export const GitPage: React.FC = () => {
         showSaveStatus
         className="px-4 @xl:px-6 @3xl:px-12"
       >
-        {!isVSCode && <GitHubSettings />}
-        {!isVSCode && <GitLabSettings />}
         {!isVSCode && <SettingsSection title={t('settings.sourceControl.ssh.title')} settingsItem="git.managed-ssh">
           <ManagedSshCredentials />
         </SettingsSection>}
         <SettingsSection
           title={t('settings.gitIdentities.page.section.title')}
+          divider={false}
           headerAction={(
             <Button size="sm" variant="outline" onClick={() => openEditor('new')}>
               <Icon name="add" className="w-3.5 h-3.5 mr-1" /> {t('settings.common.badge.new')}

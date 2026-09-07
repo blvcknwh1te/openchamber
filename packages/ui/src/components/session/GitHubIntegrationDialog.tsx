@@ -38,14 +38,14 @@ import { createBranchValidationRequests } from './branchValidationRequests';
 
 type GitHubTab = 'issues' | 'prs';
 
+export type GitHubWorktreeSelection =
+  | { type: 'issue'; item: Issue; context: SourceControlReadContext }
+  | { type: 'pr'; item: ChangeRequest; context: SourceControlReadContext; includeDiff?: boolean };
+
 interface GitHubIntegrationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelect: (result:
-    | { type: 'issue'; item: Issue; context: SourceControlReadContext }
-    | { type: 'pr'; item: ChangeRequest; context: SourceControlReadContext; includeDiff?: boolean }
-    | null
-  ) => void;
+  onSelect: (result: GitHubWorktreeSelection | null) => void;
 }
 
 interface ValidationResult {

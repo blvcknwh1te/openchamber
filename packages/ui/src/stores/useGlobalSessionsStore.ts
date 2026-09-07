@@ -9,6 +9,18 @@ import { raiseSessionOrderingBaselines } from '@/sync/session-ordering';
 import { mapWithConcurrency } from '@/lib/concurrency';
 import { persistManagedChatSessions, readManagedChatSessions } from '@/sync/persist-cache';
 import { isVSCodeRuntime } from '@/lib/desktop';
+import { ensureChatsRootDirectory, getChatsRootForHome } from '@/lib/chatDirectories';
+import { countSyncPerformance } from '@/sync/performance-diagnostics';
+import {
+  applyGlobalSessionStructureMutations,
+  buildGlobalSessionStructure,
+  mergeSessionDirectoryMetadata,
+  resolveGlobalSessionDirectory,
+  type GlobalSessionStructure,
+  type GlobalSessionStructureMutation,
+} from './globalSessionStructure';
+
+export { mergeSessionDirectoryMetadata, resolveGlobalSessionDirectory } from './globalSessionStructure';
 
 type GlobalSessionsStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -17,18 +29,29 @@ type LoadResult = {
   archivedSessions: Session[];
 };
 
+export type GlobalSessionMutation =
+  | { type: 'upsert'; session: Session }
+  | { type: 'remove'; sessionId: string };
+
 type GlobalSessionsState = {
   activeSessions: Session[];
   archivedSessions: Session[];
+  entityById: ReadonlyMap<string, Session>;
+  structure: GlobalSessionStructure;
   sessionsByDirectory: Map<string, Session[]>;
   reviewTransferBySessionId: Map<string, ReviewTransferDirection>;
   mutationRevision: number;
   mutationRevisionBySessionId: Map<string, number>;
   hasLoaded: boolean;
+  managedChatsHydrated: boolean;
   status: GlobalSessionsStatus;
+  /** Re-read the persisted managed-chats snapshot after the chats root is
+      warm; retain newer mutations and stop after an authoritative load. */
+  rehydrateManagedChatSessions: () => void;
   loadSessions: (fallbackActive?: Session[]) => Promise<LoadResult>;
   refreshSessionsForDirectories: (directories: Iterable<string>, fallbackActive?: Session[]) => Promise<LoadResult>;
   applySnapshot: (activeSessions: Session[], archivedSessions: Session[], status?: GlobalSessionsStatus) => void;
+  applySessionMutations: (mutations: readonly GlobalSessionMutation[]) => void;
   upsertSession: (session: Session) => void;
   upsertSessions: (sessions: Session[]) => void;
   removeSessions: (ids: Iterable<string>) => void;
@@ -63,60 +86,6 @@ let inflightLoad: Promise<LoadResult> | null = null;
 // not apply its (stale) snapshot after the reset.
 let loadGeneration = 0;
 
-export const resolveGlobalSessionDirectory = (session: Session): string | null => {
-  const record = session as Session & {
-    directory?: string | null;
-    project?: { worktree?: string | null } | null;
-  };
-
-  return normalizePath(record.directory ?? null)
-    ?? normalizePath(record.project?.worktree ?? null);
-};
-
-export const mergeSessionDirectoryMetadata = (incoming: Session, existing?: Session | null): Session => {
-  if (!existing) {
-    return incoming;
-  }
-
-  const incomingRecord = incoming as Session & {
-    directory?: string | null;
-    project?: ({ worktree?: string | null } & Record<string, unknown>) | null;
-  };
-  const existingRecord = existing as Session & {
-    directory?: string | null;
-    project?: ({ worktree?: string | null } & Record<string, unknown>) | null;
-  };
-
-  const incomingDirectory = normalizePath(incomingRecord.directory ?? null);
-  const incomingWorktree = normalizePath(incomingRecord.project?.worktree ?? null);
-  const existingDirectory = normalizePath(existingRecord.directory ?? null);
-  const existingWorktree = normalizePath(existingRecord.project?.worktree ?? null);
-
-  let changed = false;
-  const next: typeof incomingRecord = { ...incomingRecord };
-
-  // Some live session updates omit stable raw directory metadata; keep the
-  // cached value so project grouping does not temporarily lose the session.
-  if (!incomingDirectory && existingDirectory) {
-    next.directory = existingRecord.directory;
-    changed = true;
-  }
-
-  if (!incomingWorktree && existingWorktree) {
-    next.project = {
-      ...(existingRecord.project ?? {}),
-      ...(incomingRecord.project ?? {}),
-      worktree: existingRecord.project?.worktree,
-    };
-    changed = true;
-  } else if (!incomingRecord.project && existingRecord.project) {
-    next.project = existingRecord.project;
-    changed = true;
-  }
-
-  return changed ? next : incoming;
-};
-
 export const mergeLiveSessionWithGlobalSession = (
   liveSession: Session,
   globalSession: Session,
@@ -146,9 +115,12 @@ const buildSessionsByDirectory = (sessions: Session[]): Map<string, Session[]> =
 };
 
 const getSessionSignature = (session: Session): string => {
+  const record = session as Session & { parentID?: string | null; slug?: string | null };
   return [
     session.id,
     session.title ?? '',
+    record.parentID ?? '',
+    record.slug ?? '',
     session.time?.created ?? 0,
     session.time?.updated ?? 0,
     session.time?.archived ?? 0,
@@ -158,7 +130,7 @@ const getSessionSignature = (session: Session): string => {
   ].join(':');
 };
 
-export const getSessionStructuralSignature = (session: Session): string => {
+const getSessionStructuralSignature = (session: Session): string => {
   const record = session as Session & { parentID?: string | null; slug?: string | null };
   return [
     session.id,
@@ -311,14 +283,6 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
   return next;
 };
 
-const removeSessionFromList = (sessions: Session[], sessionId: string): Session[] => {
-  const index = sessions.findIndex((session) => session.id === sessionId);
-  if (index === -1) {
-    return sessions;
-  }
-  return [...sessions.slice(0, index), ...sessions.slice(index + 1)];
-};
-
 const mergeSessionLists = (existing: Session[], incoming?: Session[]): Session[] => {
   if (!incoming || incoming.length === 0) {
     return existing;
@@ -375,6 +339,14 @@ const applySnapshot = (
   const nextArchivedSessions = sameSessionList(state.archivedSessions, archivedSessions)
     ? state.archivedSessions
     : archivedSessions;
+  const sessionsChanged = nextActiveSessions !== state.activeSessions
+    || nextArchivedSessions !== state.archivedSessions;
+  const nextEntityById = sessionsChanged
+    ? new Map([...nextActiveSessions, ...nextArchivedSessions].map((session) => [session.id, session]))
+    : state.entityById;
+  const nextStructure = nextActiveSessions !== state.activeSessions
+    ? buildGlobalSessionStructure(nextActiveSessions)
+    : state.structure;
   const nextSessionsByDirectory = nextActiveSessions === state.activeSessions
     ? state.sessionsByDirectory
     : buildSessionsByDirectory(nextActiveSessions);
@@ -396,6 +368,8 @@ const applySnapshot = (
   return {
     activeSessions: nextActiveSessions,
     archivedSessions: nextArchivedSessions,
+    entityById: nextEntityById,
+    structure: nextStructure,
     sessionsByDirectory: nextSessionsByDirectory,
     reviewTransferBySessionId: nextReviewTransferMap,
     hasLoaded: true,
@@ -435,42 +409,166 @@ const mutationRevisionPatch = (state: GlobalSessionsState, ids: Iterable<string>
   return { mutationRevision, mutationRevisionBySessionId };
 };
 
-const applySessionUpserts = (state: GlobalSessionsState, sessions: Session[]): Partial<GlobalSessionsState> => {
+const materializeChangedSessionList = (
+  previous: readonly Session[],
+  memberIds: ReadonlySet<string>,
+  additions: ReadonlySet<string>,
+  entityById: ReadonlyMap<string, Session>,
+): Session[] => {
+  const additionsInDisplayOrder = [...additions].reverse();
+  const addedIds = new Set(additionsInDisplayOrder);
+  const next = additionsInDisplayOrder.flatMap((sessionId) => {
+    const session = entityById.get(sessionId);
+    return session && memberIds.has(sessionId) ? [session] : [];
+  });
+  for (const previousSession of previous) {
+    if (!memberIds.has(previousSession.id) || addedIds.has(previousSession.id)) continue;
+    const session = entityById.get(previousSession.id);
+    if (session) next.push(session);
+  }
+  return next;
+};
+
+const updateSessionsByDirectory = (
+  previous: Map<string, Session[]>,
+  previousStructure: GlobalSessionStructure,
+  nextStructure: GlobalSessionStructure,
+  entityById: ReadonlyMap<string, Session>,
+  mutations: readonly GlobalSessionStructureMutation[],
+): Map<string, Session[]> => {
+  const affectedDirectories = new Set<string>();
+  const entityChangedDirectories = new Set<string>();
+  for (const mutation of mutations) {
+    const previousDirectory = mutation.previous && !mutation.previous.time?.archived
+      ? resolveGlobalSessionDirectory(mutation.previous)
+      : null;
+    const nextDirectory = mutation.next && !mutation.next.time?.archived
+      ? resolveGlobalSessionDirectory(mutation.next)
+      : null;
+    if (previousDirectory) affectedDirectories.add(previousDirectory);
+    if (nextDirectory) {
+      affectedDirectories.add(nextDirectory);
+      entityChangedDirectories.add(nextDirectory);
+    }
+  }
+  if (affectedDirectories.size === 0) return previous;
+
+  let next: Map<string, Session[]> | null = null;
+  for (const directory of affectedDirectories) {
+    const previousIds = previousStructure.activeIdsByDirectory.get(directory);
+    const nextIds = nextStructure.activeIdsByDirectory.get(directory);
+    if (previousIds === nextIds && !entityChangedDirectories.has(directory)) continue;
+    next ??= new Map(previous);
+    if (!nextIds || nextIds.length === 0) {
+      next.delete(directory);
+      continue;
+    }
+    next.set(directory, nextIds.flatMap((sessionId) => {
+      const session = entityById.get(sessionId);
+      return session ? [session] : [];
+    }));
+  }
+  return next ?? previous;
+};
+
+const applySessionMutations = (
+  state: GlobalSessionsState,
+  requestedMutations: readonly GlobalSessionMutation[],
+): Partial<GlobalSessionsState> => {
+  let mutations = requestedMutations;
   if (isVSCodeRuntime()) {
-    sessions = filterManagedChatsForRuntime(sessions, true);
-    if (sessions.length === 0) return state;
+    mutations = requestedMutations.filter((mutation) => (
+      mutation.type === 'remove'
+      || filterManagedChatsForRuntime([mutation.session], true).length > 0
+    ));
+    if (mutations.length === 0) return state;
   }
-  const revisionPatch = mutationRevisionPatch(state, sessions.map((session) => session.id));
-  let nextActiveSessions = state.activeSessions;
-  let nextArchivedSessions = state.archivedSessions;
+  const revisionPatch = mutationRevisionPatch(state, mutations.map((mutation) => (
+    mutation.type === 'upsert' ? mutation.session.id : mutation.sessionId
+  )));
+  let nextEntityById: Map<string, Session> | null = null;
+  const activeIds = new Set(state.activeSessions.map((session) => session.id));
+  const archivedIds = new Set(state.archivedSessions.map((session) => session.id));
+  const activeAdditions = new Set<string>();
+  const archivedAdditions = new Set<string>();
+  const structureMutations: GlobalSessionStructureMutation[] = [];
+  let activeChanged = false;
+  let archivedChanged = false;
 
-  for (const session of sessions) {
-    const existingSession = nextActiveSessions.find((candidate) => candidate.id === session.id)
-      ?? nextArchivedSessions.find((candidate) => candidate.id === session.id)
-      ?? null;
-    const sessionWithMetadata = mergeSessionDirectoryMetadata(session, existingSession);
+  const addMember = (ids: Set<string>, additions: Set<string>, sessionId: string): void => {
+    if (ids.has(sessionId)) return;
+    ids.add(sessionId);
+    additions.delete(sessionId);
+    additions.add(sessionId);
+  };
+  const removeMember = (ids: Set<string>, additions: Set<string>, sessionId: string): void => {
+    ids.delete(sessionId);
+    additions.delete(sessionId);
+  };
+
+  for (const mutation of mutations) {
+    const sessionId = mutation.type === 'upsert' ? mutation.session.id : mutation.sessionId;
+    const existingSession = (nextEntityById ?? state.entityById).get(sessionId) ?? null;
+    if (mutation.type === 'remove') {
+      if (!existingSession) continue;
+      nextEntityById ??= new Map(state.entityById);
+      nextEntityById.delete(sessionId);
+      structureMutations.push({ sessionId, previous: existingSession, next: null });
+      if (existingSession.time?.archived) {
+        archivedChanged = true;
+        removeMember(archivedIds, archivedAdditions, sessionId);
+      } else {
+        activeChanged = true;
+        removeMember(activeIds, activeAdditions, sessionId);
+      }
+      continue;
+    }
+
+    const sessionWithMetadata = mergeSessionDirectoryMetadata(mutation.session, existingSession);
+    if (existingSession && getSessionSignature(existingSession) === getSessionSignature(sessionWithMetadata)) continue;
+    nextEntityById ??= new Map(state.entityById);
+    nextEntityById.set(sessionId, sessionWithMetadata);
+    structureMutations.push({ sessionId, previous: existingSession, next: sessionWithMetadata });
     const isArchived = Boolean(sessionWithMetadata.time?.archived);
-    nextActiveSessions = isArchived
-      ? removeSessionFromList(nextActiveSessions, session.id)
-      : upsertSessionIntoList(nextActiveSessions, sessionWithMetadata);
-    nextArchivedSessions = isArchived
-      ? upsertSessionIntoList(nextArchivedSessions, sessionWithMetadata)
-      : removeSessionFromList(nextArchivedSessions, session.id);
+    const wasArchived = Boolean(existingSession?.time?.archived);
+    if (existingSession) {
+      if (wasArchived) archivedChanged = true;
+      else activeChanged = true;
+    }
+    if (isArchived) {
+      archivedChanged = true;
+      removeMember(activeIds, activeAdditions, sessionId);
+      addMember(archivedIds, archivedAdditions, sessionId);
+    } else {
+      activeChanged = true;
+      removeMember(archivedIds, archivedAdditions, sessionId);
+      addMember(activeIds, activeAdditions, sessionId);
+    }
   }
 
-  if (
-    nextActiveSessions === state.activeSessions
-    && nextArchivedSessions === state.archivedSessions
-  ) {
+  if (!nextEntityById) {
     return revisionPatch;
   }
+  const nextActiveSessions = activeChanged
+    ? materializeChangedSessionList(state.activeSessions, activeIds, activeAdditions, nextEntityById)
+    : state.activeSessions;
+  const nextArchivedSessions = archivedChanged
+    ? materializeChangedSessionList(state.archivedSessions, archivedIds, archivedAdditions, nextEntityById)
+    : state.archivedSessions;
+  const nextStructure = applyGlobalSessionStructureMutations(state.structure, structureMutations);
 
   return {
     activeSessions: nextActiveSessions,
     archivedSessions: nextArchivedSessions,
-    sessionsByDirectory: nextActiveSessions === state.activeSessions
-      ? state.sessionsByDirectory
-      : buildSessionsByDirectory(nextActiveSessions),
+    entityById: nextEntityById,
+    structure: nextStructure,
+    sessionsByDirectory: updateSessionsByDirectory(
+      state.sessionsByDirectory,
+      state.structure,
+      nextStructure,
+      nextEntityById,
+      structureMutations,
+    ),
     reviewTransferBySessionId: nextActiveSessions === state.activeSessions
       ? state.reviewTransferBySessionId
       : buildReviewTransferMap(nextActiveSessions),
@@ -493,16 +591,24 @@ const buildReviewTransferMap = (sessions: Session[]): Map<string, ReviewTransfer
   return next
 }
 
+const buildManagedChatSessionsState = (sessions: Session[], archivedSessions: Session[] = []) => ({
+  activeSessions: sessions,
+  archivedSessions,
+  entityById: new Map([...sessions, ...archivedSessions].map((session) => [session.id, session])),
+  structure: buildGlobalSessionStructure(sessions),
+  sessionsByDirectory: buildSessionsByDirectory(sessions),
+  reviewTransferBySessionId: buildReviewTransferMap(sessions),
+});
+
 const initialManagedChatSessions = readManagedChatSessions();
+const initialState = buildManagedChatSessionsState(initialManagedChatSessions);
 
 export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => ({
-  activeSessions: initialManagedChatSessions,
-  archivedSessions: [],
-  sessionsByDirectory: buildSessionsByDirectory(initialManagedChatSessions),
-  reviewTransferBySessionId: buildReviewTransferMap(initialManagedChatSessions),
+  ...initialState,
   mutationRevision: 0,
   mutationRevisionBySessionId: new Map(),
   hasLoaded: false,
+  managedChatsHydrated: false,
   status: 'idle',
 
   applySnapshot: (activeSessions, archivedSessions, status = 'ready') => {
@@ -513,18 +619,34 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     set((state) => applySnapshot(state, activeSessions, archivedSessions, status));
   },
 
+  applySessionMutations: (mutations) => {
+    if (mutations.length === 0) return;
+    set((state) => applySessionMutations(state, mutations));
+  },
+
+  // The module-init seed and runtime reset read the persisted snapshot before
+  // the server-resolved chats root is available, so relocated directories are
+  // filtered out of the stale sidebar paint until this runs after the warm-up.
+  rehydrateManagedChatSessions: () => {
+    const state = get();
+    if (state.managedChatsHydrated || state.hasLoaded) return;
+    const hydrated = overlayMutationsSince(state, readManagedChatSessions(), state.archivedSessions, 0);
+    const unchanged = sameSessionList(hydrated.activeSessions, state.activeSessions)
+      && sameSessionList(hydrated.archivedSessions, state.archivedSessions);
+    set(unchanged
+      ? { managedChatsHydrated: true }
+      : { ...buildManagedChatSessionsState(hydrated.activeSessions, hydrated.archivedSessions), managedChatsHydrated: true });
+  },
+
   resetForRuntimeSwitch: () => {
     loadGeneration += 1;
     inflightLoad = null;
-    const managedChatSessions = readManagedChatSessions();
     set({
-      activeSessions: managedChatSessions,
-      archivedSessions: [],
-      sessionsByDirectory: buildSessionsByDirectory(managedChatSessions),
-      reviewTransferBySessionId: buildReviewTransferMap(managedChatSessions),
+      ...buildManagedChatSessionsState(readManagedChatSessions()),
       mutationRevision: 0,
       mutationRevisionBySessionId: new Map(),
       hasLoaded: false,
+      managedChatsHydrated: false,
       status: 'idle',
     });
   },
@@ -534,12 +656,16 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       return inflightLoad;
     }
 
-    set((state) => (state.status === 'loading' ? state : { status: 'loading' }));
-
     const generation = loadGeneration;
     const baselineRevision = get().mutationRevision;
     const loadPromise = (async () => {
+      let rootsReady = false;
       try {
+        await ensureChatsRootDirectory();
+        if (generation !== loadGeneration) return { activeSessions: [], archivedSessions: [] };
+        rootsReady = true;
+        get().rehydrateManagedChatSessions();
+        set((state) => (state.status === 'loading' ? state : { status: 'loading' }));
         const sdk = opencodeClient.getSdkClient();
         // One inclusive fetch, split client-side. The server's
         // `time_archived IS NULL` active filter would exclude restored
@@ -562,10 +688,18 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
           return applySnapshot(state, reconciled.activeSessions, reconciled.archivedSessions, 'ready');
         });
         const committed = get();
+        raiseSessionOrderingBaselines(committed.activeSessions);
         return { activeSessions: committed.activeSessions, archivedSessions: committed.archivedSessions };
       } catch (error) {
         if (generation !== loadGeneration) {
           return { activeSessions: [], archivedSessions: [] };
+        }
+        if (!rootsReady) {
+          // No classification authority arrived. Preserve both memory and the
+          // persisted snapshot so a retry can hydrate it after root recovery.
+          set({ status: 'error' });
+          const state = get();
+          return { activeSessions: state.activeSessions, archivedSessions: state.archivedSessions };
         }
         console.warn('[GlobalSessions] Failed to load sessions, using fallback snapshot:', error);
         set((state) => {
@@ -601,6 +735,17 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
     const generation = loadGeneration;
     const baselineRevision = get().mutationRevision;
+    try {
+      await ensureChatsRootDirectory();
+    } catch {
+      const state = get();
+      return { activeSessions: state.activeSessions, archivedSessions: state.archivedSessions };
+    }
+    if (generation !== loadGeneration) {
+      const state = get();
+      return { activeSessions: state.activeSessions, archivedSessions: state.archivedSessions };
+    }
+    get().rehydrateManagedChatSessions();
     const sdk = opencodeClient.getSdkClient();
     const fetched = await fetchDirectoryPages(sdk, directorySet);
 
@@ -614,6 +759,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     }
 
     const { active, archived } = splitGlobalSessionsByArchived(fetched.sessions);
+    const refreshedActiveIds = active.map((session) => session.id);
 
     set((state) => {
       let nextActiveSessions = replaceSessionsForDirectories(state.activeSessions, active, fetched.directories);
@@ -634,10 +780,12 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       const nextSessionsByDirectory = nextActiveSessions === state.activeSessions
         ? state.sessionsByDirectory
         : buildSessionsByDirectory(nextActiveSessions);
+      const activeChanged = nextActiveSessions !== state.activeSessions;
+      const archivedChanged = nextArchivedSessions !== state.archivedSessions;
 
       if (
-        nextActiveSessions === state.activeSessions
-        && nextArchivedSessions === state.archivedSessions
+        !activeChanged
+        && !archivedChanged
         && nextSessionsByDirectory === state.sessionsByDirectory
       ) {
         return state;
@@ -646,6 +794,8 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       return {
         activeSessions: nextActiveSessions,
         archivedSessions: nextArchivedSessions,
+        entityById: new Map([...nextActiveSessions, ...nextArchivedSessions].map((session) => [session.id, session])),
+        structure: activeChanged ? buildGlobalSessionStructure(nextActiveSessions) : state.structure,
         sessionsByDirectory: nextSessionsByDirectory,
         reviewTransferBySessionId: nextActiveSessions === state.activeSessions
           ? state.reviewTransferBySessionId
@@ -654,16 +804,23 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     });
 
     const state = get();
+    raiseSessionOrderingBaselines(refreshedActiveIds.flatMap((sessionId) => {
+      const session = state.entityById.get(sessionId);
+      return session && !session.time?.archived ? [session] : [];
+    }));
     return { activeSessions: state.activeSessions, archivedSessions: state.archivedSessions };
   },
 
   upsertSession: (session) => {
-    set((state) => applySessionUpserts(state, [session]));
+    set((state) => applySessionMutations(state, [{ type: 'upsert', session }]));
   },
 
   upsertSessions: (sessions) => {
     if (sessions.length === 0) return;
-    set((state) => applySessionUpserts(state, sessions));
+    set((state) => applySessionMutations(
+      state,
+      sessions.map((session) => ({ type: 'upsert' as const, session })),
+    ));
   },
 
   removeSessions: (ids) => {
@@ -672,26 +829,10 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
       return;
     }
 
-    set((state) => {
-      const revisionPatch = mutationRevisionPatch(state, idSet);
-      const nextActiveSessions = state.activeSessions.filter((session) => !idSet.has(session.id));
-      const nextArchivedSessions = state.archivedSessions.filter((session) => !idSet.has(session.id));
-
-      if (
-        nextActiveSessions.length === state.activeSessions.length
-        && nextArchivedSessions.length === state.archivedSessions.length
-      ) {
-        return revisionPatch;
-      }
-
-      return {
-        activeSessions: nextActiveSessions,
-        archivedSessions: nextArchivedSessions,
-        sessionsByDirectory: buildSessionsByDirectory(nextActiveSessions),
-        reviewTransferBySessionId: buildReviewTransferMap(nextActiveSessions),
-        ...revisionPatch,
-      };
-    });
+    set((state) => applySessionMutations(
+      state,
+      [...idSet].map((sessionId) => ({ type: 'remove' as const, sessionId })),
+    ));
   },
 
   archiveSessions: (ids, archivedAt = Date.now()) => {
@@ -701,13 +842,10 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     }
 
     set((state) => {
-      const revisionPatch = mutationRevisionPatch(state, idSet);
       const movedSessions: Session[] = [];
-      const nextActiveSessions = state.activeSessions.filter((session) => {
-        if (!idSet.has(session.id)) {
-          return true;
-        }
-
+      for (const sessionId of idSet) {
+        const session = state.entityById.get(sessionId);
+        if (!session || session.time?.archived) continue;
         movedSessions.push({
           ...session,
           time: {
@@ -715,32 +853,37 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
             archived: archivedAt,
           },
         });
-        return false;
-      });
-
-      if (movedSessions.length === 0) {
-        return revisionPatch;
       }
 
-      const remainingArchivedSessions = state.archivedSessions.filter((session) => !idSet.has(session.id));
-
+      if (movedSessions.length === 0) {
+        return mutationRevisionPatch(state, idSet);
+      }
+      const patch = applySessionMutations(
+        state,
+        movedSessions.map((session) => ({ type: 'upsert' as const, session })),
+      );
       return {
-        activeSessions: nextActiveSessions,
-        archivedSessions: [...movedSessions, ...remainingArchivedSessions],
-        sessionsByDirectory: buildSessionsByDirectory(nextActiveSessions),
-        reviewTransferBySessionId: buildReviewTransferMap(nextActiveSessions),
-        ...revisionPatch,
+        ...patch,
+        ...mutationRevisionPatch(state, idSet),
       };
     });
   },
 }));
 
 useGlobalSessionsStore.subscribe((state, previous) => {
+  countSyncPerformance('globalSessionPublications');
   if (
-    state.activeSessions !== previous.activeSessions
-    && (state.status !== 'idle' || state.activeSessions.length > 0)
+    getChatsRootForHome(null) !== null
+    && (state.activeSessions !== previous.activeSessions
+      || (!state.managedChatsHydrated && state.mutationRevision !== previous.mutationRevision)
+      || (state.hasLoaded && !previous.hasLoaded))
   ) {
-    persistManagedChatSessions(state.activeSessions);
+    // A local mutation can precede the initial load. Preserve the saved seed
+    // and overlay its explicit mutations instead of persisting a partial list.
+    const sessions = !state.hasLoaded && !state.managedChatsHydrated
+      ? overlayMutationsSince(state, readManagedChatSessions(), [], 0).activeSessions
+      : state.activeSessions;
+    persistManagedChatSessions(sessions);
   }
 });
 
