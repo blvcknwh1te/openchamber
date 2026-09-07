@@ -72,7 +72,7 @@ import { getToolDescriptionFallback } from './toolRenderUtils';
 import { ApplyPatchFileButtons } from './ApplyPatchFileButtons';
 import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
 import ShellBoundaryIndicator from './ShellBoundaryIndicator';
-import { getShellOperationBoundary } from './shellOperationBoundary';
+import { getShellOperationBoundary, shellCommandInputSchema } from './shellOperationBoundary';
 
 type ToolJsonViewMode = 'summary' | 'formatted' | 'raw';
 
@@ -1704,7 +1704,9 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
     const normalizedPartTool = normalizeToolName(part.tool);
     const isTaskTool = normalizedPartTool === 'task';
-    const shellOperation = getShellOperationBoundary(normalizedPartTool, 'agent');
+    const parsedShellInput = shellCommandInputSchema.safeParse(input);
+    const shellCommand = parsedShellInput.success ? parsedShellInput.data.command?.trim() ?? null : null;
+    const shellOperation = getShellOperationBoundary(normalizedPartTool, 'agent', shellCommand);
 
     const status = state?.status as string | undefined;
     const isFinalized = status === 'completed' || status === 'error' || status === 'aborted' || status === 'failed' || status === 'timeout' || status === 'cancelled';
