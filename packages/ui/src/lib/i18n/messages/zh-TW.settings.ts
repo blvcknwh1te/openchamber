@@ -2288,6 +2288,7 @@ export const settingsDict = {
   'settings.gitlab.actions.openGitLab': '開啟 GitLab',
   'settings.sourceControl.accounts.available': '可用',
   'settings.sourceControl.accounts.configured': '已設定的帳戶',
+  'settings.sourceControl.accounts.connectedCount': '{count} 個帳戶',
   'settings.sourceControl.accounts.needsAuthentication': '需要驗證',
   'settings.sourceControl.actions.reauthenticate': '重新驗證',
   'settings.sourceControl.actions.remove': '移除',

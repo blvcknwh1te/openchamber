@@ -2281,6 +2281,7 @@ export const settingsDict = {
   'settings.gitlab.actions.openGitLab': 'Otwórz GitLab',
   'settings.sourceControl.accounts.available': 'Dostępne',
   'settings.sourceControl.accounts.configured': 'Skonfigurowane konta',
+  'settings.sourceControl.accounts.connectedCount': 'Kont: {count}',
   'settings.sourceControl.accounts.needsAuthentication': 'Wymaga uwierzytelnienia',
   'settings.sourceControl.actions.reauthenticate': 'Uwierzytelnij ponownie',
   'settings.sourceControl.actions.remove': 'Usuń',

@@ -2288,6 +2288,7 @@ export const settingsDict = {
   'settings.gitlab.actions.openGitLab': 'Відкрити GitLab',
   'settings.sourceControl.accounts.available': 'Доступний',
   'settings.sourceControl.accounts.configured': 'Налаштовані облікові записи',
+  'settings.sourceControl.accounts.connectedCount': 'Облікових записів: {count}',
   'settings.sourceControl.accounts.needsAuthentication': 'Потрібна автентифікація',
   'settings.sourceControl.actions.reauthenticate': 'Автентифікувати повторно',
   'settings.sourceControl.actions.remove': 'Видалити',

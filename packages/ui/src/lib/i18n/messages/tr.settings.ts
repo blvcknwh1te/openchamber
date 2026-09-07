@@ -2294,6 +2294,7 @@ export const settingsDict = {
   'settings.gitlab.actions.openGitLab': 'GitLab\'ı Aç',
   'settings.sourceControl.accounts.available': 'Mevcut',
   'settings.sourceControl.accounts.configured': 'Yapılandırılmış hesaplar',
+  'settings.sourceControl.accounts.connectedCount': '{count} hesap',
   'settings.sourceControl.accounts.needsAuthentication': 'Kimlik doğrulama gerekiyor',
   'settings.sourceControl.actions.reauthenticate': 'Yeniden kimlik doğrula',
   'settings.sourceControl.actions.remove': 'Kaldır',

@@ -2288,6 +2288,7 @@ export const settingsDict = {
   'settings.gitlab.actions.openGitLab': 'GitLab を開く',
   'settings.sourceControl.accounts.available': '利用可能',
   'settings.sourceControl.accounts.configured': '設定済みアカウント',
+  'settings.sourceControl.accounts.connectedCount': '{count} 件のアカウント',
   'settings.sourceControl.accounts.needsAuthentication': '再認証が必要',
   'settings.sourceControl.actions.reauthenticate': '再認証',
   'settings.sourceControl.actions.remove': '削除',

@@ -2288,6 +2288,7 @@ export const settingsDict = {
   'settings.gitlab.actions.openGitLab': 'GitLab 열기',
   'settings.sourceControl.accounts.available': '사용 가능',
   'settings.sourceControl.accounts.configured': '구성된 계정',
+  'settings.sourceControl.accounts.connectedCount': '계정 {count}개',
   'settings.sourceControl.accounts.needsAuthentication': '인증 필요',
   'settings.sourceControl.actions.reauthenticate': '다시 인증',
   'settings.sourceControl.actions.remove': '제거',

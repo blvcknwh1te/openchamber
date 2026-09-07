@@ -407,15 +407,20 @@ export const GitLabSettings: React.FC = () => {
   if (!sourceControl) return null;
 
   const instanceEntries = gitLabIdentities.map((identity) => entries[getSourceControlAuthKey(identity)]);
-  const connectedAccount = instanceEntries
+  const validAccounts = instanceEntries
     .flatMap((entry) => (entry?.status?.status === 'connected' ? entry.status.accounts : []))
-    .find((account) => account.status === 'valid') ?? null;
+    .filter((account) => account.status === 'valid');
+  // Prefer the account the user is acting as; the first valid one is an
+  // arbitrary pick once several instances are configured.
+  const connectedAccount = validAccounts.find((account) => account.current) ?? validAccounts[0] ?? null;
   const connected = connectedAccount !== null;
   const isChecking = instanceEntries.some((entry) => entry?.isLoading && !entry.hasChecked);
   const statusLabel = isChecking && !connected
     ? t('common.loading')
     : connected
-      ? connectedAccount.user.username.trim() || t('settings.gitlab.status.connected')
+      ? validAccounts.length > 1
+        ? t('settings.sourceControl.accounts.connectedCount', { count: validAccounts.length })
+        : connectedAccount.user.username.trim() || t('settings.gitlab.status.connected')
       : t('settings.gitlab.status.notConnected');
   const statusClassName = connected
     ? 'bg-[var(--status-success)]/15 text-[var(--status-success)]'

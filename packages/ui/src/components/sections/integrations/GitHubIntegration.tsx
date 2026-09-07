@@ -22,10 +22,18 @@ export const GitHubIntegration: React.FC = () => {
   const [open, setOpen] = React.useState(false);
 
   const connected = status?.connected === true;
+  const accounts = status?.accounts ?? [];
+  // One account reads best as its own name. Several would make a single name
+  // look like the only one, so the collapsed row reports how many there are
+  // and the expanded body names them.
+  const currentName = (accounts.find((account) => account.current) ?? accounts[0])?.user.username.trim()
+    ?? (status?.status === 'connected' ? status.user.username.trim() : '');
   const statusLabel = isLoading && !hasChecked
     ? t('common.loading')
     : connected
-      ? (status?.status === 'connected' ? status.user.username.trim() : '') || t('settings.github.page.status.active')
+      ? accounts.length > 1
+        ? t('settings.sourceControl.accounts.connectedCount', { count: accounts.length })
+        : currentName || t('settings.github.page.status.active')
       : t('settings.integrations.github.status.notConnected');
   const statusClassName = connected
     ? 'bg-[var(--status-success)]/15 text-[var(--status-success)]'
