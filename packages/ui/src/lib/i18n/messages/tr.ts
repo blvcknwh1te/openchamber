@@ -3,6 +3,12 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict = {
+  'commitComparison.mode': 'Commit',
+  'commitComparison.select': 'Commit seç',
+  'commitComparison.search': 'Commit ara...',
+  'commitComparison.loadError': 'Commitler yüklenemedi',
+  'commitComparison.noCommits': 'Commit bulunamadı',
+  'commitComparison.emptyDiff': 'Bu committe değişiklik yok',
   'chat.liveActivity.title': 'Etkinlik',
   'chat.liveActivity.changedFile': '{count} dosya değiştirildi',
   'chat.liveActivity.changedFiles': '{count} dosya değiştirildi',
@@ -2251,6 +2257,8 @@ export const dict = {
   'chat.messageBody.actions.openPreviewAria': 'Önizlemeyi aç',
   'chat.messageBody.actions.openPreview': 'Önizlemeyi aç',
   'chat.messageBody.actions.copyAnswer': 'Yanıtı kopyala',
+  'chat.messageBody.actions.moreActions': 'Diğer işlemler',
+  'chat.messageBody.toast.copied': 'Panoya kopyalandı',
   'chat.messageBody.actions.savingImage': 'Görsel kaydediliyor...',
   'chat.messageBody.actions.saveAsImage': 'Görsel olarak kaydet',
   'chat.messageBody.actions.saveAsPlan': 'Plan olarak kaydet',

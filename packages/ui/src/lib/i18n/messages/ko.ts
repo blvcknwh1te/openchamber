@@ -4,6 +4,12 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
+  'commitComparison.mode': '커밋',
+  'commitComparison.select': '커밋 선택',
+  'commitComparison.search': '커밋 검색...',
+  'commitComparison.loadError': '커밋을 불러오지 못했습니다',
+  'commitComparison.noCommits': '커밋을 찾을 수 없습니다',
+  'commitComparison.emptyDiff': '이 커밋에는 변경 사항이 없습니다',
   'chat.liveActivity.title': '활동',
   'chat.liveActivity.changedFile': '파일 {count}개 변경',
   'chat.liveActivity.changedFiles': '파일 {count}개 변경',
@@ -2314,6 +2320,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.unpinContext': '컨텍스트에서 고정 해제(압축 후 유지되지 않음)',
   'chat.messageBody.actions.contextPinFailed': '컨텍스트 고정을 업데이트하지 못했습니다',
   'chat.messageBody.actions.copyAnswer': '답변 복사',
+  'chat.messageBody.actions.moreActions': '추가 작업',
+  'chat.messageBody.toast.copied': '클립보드에 복사됨',
   'chat.messageBody.actions.savingImage': '이미지 저장 중…',
   'chat.messageBody.actions.saveAsImage': '이미지로 저장',
   'chat.messageBody.actions.saveAsPlan': '플랜으로 저장',

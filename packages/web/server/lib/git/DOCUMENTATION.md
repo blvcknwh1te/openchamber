@@ -26,8 +26,10 @@ The following functions are exported and used by the web server:
 ### Status and Diff Operations
 - `getStatus(directory)`: Get comprehensive Git status including current branch, tracking, ahead/behind, file changes, diff stats, merge/rebase state.
 - `getDiff(directory, { path, staged, contextLines })`: Get diff output for files or entire working tree. Untracked symbolic links are represented as link entries without following their targets.
-- `getRangeDiff(directory, { base, head, path, contextLines })`: Get diff between two refs. Uses three-dot `base...head` semantics, so work merged into `head` from `base` is excluded and only the branch's own changes are returned. Prefers `origin/<base>` when that remote-tracking ref exists, so a stale local base branch does not resurface already-merged commits. Exposed as `GET /api/git/range-diff` (`path` optional; omit it for the whole range).
-- `getRangeFiles(directory, { base, head })`: Get list of changed files between two refs.
+- `getRangeDiff(directory, { base, head, path, contextLines, includeWorkingTree })`: Compare the merge base of the exact selected refs with `head`. With `includeWorkingTree: true`, compare with the checked-out branch's current files instead, including committed, staged, unstaged, and untracked work in one net diff. This mode rejects a head that is not the checked-out branch. Exposed as `GET /api/git/range-diff`; omit `path` for the whole comparison.
+- `getRangeFiles(directory, { base, head, includeWorkingTree })`: List changed paths using the same comparison as `getRangeDiff`. A successful empty list means the final files match the merge base, even if staging and working-tree changes cancel each other out.
+- Both range operations honor refs literally. A local `main` is never replaced with `origin/main`, and an unavailable ref fails rather than choosing a different remote. The UI picker sends qualified refs to distinguish local and remote branches with matching display names.
+- Working-tree comparisons use the real index read-only. When untracked paths exist, a temporary copy of the index receives intent-to-add entries so Git computes additions, deletions, recreations, and renames together. Current contents come from the working tree, symlinks remain links, ignored files stay excluded, and temporary files are removed on success or failure.
 - `getFileDiff(directory, { path, staged })`: Get original and modified file contents for a single file (handles images as data URLs and symbolic links as their link-target text).
 - `listUntrackedPaths(directory)`: List individual untracked file paths honoring ignore rules. Much cheaper than `getStatus` when that is all a caller needs. Deliberately not `--directory`: collapsed directory entries end in a slash and are rejected by the per-file diff helpers, so a caller would silently lose every file inside a new directory.
 - `getUntrackedDiffs(directory, filePaths, { concurrency, contextLines })`: Diffs for untracked files against an empty tree. Resolves the repository context once instead of per file (`getDiff` re-resolves every call, costing an extra `rev-parse` each time) and bounds how many diff processes run at once. Returns one entry per input path in order; unreadable paths yield `''` rather than failing the batch.
@@ -38,6 +40,7 @@ The following functions are exported and used by the web server:
 - `applyHunk(directory, filePath, options)`: Apply a single-hunk patch via `git apply`. `options.action` is `stage` (`git apply --cached`), `unstage` (`git apply --cached --reverse`), or `discard` (`git apply --reverse` in the working tree). The patch is written to a temp file; a `--check` runs first so a stale hunk fails with a clear "refresh and try again" error instead of a partial mutation. The patch target path must match the requested file.
 
 ### Branch Operations
+- `getBranchBase(directory, branch)`: Read a named creation source from reflog. After a rebase, the creation source is no longer a current parent record, so return `null` and let the user choose a base. Explicit per-runtime, directory, and branch choices in the shared UI outrank detection.
 - `getBranches(directory)`: Get list of local and remote branches (filtered to active remote branches).
 - `getUnpushedBranchCounts(directory, branchNames)`: Count commits ahead of each locally known upstream for up to five supplied local branches. This reads local refs only and omits branches without an upstream.
 - `createBranch(directory, branchName, options)`: Create and checkout a new branch.
@@ -71,7 +74,8 @@ bootstrap, tracking is left unset rather than writing `branch.*.remote` /
 
 ### Log Operations
 - `getLog(directory, options)`: Get commit history with stats (supports maxCount, from, to, file filters).
-- `getCommitFiles(directory, commitHash)`: Get file changes for a specific commit.
+- `getCommitFiles(directory, commitHash)`: Get file changes for a specific commit relative to its first parent, or the empty tree for a root commit. NUL-delimited paths preserve whitespace; renamed files return their destination in `path` and source in `previousPath`.
+- `getCommitDiff(directory, { hash, path, previousPath, contextLines })`: Get the same commit's patch, with optional file filtering and context depth. `previousPath` keeps a rename's old and new paths in the per-file patch. Reads committed objects only, never the working tree. Exposed as `GET /api/git/commit-diff`; an unavailable hash fails rather than returning an empty diff.
 - `getCommitFileDiff(directory, hash, filePath, isBinary)`: Get before/after content for a specific file in a commit. Returns `{ original, modified, isBinary }`. Runs `git show <hash>^:<path>` and `git show <hash>:<path>` in parallel; returns empty strings on failure (added/deleted/root-commit edge cases).
 
 ### Merge and Rebase Operations
@@ -130,6 +134,7 @@ The following functions are internal helpers used by exported functions:
 
 ### Runtime availability of range diffs
 - `GET /api/git/range-diff` is served by the OpenChamber web server, so it is available to web, desktop, and mobile clients. The shared `GitAPI.getGitRangeDiff` is therefore optional: web supplies the HTTP implementation, and VS Code does not implement it because the extension host serves Git through its own bridge rather than these routes. Features built on range diffs (currently the AI diff walkthrough) are not offered in VS Code.
+- Commit comparison uses the same server boundary through optional `GitAPI.getGitCommitDiff`. The shared Changes toolbar and walkthrough expose it on their existing desktop/tablet surfaces. The phone-specific Changes surface and the VS Code Git bridge keep their existing modes; Commit mode is not offered there. The HTTP operation is available to web, Electron, hosted mobile, and Capacitor clients.
 
 ### Staged and unstaged change handling
 - `status.files` exposes both `index` and `working_dir` codes. Shared UI uses these as separate scopes: staged rows are derived from non-empty `index` statuses, while unstaged rows are derived from `working_dir` statuses and untracked files.

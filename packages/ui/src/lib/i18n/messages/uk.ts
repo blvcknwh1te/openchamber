@@ -4,6 +4,12 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
+  'commitComparison.mode': 'Коміт',
+  'commitComparison.select': 'Вибрати коміт',
+  'commitComparison.search': 'Пошук комітів...',
+  'commitComparison.loadError': 'Не вдалося завантажити коміти',
+  'commitComparison.noCommits': 'Комітів не знайдено',
+  'commitComparison.emptyDiff': 'У цьому коміті немає змін',
   'chat.liveActivity.title': 'Дії',
   'chat.liveActivity.changedFile': 'Змінено {count} файл',
   'chat.liveActivity.changedFiles': 'Змінено файлів: {count}',
@@ -2292,6 +2298,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.messageBody.actions.openPreviewAria": "Відкрити попередній перегляд",
   "chat.messageBody.actions.openPreview": "Відкрити попередній перегляд",
   "chat.messageBody.actions.copyAnswer": "Скопіювати відповідь",
+  "chat.messageBody.actions.moreActions": "Більше дій",
+  "chat.messageBody.toast.copied": "Скопійовано в буфер обміну",
   "chat.messageBody.actions.savingImage": "Збереження зображення...",
   "chat.messageBody.actions.saveAsImage": "Зберегти як зображення",
   "chat.messageBody.actions.saveAsPlan": "Зберегти як план",

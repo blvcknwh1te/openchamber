@@ -4,6 +4,12 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
+  'commitComparison.mode': '提交',
+  'commitComparison.select': '選擇提交',
+  'commitComparison.search': '搜尋提交...',
+  'commitComparison.loadError': '無法載入提交',
+  'commitComparison.noCommits': '找不到提交',
+  'commitComparison.emptyDiff': '此提交沒有變更',
   'chat.liveActivity.title': '活動',
   'chat.liveActivity.changedFile': '變更了 {count} 個檔案',
   'chat.liveActivity.changedFiles': '變更了 {count} 個檔案',
@@ -2284,6 +2290,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.actions.openPreviewAria': '開啟預覽',
   'chat.messageBody.actions.openPreview': '開啟預覽',
   'chat.messageBody.actions.copyAnswer': '複製回答',
+  'chat.messageBody.actions.moreActions': '更多操作',
+  'chat.messageBody.toast.copied': '已複製到剪貼簿',
   'chat.messageBody.actions.savingImage': '正在儲存圖片...',
   'chat.messageBody.actions.saveAsImage': '儲存為圖片',
   'chat.messageBody.actions.saveAsPlan': '儲存為計畫',

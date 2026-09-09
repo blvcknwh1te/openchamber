@@ -4,6 +4,12 @@ import { linearIssuePickerI18n } from './linear-issue-picker.i18n';
 import { linearPanelI18n } from './linear-panel.i18n';
 
 export const dict: Record<I18nKey, string> = {
+  'commitComparison.mode': 'Commit',
+  'commitComparison.select': 'Seleccionar commit',
+  'commitComparison.search': 'Buscar commits...',
+  'commitComparison.loadError': 'No se pudieron cargar los commits',
+  'commitComparison.noCommits': 'No se encontraron commits',
+  'commitComparison.emptyDiff': 'No hay cambios en este commit',
   'chat.liveActivity.title': 'Actividad',
   'chat.liveActivity.changedFile': '{count} archivo modificado',
   'chat.liveActivity.changedFiles': '{count} archivos modificados',
@@ -2292,6 +2298,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.messageBody.actions.openPreviewAria": "Abrir vista previa",
   "chat.messageBody.actions.openPreview": "Abrir vista previa",
   "chat.messageBody.actions.copyAnswer": "Copiar respuesta",
+  "chat.messageBody.actions.moreActions": "Más acciones",
+  "chat.messageBody.toast.copied": "Copiado al portapapeles",
   "chat.messageBody.actions.savingImage": "Guardando imagen...",
   "chat.messageBody.actions.saveAsImage": "Guardar como imagen",
   "chat.messageBody.actions.saveAsPlan": "Guardar como plan",
