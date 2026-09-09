@@ -73,6 +73,7 @@ import type { WorktreeMetadata } from '@/types/worktree';
 
 import { MobileDeleteWorktreeDialog } from './MobileDeleteWorktreeDialog';
 import { MobileProjectEditSurface } from './MobileProjectEditSurface';
+import { useEdgeSwipe } from './useEdgeSwipe';
 
 type MobileSessionsSheetProps = {
   open: boolean;
@@ -272,9 +273,11 @@ const NewWorktreeIconButton: React.FC<{
 const ROW_ACTIONS_WIDTH = 144;
 const ROW_SWIPE_SNAP_MS = 180;
 
-/** Generic swipe-left-to-reveal wrapper for drawer rows (projects, worktrees).
+/** Generic swipe-right-to-reveal wrapper for drawer rows (projects, worktrees).
     Same gesture mechanics as SessionRow's swipe actions: horizontal intent
-    detection, imperative transform during the drag, snap on release. */
+    detection, imperative transform during the drag, snap on release. The
+    actions sit on the LEFT so the opposite direction stays free for the
+    drawer's own close swipe. */
 const MobileSwipeActionsRow: React.FC<{
   actionsWidth: number;
   actions: React.ReactNode;
@@ -298,7 +301,7 @@ const MobileSwipeActionsRow: React.FC<{
 
   React.useEffect(() => {
     revealedRef.current = revealed;
-    applyOffset(revealed ? -actionsWidth : 0, true);
+    applyOffset(revealed ? actionsWidth : 0, true);
   }, [actionsWidth, applyOffset, revealed]);
 
   const handleTouchStart = (event: React.TouchEvent) => {
@@ -317,16 +320,16 @@ const MobileSwipeActionsRow: React.FC<{
       if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) return;
       draggingRef.current = true;
     }
-    const base = revealedRef.current ? -actionsWidth : 0;
-    applyOffset(Math.min(0, Math.max(-actionsWidth, base + dx)), false);
+    const base = revealedRef.current ? actionsWidth : 0;
+    applyOffset(Math.max(0, Math.min(actionsWidth, base + dx)), false);
   };
 
   const handleTouchEnd = () => {
     startRef.current = null;
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    const shouldReveal = offsetRef.current < -actionsWidth / 2;
-    applyOffset(shouldReveal ? -actionsWidth : 0, true);
+    const shouldReveal = offsetRef.current > actionsWidth / 2;
+    applyOffset(shouldReveal ? actionsWidth : 0, true);
     if (shouldReveal !== revealedRef.current) onRevealedChange(shouldReveal);
   };
 
@@ -339,7 +342,7 @@ const MobileSwipeActionsRow: React.FC<{
       onTouchCancel={handleTouchEnd}
       style={{ touchAction: 'pan-y' }}
     >
-      <div className="absolute inset-y-0 right-0 flex items-stretch" style={{ width: actionsWidth }} aria-hidden={!revealed}>
+      <div className="absolute inset-y-0 left-0 flex items-stretch" style={{ width: actionsWidth }} aria-hidden={!revealed}>
         {actions}
       </div>
       <div ref={contentRef} className="relative flex w-full items-center bg-background">
@@ -445,7 +448,7 @@ const SessionRow: React.FC<{
   expanded?: boolean;
   onToggleChildren?: () => void;
   onSelect: () => void;
-  /** Swipe-left actions. When omitted, the row is a plain non-swipeable row. */
+  /** Swipe-right actions. When omitted, the row is a plain non-swipeable row. */
   revealed?: boolean;
   onRevealedChange?: (revealed: boolean) => void;
   confirmingDelete?: boolean;
@@ -508,7 +511,7 @@ const SessionRow: React.FC<{
 
   React.useEffect(() => {
     revealedRef.current = revealed;
-    applyOffset(revealed ? -ROW_ACTIONS_WIDTH : 0, true);
+    applyOffset(revealed ? ROW_ACTIONS_WIDTH : 0, true);
   }, [applyOffset, revealed]);
 
   const handleTouchStart = (event: React.TouchEvent) => {
@@ -527,8 +530,8 @@ const SessionRow: React.FC<{
       if (Math.abs(dx) < 8 || Math.abs(dx) <= Math.abs(dy)) return;
       draggingRef.current = true;
     }
-    const base = revealedRef.current ? -ROW_ACTIONS_WIDTH : 0;
-    const next = Math.min(0, Math.max(-ROW_ACTIONS_WIDTH, base + dx));
+    const base = revealedRef.current ? ROW_ACTIONS_WIDTH : 0;
+    const next = Math.max(0, Math.min(ROW_ACTIONS_WIDTH, base + dx));
     applyOffset(next, false);
   };
 
@@ -536,8 +539,8 @@ const SessionRow: React.FC<{
     startRef.current = null;
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    const shouldReveal = offsetRef.current < -ROW_ACTIONS_WIDTH / 2;
-    applyOffset(shouldReveal ? -ROW_ACTIONS_WIDTH : 0, true);
+    const shouldReveal = offsetRef.current > ROW_ACTIONS_WIDTH / 2;
+    applyOffset(shouldReveal ? ROW_ACTIONS_WIDTH : 0, true);
     if (shouldReveal !== revealedRef.current) onRevealedChange?.(shouldReveal);
   };
 
@@ -554,32 +557,14 @@ const SessionRow: React.FC<{
     >
       {swipeEnabled ? (
         <div
-          className="absolute inset-y-0 right-0 flex items-stretch"
+          className="absolute inset-y-0 left-0 flex items-stretch"
           style={{ width: ROW_ACTIONS_WIDTH }}
           aria-hidden={!revealed}
         >
           {/* Icon-only actions on the row's own background — they read as the
-              row extending to reveal extra controls, not a separate panel. */}
-          <button
-            type="button"
-            tabIndex={revealed ? 0 : -1}
-            className="flex flex-1 items-center justify-center text-muted-foreground transition-colors active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-            aria-label={t('mobile.sessions.renameSessionAria', { title })}
-            onClick={onRequestRename}
-            style={{ touchAction: 'manipulation' }}
-          >
-            <RiEdit2Line className="size-[18px]" />
-          </button>
-          <button
-            type="button"
-            tabIndex={revealed ? 0 : -1}
-            className="flex flex-1 items-center justify-center text-muted-foreground transition-colors active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-            aria-label={t('mobile.sessions.archiveSessionAria', { title })}
-            onClick={onArchive}
-            style={{ touchAction: 'manipulation' }}
-          >
-            <RiArchiveLine className="size-[18px]" />
-          </button>
+              row extending to reveal extra controls, not a separate panel.
+              Ordered outward from the content, so a partial drag exposes
+              delete first, exactly as the right-side version did. */}
           <button
             type="button"
             tabIndex={revealed ? 0 : -1}
@@ -596,6 +581,26 @@ const SessionRow: React.FC<{
             style={{ touchAction: 'manipulation' }}
           >
             <RiDeleteBinLine className="size-[18px]" />
+          </button>
+          <button
+            type="button"
+            tabIndex={revealed ? 0 : -1}
+            className="flex flex-1 items-center justify-center text-muted-foreground transition-colors active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+            aria-label={t('mobile.sessions.archiveSessionAria', { title })}
+            onClick={onArchive}
+            style={{ touchAction: 'manipulation' }}
+          >
+            <RiArchiveLine className="size-[18px]" />
+          </button>
+          <button
+            type="button"
+            tabIndex={revealed ? 0 : -1}
+            className="flex flex-1 items-center justify-center text-muted-foreground transition-colors active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+            aria-label={t('mobile.sessions.renameSessionAria', { title })}
+            onClick={onRequestRename}
+            style={{ touchAction: 'manipulation' }}
+          >
+            <RiEdit2Line className="size-[18px]" />
           </button>
         </div>
       ) : null}
@@ -895,12 +900,12 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   const toggleParent = useMobileSessionExpansionStore((state) => state.toggleParent);
   const [query, setQuery] = React.useState('');
   const [editingProjectId, setEditingProjectId] = React.useState<string | null>(null);
-  // Swipe-left actions: which row has its actions revealed, and whether its
+  // Swipe-right actions: which row has its actions revealed, and whether its
   // delete button is armed (two-step). One row at a time.
   const [revealedSessionId, setRevealedSessionId] = React.useState<string | null>(null);
   const [confirmingDeleteSessionId, setConfirmingDeleteSessionId] = React.useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = React.useState<string | null>(null);
-  // Swipe-left actions on group headers (`project:{id}` / `wt:{bucketKey}`) —
+  // Swipe-right actions on group headers (`project:{id}` / `wt:{bucketKey}`) —
   // separate from session rows, but mutually exclusive with them.
   const [revealedRowId, setRevealedRowId] = React.useState<string | null>(null);
   const [confirmingRemoveProjectId, setConfirmingRemoveProjectId] = React.useState<string | null>(null);
@@ -1706,19 +1711,6 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                           <button
                             type="button"
                             tabIndex={revealedRowId === `project:${node.project.id}` ? 0 : -1}
-                            className="flex flex-1 items-center justify-center text-muted-foreground transition-colors active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-                            aria-label={t('mobile.sessions.editProjectAria', { label: node.project.label })}
-                            onClick={() => {
-                              setRevealedRowId(null);
-                              setEditingProjectId(node.project.id);
-                            }}
-                            style={{ touchAction: 'manipulation' }}
-                          >
-                            <RiEdit2Line className="size-[18px]" />
-                          </button>
-                          <button
-                            type="button"
-                            tabIndex={revealedRowId === `project:${node.project.id}` ? 0 : -1}
                             className={cn(
                               'flex flex-1 items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-destructive',
                               confirmingRemoveProjectId === node.project.id
@@ -1741,6 +1733,19 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                             style={{ touchAction: 'manipulation' }}
                           >
                             <RiDeleteBinLine className="size-[18px]" />
+                          </button>
+                          <button
+                            type="button"
+                            tabIndex={revealedRowId === `project:${node.project.id}` ? 0 : -1}
+                            className="flex flex-1 items-center justify-center text-muted-foreground transition-colors active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                            aria-label={t('mobile.sessions.editProjectAria', { label: node.project.label })}
+                            onClick={() => {
+                              setRevealedRowId(null);
+                              setEditingProjectId(node.project.id);
+                            }}
+                            style={{ touchAction: 'manipulation' }}
+                          >
+                            <RiEdit2Line className="size-[18px]" />
                           </button>
                         </>
                       )}
@@ -1998,6 +2003,19 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     <MobileSessionsDrawerContainer
       open={open}
       onClose={() => onOpenChange(false)}
+      // The mirror of the swipe that opened the drawer closes it again —
+      // except while a row has its actions out: then the same swipe is the
+      // user putting those away, so it only clears them.
+      onSwipeClose={() => {
+        if (revealedSessionId || revealedRowId) {
+          setRevealedSessionId(null);
+          setRevealedRowId(null);
+          setConfirmingDeleteSessionId(null);
+          setConfirmingRemoveProjectId(null);
+          return;
+        }
+        onOpenChange(false);
+      }}
       ariaLabel={t('mobile.sessions.sheet.title')}
     >
       <div className="flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3">
@@ -2030,8 +2048,9 @@ const DRAWER_ENTER_DURATION_MS = 320;
 const DRAWER_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 /** Full-width left drawer for the phone sessions list: covers the whole app
-    and slides in from the left edge. Closes via the header X, Escape, or the
-    Android back button (handled by MobileShell).
+    and slides in from the left edge. Closes via the header X, a right-edge
+    swipe back toward the left (the mirror of the gesture that opened it),
+    Escape, or the Android back button (handled by MobileShell).
 
     Stays MOUNTED while closed (parked off-screen, hidden): the sessions
     sheet's project/worktree state stays warm, so reopening shows the tree
@@ -2040,10 +2059,14 @@ const DRAWER_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 const MobileSessionsDrawerContainer: React.FC<{
   open: boolean;
   onClose: () => void;
+  /** What the closing edge swipe does; the drawer's owner may want it to undo
+      a lighter state first. Falls back to `onClose`. */
+  onSwipeClose?: () => void;
   ariaLabel: string;
   children: React.ReactNode;
-}> = ({ open, onClose, ariaLabel, children }) => {
+}> = ({ open, onClose, onSwipeClose, ariaLabel, children }) => {
   const rootRef = React.useRef<HTMLElement | null>(null);
+  const drawerRef = React.useRef<HTMLElement>(null);
   const [entered, setEntered] = React.useState(false);
   // Kept visible through the exit slide; flipped to hidden once it finishes.
   const [visible, setVisible] = React.useState(open);
@@ -2051,6 +2074,18 @@ const MobileSessionsDrawerContainer: React.FC<{
   React.useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+  const onSwipeCloseRef = React.useRef(onSwipeClose);
+  React.useEffect(() => {
+    onSwipeCloseRef.current = onSwipeClose;
+  }, [onSwipeClose]);
+
+  // Swipe from the drawer's right edge back toward the left = close, the
+  // reverse of the left-edge swipe that opened it from the chat. Rows inside
+  // reveal their actions in the opposite direction, so the two never fight.
+  useEdgeSwipe(drawerRef, {
+    enabled: open,
+    onRightEdgeSwipe: () => (onSwipeCloseRef.current ?? onCloseRef.current)(),
+  });
 
   if (typeof document !== 'undefined' && !rootRef.current) {
     let root = document.getElementById(DRAWER_ROOT_ID);
@@ -2091,6 +2126,7 @@ const MobileSessionsDrawerContainer: React.FC<{
 
   return createPortal(
     <section
+      ref={drawerRef}
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
