@@ -678,7 +678,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     };
 
     const isVSCode = isVSCodeRuntime();
-    const hasThemeSettings = shouldShow('theme') && !isVSCode;
+    // [OC-PATCH: custom-themes-vscode] Theme pickers work in VS Code too:
+    // custom themes arrive injected via __VSCODE_CONFIG__.customThemes.
+    const hasThemeSettings = shouldShow('theme');
     const showWindowControlsPositionSetting = shouldShow('windowControlsPosition') && showWindowControlsPosition;
     const hasLocalizationSettings = shouldShow('theme') || shouldShow('timeFormat') || shouldShow('weekStart');
     const hasAppearanceSettings = isVSCode

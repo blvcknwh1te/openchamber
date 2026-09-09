@@ -1,8 +1,38 @@
 import * as vscode from 'vscode';
 import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
 import { getThemeKindName } from './theme';
 import type { ConnectionStatus } from './opencode';
 import type { WorkspaceFolderCandidate } from './workspaceResolver';
+
+// [OC-PATCH: custom-themes-vscode]
+// The VS Code runtime has no OpenChamber web server, so `/api/config/themes`
+// is unreachable. The extension host reads user themes from
+// `~/.config/openchamber/themes/` and injects them into the webview; the UI
+// validates them with the same `isValidTheme` filter used for server themes.
+const MAX_CUSTOM_THEME_FILE_BYTES = 512 * 1024;
+
+const readCustomThemesForInjection = (): unknown[] => {
+  const themesDir = path.join(os.homedir(), '.config', 'openchamber', 'themes');
+  try {
+    const entries = fs.readdirSync(themesDir, { withFileTypes: true });
+    const themes: unknown[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.json')) continue;
+      const filePath = path.join(themesDir, entry.name);
+      try {
+        if (fs.statSync(filePath).size > MAX_CUSTOM_THEME_FILE_BYTES) continue;
+        themes.push(JSON.parse(fs.readFileSync(filePath, 'utf8')));
+      } catch {
+        // Skip unreadable/malformed theme files; validation happens in the webview.
+      }
+    }
+    return themes;
+  } catch {
+    return [];
+  }
+};
 
 type PanelType = 'chat' | 'agentManager';
 
@@ -73,6 +103,10 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
   const workerSrc = uniqueTokens([webview.cspSource, 'blob:', devServerOrigin]);
 
   const themeKind = getThemeKindName(vscode.window.activeColorTheme.kind);
+  // [OC-PATCH: custom-themes-vscode] Injected once per webview load; the
+  // Reload themes action re-reads this snapshot (a webview reload picks up
+  // theme file changes from disk).
+  const customThemesJson = JSON.stringify(readCustomThemesForInjection()).replace(/</g, '\\u003c');
 
   // Use VS Code CSS variables for proper theme integration
   // These variables are automatically provided by VS Code to webviews
@@ -193,6 +227,8 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       panelType: "${panelType}",
       viewMode: "${viewMode}",
       initialSessionId: ${initialSessionId ? `"${initialSessionId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : 'null'},
+      // [OC-PATCH: custom-themes-vscode]
+      customThemes: ${customThemesJson},
     };
     window.__OPENCHAMBER_HOME__ = "${workspaceFolder.replace(/\\/g, '\\\\')}";
     // VS Code's display language. The UI bundle uses it as the default locale

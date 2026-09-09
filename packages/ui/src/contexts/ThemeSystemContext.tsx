@@ -245,7 +245,23 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   );
 
   const currentTheme = useMemo(() => {
+    // [OC-PATCH: custom-themes-vscode] Follow the editor theme only while the
+    // user has not picked a concrete theme; an explicit choice (including a
+    // custom theme from ~/.config/openchamber/themes) wins over it.
     if (isVSCode && vscodeTheme) {
+      const userChoseThemes =
+        preferences.lightThemeId !== DEFAULT_LIGHT_ID || preferences.darkThemeId !== DEFAULT_DARK_ID;
+      if (userChoseThemes) {
+        if (preferences.themeMode === 'light') {
+          return ensureThemeById(preferences.lightThemeId, 'light');
+        }
+        if (preferences.themeMode === 'dark') {
+          return ensureThemeById(preferences.darkThemeId, 'dark');
+        }
+        return systemPrefersDark
+          ? ensureThemeById(preferences.darkThemeId, 'dark')
+          : ensureThemeById(preferences.lightThemeId, 'light');
+      }
       return vscodeTheme;
     }
     if (preferences.themeMode === 'light') {
@@ -260,7 +276,18 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   }, [ensureThemeById, isVSCode, preferences, systemPrefersDark, vscodeTheme]);
 
   const reloadCustomThemes = useCallback(async () => {
-    if (typeof window === 'undefined' || isVSCode) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    // [OC-PATCH: custom-themes-vscode] The VS Code runtime has no web server
+    // behind /api/config/themes; the extension host injects user themes into
+    // `__VSCODE_CONFIG__.customThemes` at webview load.
+    if (isVSCode) {
+      const injected = (window as unknown as { __VSCODE_CONFIG__?: { customThemes?: unknown } }).__VSCODE_CONFIG__?.customThemes;
+      if (Array.isArray(injected)) {
+        setCustomThemes(injected.filter(isValidTheme));
+      }
       return;
     }
 
