@@ -113,7 +113,9 @@
   }
 
   * {
-    border-color: var(--border); /* Theme border token (interactive.border) — opaque and theme-aware */
+    border-color: var(
+      --border
+    ); /* Theme border token (interactive.border) — opaque and theme-aware */
   }
 
   body {
@@ -126,7 +128,13 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+    font-family: var(
+      --font-sans,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    );
     font-weight: var(--ui-regular-font-weight, 400);
   }
 
@@ -148,13 +156,26 @@
   }
 
   .font-sans {
-    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif) !important;
+    font-family: var(
+      --font-sans,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    ) !important;
   }
 
   .font-mono,
   code,
   pre {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, 'Liberation Mono', Menlo, monospace) !important;
+    font-family: var(
+      --font-mono,
+      ui-monospace,
+      SFMono-Regular,
+      "Liberation Mono",
+      Menlo,
+      monospace
+    ) !important;
   }
 
   /* Restore list styling inside markdown content - override Tailwind preflight.
@@ -217,12 +238,20 @@
   }
 
   /* Remove focus rings globally (except inputs/textareas/dropdowns/selects/explicit accent rings) */
-  *:focus:not(input):not(textarea):not([data-slot="dropdown-menu-content"]):not([data-slot="dropdown-menu-sub-content"]):not([data-slot="select-content"]):not(.focus-ring-accent):not([data-focus-ring="accent"]) {
+  *:focus:not(input):not(textarea):not([data-slot="dropdown-menu-content"]):not(
+      [data-slot="dropdown-menu-sub-content"]
+    ):not([data-slot="select-content"]):not(.focus-ring-accent):not(
+      [data-focus-ring="accent"]
+    ) {
     outline: none !important;
     box-shadow: none !important;
   }
 
-  *:focus-visible:not(input):not(textarea):not([data-slot="dropdown-menu-content"]):not([data-slot="dropdown-menu-sub-content"]):not([data-slot="select-content"]):not(.focus-ring-accent):not([data-focus-ring="accent"]) {
+  *:focus-visible:not(input):not(textarea):not(
+      [data-slot="dropdown-menu-content"]
+    ):not([data-slot="dropdown-menu-sub-content"]):not(
+      [data-slot="select-content"]
+    ):not(.focus-ring-accent):not([data-focus-ring="accent"]) {
     outline: none !important;
     box-shadow: none !important;
   }
@@ -240,75 +269,83 @@
      blur, accessibility fallbacks, and floating-surface elevation stay common.
      Utilities remain able to opt an individual consumer out. */
   .oc-glass-popover,
-.oc-glass-tooltip,
-.oc-glass-panel {
-  background-color: color-mix(in srgb, var(--oc-glass-color) var(--oc-glass-opacity), transparent);
-  -webkit-backdrop-filter: blur(var(--oc-glass-blur)) saturate(var(--oc-glass-saturation));
-  backdrop-filter: blur(var(--oc-glass-blur)) saturate(var(--oc-glass-saturation));
-}
-
-.oc-glass-popover {
-  --oc-glass-color: var(--surface-elevated);
-  --oc-glass-opacity: var(--oc-glass-popover-opacity);
-}
-
-.oc-glass-tooltip {
-  --oc-glass-color: var(--surface-elevated);
-  --oc-glass-opacity: var(--oc-glass-tooltip-opacity);
-}
-
-.oc-glass-panel {
-  --oc-glass-color: var(--surface-muted);
-}
-
-.oc-glass-floating {
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.8),
-    inset 0 0 0 1px rgb(0 0 0 / 0.04),
-    0 0 0 1px rgb(0 0 0 / 0.1),
-    0 1px 2px -0.5px rgb(0 0 0 / 0.08),
-    0 4px 8px -2px rgb(0 0 0 / 0.08),
-    0 12px 20px -4px rgb(0 0 0 / 0.08);
-}
-
-.dark .oc-glass-floating {
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.12),
-    inset 0 0 0 1px rgb(255 255 255 / 0.08),
-    0 0 0 1px rgb(0 0 0 / 0.36),
-    0 1px 1px -0.5px rgb(0 0 0 / 0.22),
-    0 3px 3px -1.5px rgb(0 0 0 / 0.2),
-    0 6px 6px -3px rgb(0 0 0 / 0.16);
-}
-
-.oc-glass-backdrop {
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-}
-
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .oc-glass-popover,
   .oc-glass-tooltip,
   .oc-glass-panel {
-    background-color: var(--oc-glass-color);
+    background-color: color-mix(
+      in srgb,
+      var(--oc-glass-color) var(--oc-glass-opacity),
+      transparent
+    );
+    -webkit-backdrop-filter: blur(var(--oc-glass-blur))
+      saturate(var(--oc-glass-saturation));
+    backdrop-filter: blur(var(--oc-glass-blur))
+      saturate(var(--oc-glass-saturation));
   }
-}
 
-@media (prefers-reduced-transparency: reduce) {
-  .oc-glass-popover,
-  .oc-glass-tooltip,
-  .oc-glass-panel,
+  .oc-glass-popover {
+    --oc-glass-color: var(--surface-elevated);
+    --oc-glass-opacity: var(--oc-glass-popover-opacity);
+  }
+
+  .oc-glass-tooltip {
+    --oc-glass-color: var(--surface-elevated);
+    --oc-glass-opacity: var(--oc-glass-tooltip-opacity);
+  }
+
+  .oc-glass-panel {
+    --oc-glass-color: var(--surface-muted);
+  }
+
+  .oc-glass-floating {
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.8),
+      inset 0 0 0 1px rgb(0 0 0 / 0.04),
+      0 0 0 1px rgb(0 0 0 / 0.1),
+      0 1px 2px -0.5px rgb(0 0 0 / 0.08),
+      0 4px 8px -2px rgb(0 0 0 / 0.08),
+      0 12px 20px -4px rgb(0 0 0 / 0.08);
+  }
+
+  .dark .oc-glass-floating {
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.12),
+      inset 0 0 0 1px rgb(255 255 255 / 0.08),
+      0 0 0 1px rgb(0 0 0 / 0.36),
+      0 1px 1px -0.5px rgb(0 0 0 / 0.22),
+      0 3px 3px -1.5px rgb(0 0 0 / 0.2),
+      0 6px 6px -3px rgb(0 0 0 / 0.16);
+  }
+
   .oc-glass-backdrop {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
   }
 
-  .oc-glass-popover,
-  .oc-glass-tooltip,
-  .oc-glass-panel {
-    background-color: var(--oc-glass-color);
+  @supports not (
+    (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))
+  ) {
+    .oc-glass-popover,
+    .oc-glass-tooltip,
+    .oc-glass-panel {
+      background-color: var(--oc-glass-color);
+    }
   }
-}
+
+  @media (prefers-reduced-transparency: reduce) {
+    .oc-glass-popover,
+    .oc-glass-tooltip,
+    .oc-glass-panel,
+    .oc-glass-backdrop {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    .oc-glass-popover,
+    .oc-glass-tooltip,
+    .oc-glass-panel {
+      background-color: var(--oc-glass-color);
+    }
+  }
 }
 
 @theme inline {
@@ -420,7 +457,9 @@
   --color-interactive-hover: var(--interactive-hover);
   --color-interactive-active: var(--interactive-active);
   --color-interactive-selection: var(--interactive-selection);
-  --color-interactive-selection-foreground: var(--interactive-selection-foreground);
+  --color-interactive-selection-foreground: var(
+    --interactive-selection-foreground
+  );
   --color-interactive-border-hover: var(--interactive-border-hover);
   --color-interactive-border-focus: var(--interactive-border-focus);
   --color-interactive-focus-ring: var(--interactive-focus-ring);
@@ -476,9 +515,13 @@
   --markdown-heading4-size: var(--text-markdown);
   --markdown-heading5-size: var(--text-markdown);
   --markdown-heading6-size: var(--text-markdown);
-  --font-sans: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans:
+    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
   --font-heading: var(--font-sans);
-  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono", monospace;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "Menlo", "Cascadia Mono", "Segoe UI Mono",
+    monospace;
   --font-family-sans: var(--font-sans);
   --font-family-mono: var(--font-mono);
 }

@@ -34,6 +34,19 @@ const readCustomThemesForInjection = (): unknown[] => {
   }
 };
 
+// [OC-PATCH: custom-css] User-level CSS overrides applied to every webview:
+// `~/.config/openchamber/custom.css` is inlined into <head> so layout and
+// token tweaks (e.g. --chat-inline-pad) survive without rebuilding the fork.
+const readCustomCssForInjection = (): string => {
+  try {
+    const cssPath = path.join(os.homedir(), '.config', 'openchamber', 'custom.css');
+    if (fs.statSync(cssPath).size > MAX_CUSTOM_THEME_FILE_BYTES) return '';
+    return fs.readFileSync(cssPath, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
 type PanelType = 'chat' | 'agentManager';
 
 export interface WebviewHtmlOptions {
@@ -107,6 +120,11 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
   // Reload themes action re-reads this snapshot (a webview reload picks up
   // theme file changes from disk).
   const customThemesJson = JSON.stringify(readCustomThemesForInjection()).replace(/</g, '\\u003c');
+  // [OC-PATCH: custom-css] Escaped against `</style>` breakout; CSP style-src
+  // already allows inline styles.
+  const customCssHtml = readCustomCssForInjection()
+    .replace(/<\/style/gi, '<\\/style')
+    .replace(/<!--/g, '<\\!--');
 
   // Use VS Code CSS variables for proper theme integration
   // These variables are automatically provided by VS Code to webviews
@@ -186,6 +204,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       max-width: 280px;
     }
   </style>
+  ${customCssHtml ? `<style data-openchamber-custom>${customCssHtml}</style>` : ''}
   <title>OpenChamber</title>
 </head>
 <body>

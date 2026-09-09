@@ -83,7 +83,7 @@
   .chat-column {
     width: min(100%, 48rem);
     margin-inline: auto;
-    padding-inline: calc(clamp(0.75rem, 2.5vw, 1rem) * var(--padding-scale, 1) * var(--chat-h-pad-extra, 1));
+    padding-inline: var(--chat-inline-pad, calc(clamp(0.75rem, 2.5vw, 1rem) * var(--padding-scale, 1)));
   }
 
   .wide-chat-layout .chat-column {
@@ -93,7 +93,7 @@
   .chat-input-column {
     width: min(100%, 48rem);
     margin-inline: auto;
-    padding-inline: calc(clamp(0.75rem, 2.5vw, 1rem) * var(--padding-scale, 1) * var(--chat-h-pad-extra, 1));
+    padding-inline: var(--chat-inline-pad, calc(clamp(0.75rem, 2.5vw, 1rem) * var(--padding-scale, 1)));
   }
 
   .wide-chat-layout .chat-input-column {
@@ -103,7 +103,7 @@
   .chat-message-column {
     width: min(100%, 48rem);
     margin-inline: auto;
-    padding-inline: calc(clamp(0.75rem, 2.5vw, 1rem) * var(--padding-scale, 1) * var(--chat-h-pad-extra, 1));
+    padding-inline: var(--chat-inline-pad, calc(clamp(0.75rem, 2.5vw, 1rem) * var(--padding-scale, 1)));
   }
 
   .wide-chat-layout .chat-message-column {
@@ -112,15 +112,15 @@
 
   @media (min-width: 1024px) {
     .chat-column {
-      padding-inline: calc(clamp(1rem, 2.5vw, 1.5rem) * var(--padding-scale, 1) * var(--chat-h-pad-extra, 1));
+      padding-inline: var(--chat-inline-pad, calc(clamp(1rem, 2.5vw, 1.5rem) * var(--padding-scale, 1)));
     }
 
     .chat-input-column {
-      padding-inline: calc(clamp(1rem, 2.5vw, 1.5rem) * var(--padding-scale, 1) * var(--chat-h-pad-extra, 1));
+      padding-inline: var(--chat-inline-pad, calc(clamp(1rem, 2.5vw, 1.5rem) * var(--padding-scale, 1)));
     }
 
     .chat-message-column {
-      padding-inline: calc(clamp(1rem, 2.5vw, 1.5rem) * var(--padding-scale, 1) * var(--chat-h-pad-extra, 1));
+      padding-inline: var(--chat-inline-pad, calc(clamp(1rem, 2.5vw, 1.5rem) * var(--padding-scale, 1)));
     }
   }
 

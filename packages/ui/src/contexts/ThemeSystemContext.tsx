@@ -411,11 +411,6 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
     const restoreTransitions = suppressTransitionsForThemeSwitch();
     cssGenerator.apply(currentTheme);
-    // [OC-PATCH: chat-h-padding] +20% horizontal padding for chat columns
-    // (chat-column, chat-message-column, chat-input-column in typography.css).
-    if (typeof document !== 'undefined') {
-      document.documentElement.style.setProperty('--chat-h-pad-extra', '1.2');
-    }
     if (!receivesParentThemeSync) {
       publishEmbeddedThemeBootstrap(currentTheme);
     }
