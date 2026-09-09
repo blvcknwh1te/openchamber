@@ -2,7 +2,7 @@
   "name": "openchamber-bnw",
   "displayName": "OpenChamber BNW",
   "description": "%extension.description%",
-  "version": "1.22.2-bnw.0",
+  "version": "1.22.2-bnw.1",
   "publisher": "blvcknwh1te",
   "private": true,
   "repository": {
@@ -35,9 +35,9 @@
   "main": "./dist/extension.js",
   "l10n": "./l10n",
   "activationEvents": [
-    "onCommand:openchamber.openSidebar",
-    "onCommand:openchamber.attachExplorerToChat",
-    "onView:openchamber.chatView"
+    "onCommand:openchamberBnw.openSidebar",
+    "onCommand:openchamberBnw.attachExplorerToChat",
+    "onView:openchamberBnw.chatView"
   ],
   "contributes": {
     "viewsContainers": {
@@ -61,7 +61,7 @@
     "commands": [
       {
         "command": "openchamberBnw.openSidebar",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.openSidebar.title%",
         "icon": {
           "light": "assets/icon.svg",
@@ -70,34 +70,34 @@
       },
       {
         "command": "openchamberBnw.focusChat",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.focusChat.title%"
       },
       {
         "command": "openchamberBnw.restartApi",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.restartApi.title%"
       },
       {
         "command": "openchamberBnw.showOpenCodeStatus",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.showOpenCodeStatus.title%"
       },
       {
         "command": "openchamberBnw.openAgentManager",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.openAgentManager.title%",
         "icon": "$(circuit-board)"
       },
       {
         "command": "openchamberBnw.openActiveSessionInEditor",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.openActiveSessionInEditor.title%",
         "icon": "$(link-external)"
       },
       {
         "command": "openchamberBnw.openNewSessionInEditor",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.openNewSessionInEditor.title%",
         "icon": {
           "light": "assets/icon.svg",
@@ -106,56 +106,56 @@
       },
       {
         "command": "openchamberBnw.openCurrentOrNewSessionInEditor",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.openCurrentOrNewSessionInEditor.title%",
         "icon": "$(link-external)"
       },
       {
         "command": "openchamberBnw.addToContext",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.addToContext.title%"
       },
       {
         "command": "openchamberBnw.addLineComment",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.addLineComment.title%"
       },
       {
         "command": "openchamberBnw.submitLineComment",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.submitLineComment.title%"
       },
       {
         "command": "openchamberBnw.removeLineComment",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.removeLineComment.title%",
         "icon": "$(close)"
       },
       {
         "command": "openchamberBnw.explain",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.explain.title%"
       },
       {
         "command": "openchamberBnw.improveCode",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.improveCode.title%"
       },
       {
         "command": "openchamberBnw.newSession",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.newSession.title%",
         "icon": "$(add)"
       },
       {
         "command": "openchamberBnw.showSettings",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.showSettings.title%",
         "icon": "$(settings-gear)"
       },
       {
         "command": "openchamberBnw.attachExplorerToChat",
-        "category": "OpenChamber",
+        "category": "OpenChamber BNW",
         "title": "%command.attachExplorerToChat.title%"
       }
     ],
@@ -170,14 +170,14 @@
         {
           "command": "openchamberBnw.submitLineComment",
           "group": "inline",
-          "when": "commentController == openchamber.inlineComments"
+          "when": "commentController == openchamberBnw.inlineComments"
         }
       ],
       "comments/commentThread/title": [
         {
           "command": "openchamberBnw.removeLineComment",
           "group": "navigation",
-          "when": "commentController == openchamber.inlineComments && commentThread == openchamberAttached"
+          "when": "commentController == openchamberBnw.inlineComments && commentThread == openchamberAttached"
         }
       ],
       "commandPalette": [
@@ -212,22 +212,22 @@
       "view/title": [
         {
           "command": "openchamberBnw.newSession",
-          "when": "view == openchamber.chatView",
+          "when": "view == openchamberBnw.chatView",
           "group": "navigation@1"
         },
         {
           "command": "openchamberBnw.openCurrentOrNewSessionInEditor",
-          "when": "view == openchamber.chatView",
+          "when": "view == openchamberBnw.chatView",
           "group": "navigation@2"
         },
         {
           "command": "openchamberBnw.openAgentManager",
-          "when": "view == openchamber.chatView",
+          "when": "view == openchamberBnw.chatView",
           "group": "navigation@3"
         },
         {
           "command": "openchamberBnw.showSettings",
-          "when": "view == openchamber.chatView",
+          "when": "view == openchamberBnw.chatView",
           "group": "navigation@4"
         }
       ],
