@@ -134,7 +134,7 @@ The following functions are internal helpers used by exported functions:
 
 ### Runtime availability of range diffs
 - `GET /api/git/range-diff` is served by the OpenChamber web server, so it is available to web, desktop, and mobile clients. The shared `GitAPI.getGitRangeDiff` is therefore optional: web supplies the HTTP implementation, and VS Code does not implement it because the extension host serves Git through its own bridge rather than these routes. Features built on range diffs (currently the AI diff walkthrough) are not offered in VS Code.
-- Commit comparison uses the same server boundary through optional `GitAPI.getGitCommitDiff`. The shared Changes toolbar and walkthrough expose it on their existing desktop/tablet surfaces. The phone-specific Changes surface and the VS Code Git bridge keep their existing modes; Commit mode is not offered there. The HTTP operation is available to web, Electron, hosted mobile, and Capacitor clients.
+- Commit comparison uses the same server boundary through optional `GitAPI.getGitCommitDiff`. Desktop Changes, mobile Changes, and the existing walkthrough surface share branch/commit comparison semantics. Mobile Changes uses the same selectors and `useGitComparison` file-list owner, with a read-only list-to-detail flow. VS Code keeps its existing modes because its Git bridge does not provide these comparison operations. The HTTP operations are available to web, Electron, hosted mobile, and Capacitor clients.
 
 ### Staged and unstaged change handling
 - `status.files` exposes both `index` and `working_dir` codes. Shared UI uses these as separate scopes: staged rows are derived from non-empty `index` statuses, while unstaged rows are derived from `working_dir` statuses and untracked files.

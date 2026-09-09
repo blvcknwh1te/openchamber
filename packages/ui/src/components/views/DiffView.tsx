@@ -2,6 +2,7 @@ import React from 'react';
 
 import { useUIStore, type PendingDiffScope } from '@/stores/useUIStore';
 import { useCommitComparison } from '@/hooks/useCommitComparison';
+import { useGitComparison, type GitComparisonSource } from '@/hooks/useGitComparison';
 import { CommitComparisonSelector } from '@/components/views/git/CommitComparisonSelector';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useNestedGitDirectory } from '@/hooks/useNestedGitDirectory';
@@ -11,11 +12,10 @@ import { branchRefLabel } from '@/components/views/git/baseBranch';
 import { useGitStore, useGitStatus, useIsGitRepo, useGitLoadingStatus } from '@/stores/useGitStore';
 import { useGitBaseBranchStore } from '@/stores/useGitBaseBranchStore';
 import { useBranchComparisonBase } from '@/hooks/useBranchComparisonBase';
-import { coerceDiffScope, branchRangeKey, isBranchScopeAvailable, isBranchScopeDefinitelyUnavailable, useRangeKeyedCache, useBoundedDirectoryRetry } from './branchDiffScope';
-import { getGitRangeDiff, getGitRangeFiles, getCommitFiles, getGitCommitDiff } from '@/lib/gitApi';
+import { coerceDiffScope, isBranchScopeAvailable, isBranchScopeDefinitelyUnavailable, useRangeKeyedCache, useBoundedDirectoryRetry } from './branchDiffScope';
 import { getRuntimeKey } from '@/lib/runtime-switch';
 import { cn } from '@/lib/utils';
-import type { GitStatus, GitRangeFileEntry, CommitFileEntry } from '@/lib/api/types';
+import type { GitStatus } from '@/lib/api/types';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -47,7 +47,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import { findDiffScrollAnchor, getRestoredDiffScrollTop, type DiffScrollAnchor } from './diffScrollAnchor';
 import { useI18n } from '@/lib/i18n';
 import type { I18nKey } from '@/lib/i18n/store';
-import { fileDiffFromPatch } from '@/lib/diff/patchFileDiff';
+import { fileDiffFromPatch, isBinaryPatch } from '@/lib/diff/patchFileDiff';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { startReviewFlow } from '@/lib/reviewFlow';
 import { WALKTHROUGH_ACTION_CLASS } from '@/components/views/walkthrough/walkthroughAction';
@@ -195,9 +195,6 @@ const getFirstChangedModifiedLine = (original: string, modified: string): number
 
     return 1;
 };
-
-const isBinaryPatch = (patch: string): boolean =>
-    /^Binary files .+ differ$/m.test(patch) || /^GIT binary patch$/m.test(patch);
 
 const listTurnDiffs = (value: unknown): TurnSnapshotDiff[] => {
     if (!Array.isArray(value)) return [];
@@ -1163,29 +1160,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const currentBranch = status?.current ?? null;
     const commitComparison = useCommitComparison(effectiveDirectory ?? null, currentBranch, activeDiffScope === 'commit' && !isVSCodeRuntime());
     const selectedCommitHash = commitComparison.selectedCommit?.hash ?? null;
-    const commitQueryKey = activeDiffScope === 'commit' && effectiveDirectory && selectedCommitHash
-        ? JSON.stringify([getRuntimeKey(), effectiveDirectory, selectedCommitHash])
-        : null;
-    const [commitFilesResult, setCommitFilesResult] = React.useState<
-        { key: string; files: CommitFileEntry[] } | { key: string; error: string } | null
-    >(null);
-    const [commitFilesRetry, setCommitFilesRetry] = React.useState(0);
-    const currentCommitFiles = commitFilesResult?.key === commitQueryKey ? commitFilesResult : null;
-    const commitFiles = currentCommitFiles && 'files' in currentCommitFiles ? currentCommitFiles.files : null;
-    const commitFilesError = currentCommitFiles && 'error' in currentCommitFiles ? currentCommitFiles.error : null;
-    const commitFilesByPath = React.useMemo(() => new Map((commitFiles ?? []).map((file) => [file.path, file])), [commitFiles]);
-    React.useEffect(() => {
-        if (!commitQueryKey || !effectiveDirectory || !selectedCommitHash) return;
-        let cancelled = false;
-        setCommitFilesResult(null);
-        getCommitFiles(effectiveDirectory, selectedCommitHash)
-            .then(({ files }) => { if (!cancelled) setCommitFilesResult({ key: commitQueryKey, files }); })
-            .catch((error) => {
-                if (!cancelled) setCommitFilesResult({ key: commitQueryKey, error: error instanceof Error ? error.message : t('diffView.state.failedToLoadDiff') });
-            });
-        return () => { cancelled = true; };
-    }, [commitFilesRetry, commitQueryKey, effectiveDirectory, selectedCommitHash, t]);
-
     React.useEffect(() => {
         if (activeDiffScope === 'commit' && isVSCodeRuntime()) {
             setActiveDiffScope('working');
@@ -1271,50 +1245,23 @@ export const DiffView: React.FC<DiffViewProps> = ({
         }
     }, [activeDiffScope, branchScopeDefinitelyUnavailable, onDiffScopeChange]);
 
-    const branchQueryKey = effectiveDirectory && currentBranch && branchBase
-        ? JSON.stringify([getRuntimeKey(), effectiveDirectory, branchBase, currentBranch])
-        : null;
-    const [branchFilesResult, setBranchFilesResult] = React.useState<
-        { key: string; files: GitRangeFileEntry[] } | { key: string; error: string } | null
-    >(null);
-    const currentBranchFilesResult = branchFilesResult?.key === branchQueryKey ? branchFilesResult : null;
-    const branchFiles = currentBranchFilesResult && 'files' in currentBranchFilesResult ? currentBranchFilesResult.files : null;
-    const branchFilesError = currentBranchFilesResult && 'error' in currentBranchFilesResult ? currentBranchFilesResult.error : null;
-
-    // Shared by the scope/base effect and the error-state Retry button; the
-    // fetch id discards completions from a superseded run (base or head
-    // changed, or an earlier retry is still in flight).
-    const branchFilesFetchIdRef = React.useRef(0);
-    const reloadBranchFiles = React.useCallback(() => {
-        if (!effectiveDirectory || !currentBranch || !branchBase || !branchQueryKey) return;
-        const fetchId = branchFilesFetchIdRef.current + 1;
-        branchFilesFetchIdRef.current = fetchId;
-        setBranchFilesResult((previous) => previous?.key === branchQueryKey && 'files' in previous ? previous : null);
-        getGitRangeFiles(effectiveDirectory, { base: branchBase, head: currentBranch, includeWorkingTree: true })
-            .then((files) => {
-                if (branchFilesFetchIdRef.current === fetchId) setBranchFilesResult({ key: branchQueryKey, files });
-            })
-            .catch((error) => {
-                if (branchFilesFetchIdRef.current === fetchId) {
-                    setBranchFilesResult({ key: branchQueryKey, error: error instanceof Error ? error.message : t('diffView.branch.loadError') });
-                }
-            });
-    }, [branchBase, branchQueryKey, currentBranch, effectiveDirectory, t]);
-
-    React.useEffect(() => {
-        if (activeDiffScope === 'branch') {
-            reloadBranchFiles();
-        }
-        return () => { branchFilesFetchIdRef.current += 1; };
-    }, [activeDiffScope, branchRevision, reloadBranchFiles]);
+    const comparisonSource = React.useMemo<GitComparisonSource | null>(() => {
+        if (activeDiffScope === 'commit' && selectedCommitHash) return { kind: 'commit', hash: selectedCommitHash };
+        if (activeDiffScope === 'branch' && branchBase && currentBranch) return { kind: 'branch', baseRef: branchBase, headRef: currentBranch };
+        return null;
+    }, [activeDiffScope, branchBase, currentBranch, selectedCommitHash]);
+    const comparison = useGitComparison(effectiveDirectory ?? null, comparisonSource, !isVSCodeRuntime(), activeDiffScope === 'branch' ? branchRevision : '');
+    const { fetchDiff: loadComparisonDiff } = comparison;
+    const commitFiles = activeDiffScope === 'commit' ? comparison.files : null;
+    const commitFilesError = activeDiffScope === 'commit' ? comparison.error : null;
+    const branchFiles = activeDiffScope === 'branch' ? comparison.files : null;
+    const branchFilesError = activeDiffScope === 'branch' ? comparison.error : null;
 
     // Range diffs are fetched per expanded file: unlike working/staged diffs
     // there is no per-file cache channel, so patch data lives in a range-keyed
     // local cache. Stale completions from a previous range cannot write into
     // the new range's cache (see useRangeKeyedCache).
-    const comparisonRangeKey = activeDiffScope === 'commit' ? (commitFiles ? commitQueryKey : null) : activeDiffScope === 'branch' && effectiveDirectory && currentBranch && branchBase
-        ? branchRangeKey(effectiveDirectory, branchBase, currentBranch) + getRuntimeKey()
-        : null;
+    const comparisonRangeKey = comparison.files ? comparison.key : null;
     const comparisonPathsKey = React.useMemo(
         () => (activeDiffScope === 'branch' || activeDiffScope === 'commit' ? Array.from(expandedFiles).sort().join('\0') : ''),
         [activeDiffScope, expandedFiles]
@@ -1322,30 +1269,14 @@ export const DiffView: React.FC<DiffViewProps> = ({
 
     const fetchComparisonDiffEntry = React.useCallback(
         async (filePath: string): Promise<ComparisonDiffResult> => {
-            if (!effectiveDirectory) return EMPTY_COMPARISON_DIFF;
             try {
-                if (activeDiffScope === 'commit' && selectedCommitHash) {
-                    const response = await getGitCommitDiff(effectiveDirectory, {
-                        hash: selectedCommitHash, path: filePath,
-                        previousPath: commitFilesByPath.get(filePath)?.previousPath,
-                        contextLines: loadFullFiles ? FULL_CONTEXT_DIFF_LINES : DEFAULT_CONTEXT_DIFF_LINES,
-                    });
-                    return { status: 'ready', data: createTextDiffDataFromPatch(filePath, response.diff, loadFullFiles ? 'full' : 'patch') };
-                }
-                if (!branchBase || !currentBranch) return EMPTY_COMPARISON_DIFF;
-                const response = await getGitRangeDiff(effectiveDirectory, {
-                    base: branchBase,
-                    head: currentBranch,
-                    path: filePath,
-                    includeWorkingTree: true,
-                    contextLines: loadFullFiles ? FULL_CONTEXT_DIFF_LINES : DEFAULT_CONTEXT_DIFF_LINES,
-                });
+                const response = await loadComparisonDiff(filePath, loadFullFiles ? FULL_CONTEXT_DIFF_LINES : DEFAULT_CONTEXT_DIFF_LINES);
                 return { status: 'ready', data: createTextDiffDataFromPatch(filePath, response.diff, loadFullFiles ? 'full' : 'patch') };
             } catch (error) {
                 return { status: 'error', message: error instanceof Error ? error.message : t('diffView.state.failedToLoadDiff') };
             }
         },
-        [activeDiffScope, branchBase, commitFilesByPath, currentBranch, effectiveDirectory, loadFullFiles, selectedCommitHash, t]
+        [loadComparisonDiff, loadFullFiles, t]
     );
 
     const comparisonDiffData = useRangeKeyedCache<ComparisonDiffResult>(
@@ -1361,8 +1292,8 @@ export const DiffView: React.FC<DiffViewProps> = ({
     const changedFiles: FileEntry[] = React.useMemo(() => {
         if (activeDiffScope === 'commit') {
             return (commitFiles ?? []).map((file) => ({
-                path: file.path, index: '', working_dir: file.changeType,
-                insertions: file.insertions, deletions: file.deletions, isNew: file.changeType === 'A',
+                path: file.path, index: '', working_dir: file.status,
+                insertions: file.insertions, deletions: file.deletions, isNew: file.status === 'A',
             }));
         }
         if (activeDiffScope === 'branch') {
@@ -2033,7 +1964,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
             if (commitFilesError) {
                 return <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
                     <p className="typography-meta text-muted-foreground">{commitFilesError}</p>
-                    <Button variant="outline" size="sm" onClick={() => setCommitFilesRetry((value) => value + 1)}>{t('diffView.actions.retry')}</Button>
+                    <Button variant="outline" size="sm" onClick={() => void comparison.refresh()}>{t('diffView.actions.retry')}</Button>
                 </div>;
             }
             if (!selectedCommitHash && !commitComparison.loading) {
@@ -2076,7 +2007,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => reloadBranchFiles()}
+                            onClick={() => void comparison.refresh()}
                         >
                             {t('diffView.actions.retry')}
                         </Button>
