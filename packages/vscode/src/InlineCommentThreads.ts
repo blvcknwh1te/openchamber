@@ -20,7 +20,7 @@ import { DELIVERY_CONFIRMATION_TIMEOUT_MS, canCommentOnDocument, nextDraftId, re
 // Also written literally in package.json, which gates the thread menus with
 // `commentController == openchamber.inlineComments`. JSON cannot import, so the
 // two have to be kept in step by hand.
-const INLINE_COMMENT_CONTROLLER_ID = 'openchamber.inlineComments';
+const INLINE_COMMENT_CONTROLLER_ID = 'openchamberBnw.inlineComments';
 
 export interface InlineCommentDraftPayload {
     draftId: string;

@@ -72,7 +72,7 @@ const isSameActiveEditorFilePayload = (a: ActiveEditorFilePayload | null, b: Act
 };
 
 export class SessionEditorPanelProvider {
-  public static readonly viewType = 'openchamber.sessionEditor';
+  public static readonly viewType = 'openchamberBnw.sessionEditor';
 
   private _cachedStatus: ConnectionStatus = 'connecting';
   private _cachedError?: string;
@@ -199,7 +199,7 @@ export class SessionEditorPanelProvider {
       if (message.type === 'inlineComments:sync') {
         // Tagged with this panel's identity: a snapshot only speaks for the
         // store that produced it, and every panel has its own.
-        void vscode.commands.executeCommand('openchamber.internal.inlineCommentsSync', {
+        void vscode.commands.executeCommand('openchamberBnw.internal.inlineCommentsSync', {
           snapshot: message.payload,
           surfaceId: panelId,
         });
@@ -240,7 +240,7 @@ export class SessionEditorPanelProvider {
       state.panel.webview.postMessage(response);
 
       if (message.type === 'api:config/settings:save' && response.success) {
-        void vscode.commands.executeCommand('openchamber.internal.settingsSynced', response.data);
+        void vscode.commands.executeCommand('openchamberBnw.internal.settingsSynced', response.data);
       }
     }, null, this._context.subscriptions);
   }
