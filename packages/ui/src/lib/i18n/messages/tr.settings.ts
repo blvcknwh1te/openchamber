@@ -60,7 +60,6 @@ export const settingsDict = {
   'settings.view.pendingRestart.confirm.cancel': 'İptal',
   'settings.view.actions.backToSettings': 'Ayarlar\'a geri dön',
   'settings.view.actions.closeSettings': 'Ayarları kapat',
-  'settings.view.actions.openSectionList': 'Bölüm listesini aç',
   'settings.view.actions.closeSettingsWithShortcut': 'Ayarları kapat ({shortcut}+,)',
   'settings.view.actions.back': 'Geri',
   'settings.view.actions.resizeNavigation': 'Ayar gezinmesini yeniden boyutlandır',
