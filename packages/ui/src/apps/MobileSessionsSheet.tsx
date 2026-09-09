@@ -36,6 +36,7 @@ import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerD
 import { Icon } from '@/components/icon/Icon';
 import { NewWorktreeDialog } from '@/components/session/NewWorktreeDialog';
 import { Button } from '@/components/ui/button';
+import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Input } from '@/components/ui/input';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { toast } from '@/components/ui';
@@ -959,6 +960,7 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   } | null>(null);
   // Bumped to force a re-list of worktrees (e.g. after one is deleted in the editor).
   const [worktreeRefreshKey, setWorktreeRefreshKey] = React.useState(0);
+  const [sortPanelOpen, setSortPanelOpen] = React.useState(false);
   const [directoryDialogOpen, setDirectoryDialogOpen] = React.useState(false);
   const [newWorktreeDialogOpen, setNewWorktreeDialogOpen] = React.useState(false);
   const [worktreeDialogProjectId, setWorktreeDialogProjectId] = React.useState<string | null>(null);
@@ -1498,6 +1500,23 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
   // the user rearrange a list that is about to be re-sorted anyway.
   const canEditOrder = !normalizedQuery && projectsMeta.length > 1 && projectSortOrder === 'manual';
 
+  // Sorting lives in the header next to reordering — the two answer the same
+  // question about the list, and a permanent row of modes above it would cost
+  // a project row for a setting touched once a month.
+  const sortToggle = !editingOrder && !normalizedQuery && projectsMeta.length > 1 ? (
+    <Button
+      type="button"
+      variant="chip"
+      size="sm"
+      aria-label={t('sessions.sidebar.header.actions.sortProjects')}
+      title={t('sessions.sidebar.header.actions.sortProjects')}
+      onClick={() => setSortPanelOpen(true)}
+      style={{ touchAction: 'manipulation' }}
+    >
+      <Icon name="equalizer-2" className="size-4" />
+    </Button>
+  ) : null;
+
   const editToggle = canEditOrder ? (
     <Button
       type="button"
@@ -1541,12 +1560,16 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
     </Button>
   ) : null;
 
+  // The new-session button keeps the outer right edge whatever else is showing:
+  // it is the one action people reach for without looking, so it must not slide
+  // around as the icons beside it come and go.
   const trailingActions =
-    newChatButton || addProjectButton || editToggle ? (
+    newChatButton || addProjectButton || sortToggle || editToggle ? (
       <>
-        {newChatButton}
         {addProjectButton}
+        {sortToggle}
         {editToggle}
+        {newChatButton}
       </>
     ) : null;
 
@@ -1580,31 +1603,6 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
                 </button>
               ) : null}
             </div>
-            {/* Sorting sits with the search field rather than in the header:
-                it scrolls away with it, so a setting touched once a month
-                costs no permanent room above the list. */}
-            {!normalizedQuery && projectsMeta.length > 1 ? (
-              <div
-                role="group"
-                aria-label={t('sessions.sidebar.header.actions.sortProjects')}
-                className="oc-hide-scrollbar -mx-4 mt-2 flex gap-1.5 overflow-x-auto px-4 pb-0.5"
-              >
-                {PROJECT_SORT_OPTIONS.map(([order, labelKey]) => (
-                  <Button
-                    key={order}
-                    type="button"
-                    variant="chip"
-                    size="sm"
-                    className="shrink-0"
-                    aria-pressed={projectSortOrder === order}
-                    onClick={() => handleProjectSortChange(order)}
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    {t(labelKey)}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
           </div>
           {projectsMeta.length === 0 && chatSessions.length === 0 ? (
             <MobileSessionsEmpty
@@ -2055,6 +2053,33 @@ export const MobileSessionsSheet: React.FC<MobileSessionsSheetProps> = ({ open, 
           onClose={() => setEditingProjectId(null)}
           onWorktreesChanged={() => setWorktreeRefreshKey((value) => value + 1)}
         />
+        <MobileOverlayPanel
+          open={sortPanelOpen}
+          onClose={() => setSortPanelOpen(false)}
+          title={t('sessions.sidebar.header.actions.sortProjects')}
+        >
+          <div className="flex flex-col">
+            {PROJECT_SORT_OPTIONS.map(([order, labelKey]) => (
+              <button
+                key={order}
+                type="button"
+                className={cn(
+                  'flex min-h-11 w-full items-center justify-between rounded-lg px-3 text-left transition-colors active:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
+                  projectSortOrder === order ? 'text-primary' : 'text-foreground',
+                )}
+                onClick={() => {
+                  handleProjectSortChange(order);
+                  setSortPanelOpen(false);
+                }}
+                style={{ touchAction: 'manipulation' }}
+              >
+                <span className="typography-ui-label">{t(labelKey)}</span>
+                {projectSortOrder === order ? <Icon name="check" className="size-4" /> : null}
+              </button>
+            ))}
+          </div>
+        </MobileOverlayPanel>
+
         {worktreeToDelete ? (
           <MobileDeleteWorktreeDialog
             open
