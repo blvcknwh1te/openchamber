@@ -1843,7 +1843,7 @@ const AssistantMessageBody = React.memo(({
                         <div
                             key={`final-answer-divider-${messageId}`}
                             aria-hidden="true"
-                            className="mt-1.5 mb-4 h-px w-full bg-muted-foreground/60"
+                            className="mt-1.5 mb-4 h-px w-full bg-muted-foreground/30"
                         />
                     );
                 }
