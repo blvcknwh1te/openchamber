@@ -29,6 +29,17 @@ These are the most performance-sensitive.
 
 These stores act like centralized keyed caches. UI should consume narrow slices from them instead of re-fetching the same data in multiple places.
 
+`useQuotaStore` keeps the last authoritative provider results separately from
+`refreshErrors`. Transport failures and configured-provider errors preserve the
+last usage sample and its timestamp. An explicit unconfigured response replaces
+old configuration; a first-load transport failure leaves it unknown. Concurrent
+refreshes share one request per provider. Runtime reset aborts those requests,
+and generation checks prevent their completions from changing the next runtime.
+`lib/quota/fetchQuota.ts` validates response payloads and bounds the complete
+request, including JSON body delivery. Compact usage cards and Settings display
+refresh errors alongside retained data. The mobile popover makes at most one
+refresh attempt per opening, so a failed first load cannot create a retry loop.
+
 ### UI state stores
 
 Examples:

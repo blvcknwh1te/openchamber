@@ -1779,6 +1779,7 @@ export const dict: Record<I18nKey, string> = {
   'header.services.refreshRateLimitsAria': '레이트 리밋 새로고침',
   'header.services.noRateLimits': '사용 가능한 레이트 리밋이 없습니다.',
   'header.services.noRateLimitsReported': '보고된 레이트 리밋이 없습니다.',
+  'header.services.usageRefreshFailedStale': '이전에 받은 사용량을 표시하고 있습니다. 새로고침 실패: {error}',
   'header.services.remoteUpdate.title': '원격 인스턴스 업데이트',
   'header.services.remoteUpdate.checking': '업데이트를 확인하는 중...',
   'header.services.remoteUpdate.upToDate': '이 인스턴스는 최신 상태입니다.',

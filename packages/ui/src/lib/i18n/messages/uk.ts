@@ -1755,6 +1755,7 @@ export const dict: Record<I18nKey, string> = {
   "header.services.refreshRateLimitsAria": "Оновити ліміти запитів",
   "header.services.noRateLimits": "Ліміти запитів недоступні.",
   "header.services.noRateLimitsReported": "Ліміти запитів не надходять.",
+  "header.services.usageRefreshFailedStale": "Показано раніше отримані дані використання. Не вдалося оновити: {error}",
   "header.services.remoteUpdate.title": "Оновлення віддаленого інстанса",
   "header.services.remoteUpdate.checking": "Шукаємо оновлення...",
   "header.services.remoteUpdate.upToDate": "Цей інстанс уже оновлений.",

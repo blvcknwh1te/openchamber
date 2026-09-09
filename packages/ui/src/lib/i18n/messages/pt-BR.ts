@@ -1755,6 +1755,7 @@ export const dict: Record<I18nKey, string> = {
   "header.services.refreshRateLimitsAria": "Atualizar limites de taxa",
   "header.services.noRateLimits": "Não há limites de taxa disponíveis.",
   "header.services.noRateLimitsReported": "Nenhum limite de taxa foi informado.",
+  "header.services.usageRefreshFailedStale": "Exibindo os dados de uso recebidos anteriormente. Falha ao atualizar: {error}",
   "header.services.remoteUpdate.title": "Atualização da instância remota",
   "header.services.remoteUpdate.checking": "Procurando atualizações...",
   "header.services.remoteUpdate.upToDate": "Esta instância está atualizada.",

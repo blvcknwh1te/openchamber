@@ -29,7 +29,6 @@ import {
   type OutboundFrameBatcher,
   type TunnelFrame,
 } from './tunnel-codec';
-import { TUNNEL_FRAGMENT_FLAG } from './protocol';
 import {
   isHttpResponsePayload,
   isStreamAbortPayload,
@@ -237,6 +236,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   const createWire = options.createWireSocket ?? ((url: string) => wrapNativeWebSocket(new WebSocket(url)));
 
   let closed = false;
+  let terminalError: Error | null = null;
   let status: RelayTunnelStatus = { state: 'idle' };
   // Plain listener set — status must not fan out through shared stores.
   const statusListeners = new Set<(next: RelayTunnelStatus) => void>();
@@ -388,9 +388,9 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     let acknowledgedBytes = 0;
     let ackTimer: ReturnType<typeof setTimeout> | null = null;
     let batcher: OutboundFrameBatcher | null = null;
-    // Idle tracking: updated on any non-Ping/Pong frame in EITHER direction.
-    // Ping/Pong are excluded so the keepalive can't sustain itself.
-    let lastActivityAt = Date.now();
+    // Only received frames prove peer liveness. Outbound retries may continue
+    // indefinitely on a half-open socket and must not suppress the probe.
+    let lastReceivedAt = Date.now();
 
     const cleanupTimers = (): void => {
       if (ackTimer !== null) {
@@ -423,6 +423,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
     function failAttemptLocal(error: Error, asErrorState = false, terminal = false): void {
       if (settled || generation !== attemptGeneration) return;
       settled = true;
+      if (terminal) terminalError = error;
       cleanupTimers();
       if (channel) {
         activeChannel = null;
@@ -497,10 +498,6 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
         dead: false,
         send(frame: Uint8Array): void {
           if (channelObj.dead) return;
-          const frameType = frame[0] & ~TUNNEL_FRAGMENT_FLAG;
-          if (frameType !== TunnelFrameType.Ping && frameType !== TunnelFrameType.Pong && frameType !== TunnelFrameType.DeliveryAck) {
-            lastActivityAt = Date.now();
-          }
           if (localBatcher) localBatcher.enqueue(frame);
           else sendEncryptedPlaintext(frame);
         },
@@ -508,14 +505,13 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
       channel = channelObj;
       activeChannel = channelObj;
       consecutiveFailures = 0;
-      lastActivityAt = Date.now();
+      lastReceivedAt = Date.now();
       setStatus({ state: 'connected' });
       resolveWaiters(channelObj);
       pingTimer = setInterval(() => {
         const now = Date.now();
-        // Only ping when the tunnel has actually been idle; streaming traffic
-        // keeps lastActivityAt fresh, so sustained bursts send zero pings.
-        if (now - lastActivityAt < pingIntervalMs) return;
+        // Slow-but-progressing inbound traffic is healthy, even without Pongs.
+        if (now - lastReceivedAt < pingIntervalMs) return;
         channelObj.send(encodeTunnelFrame(TunnelFrameType.Ping, 0, EMPTY_PAYLOAD));
         // Expect a Pong (or any frame) before the deadline; otherwise it's dead.
         if (pongDeadline === null) {
@@ -553,6 +549,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
         if (ackTimer === null) ackTimer = setTimeout(acknowledgeDelivery, 10);
       }
       // Any received frame proves the tunnel is alive — clear the pong deadline.
+      lastReceivedAt = Date.now();
       if (pongDeadline !== null) {
         clearTimeout(pongDeadline);
         pongDeadline = null;
@@ -562,8 +559,6 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
         return;
       }
       if (frame.frameType === TunnelFrameType.Pong) return;
-      // Non-keepalive inbound traffic counts as activity (suppresses our ping).
-      lastActivityAt = Date.now();
 
       let payload = frame.payload;
       if (frame.frameType === TunnelFrameType.WsText || frame.frameType === TunnelFrameType.WsBinary) {
@@ -685,6 +680,7 @@ export const createRelayTunnelClient = (options: RelayTunnelClientOptions): Rela
   const waitForChannel = (signal?: AbortSignal): Promise<ActiveChannel> => {
     if (closed) return Promise.reject(new Error('relay tunnel closed'));
     if (signal?.aborted) return Promise.reject(abortError());
+    if (terminalError) return Promise.reject(terminalError);
     if (activeChannel && !activeChannel.dead) return Promise.resolve(activeChannel);
     return new Promise<ActiveChannel>((resolve, reject) => {
       let onAbort: (() => void) | null = null;

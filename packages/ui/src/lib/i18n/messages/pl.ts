@@ -2539,6 +2539,7 @@ export const dict: Record<I18nKey, string> = {
   'header.services.modelFamily.other': 'Inne',
   'header.services.noRateLimits': 'Brak dostępnych limitów użycia.',
   'header.services.noRateLimitsReported': 'Nie zgłoszono limitów użycia.',
+  'header.services.usageRefreshFailedStale': 'Wyświetlane są wcześniej otrzymane dane użycia. Odświeżanie nie powiodło się: {error}',
   'header.services.remoteUpdate.title': 'Aktualizacja zdalnej instancji',
   'header.services.remoteUpdate.checking': 'Sprawdzanie aktualizacji...',
   'header.services.remoteUpdate.upToDate': 'Ta instancja jest aktualna.',

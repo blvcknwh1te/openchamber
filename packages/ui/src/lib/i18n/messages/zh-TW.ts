@@ -1753,6 +1753,7 @@ export const dict: Record<I18nKey, string> = {
   'header.services.refreshRateLimitsAria': '重新整理速率限制',
   'header.services.noRateLimits': '沒有可用的速率限制。',
   'header.services.noRateLimitsReported': '未報告速率限制。',
+  'header.services.usageRefreshFailedStale': '正在顯示先前取得的用量資料。重新整理失敗：{error}',
   'header.services.used': '已用',
   'header.services.remaining': '剩餘',
   'header.services.modelFamily.other': '其他',

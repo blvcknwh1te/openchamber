@@ -1743,6 +1743,7 @@ export const dict: Record<I18nKey, string> = {
   'header.services.refreshRateLimitsAria': '刷新速率限制',
   'header.services.noRateLimits': '没有可用的速率限制。',
   'header.services.noRateLimitsReported': '未上报速率限制。',
+  'header.services.usageRefreshFailedStale': '正在显示之前获取的用量数据。刷新失败：{error}',
   'header.services.remoteUpdate.title': '远程实例更新',
   'header.services.remoteUpdate.checking': '正在检查更新...',
   'header.services.remoteUpdate.upToDate': '此实例已是最新。',

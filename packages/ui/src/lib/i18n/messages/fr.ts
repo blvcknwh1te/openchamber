@@ -1540,6 +1540,7 @@ export const dict = {
   'header.services.refreshRateLimitsAria': 'Limites du taux de rafraîchissement',
   'header.services.noRateLimits': 'Aucune limite de taux disponible.',
   'header.services.noRateLimitsReported': 'Aucune limite de taux signalée.',
+  'header.services.usageRefreshFailedStale': 'Les données d’utilisation précédentes sont affichées. Échec de l’actualisation : {error}',
   'header.services.used': 'Utilisé',
   'header.services.remaining': 'Restant',
   'header.services.modelFamily.other': 'Autre',

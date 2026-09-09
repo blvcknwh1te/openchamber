@@ -1773,6 +1773,7 @@ export const dict: Record<I18nKey, string> = {
   'header.services.refreshRateLimitsAria': 'レート制限を更新',
   'header.services.noRateLimits': 'レート制限は利用できません。',
   'header.services.noRateLimitsReported': 'レート制限は報告されていません。',
+  'header.services.usageRefreshFailedStale': '以前に取得した使用状況を表示しています。更新に失敗しました: {error}',
   'header.services.remoteUpdate.title': 'リモートインスタンスの更新',
   'header.services.remoteUpdate.checking': '更新を確認中...',
   'header.services.remoteUpdate.upToDate': 'このインスタンスは最新です。',

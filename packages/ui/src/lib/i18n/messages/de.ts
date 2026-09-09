@@ -1577,6 +1577,7 @@ export const dict = {
   'header.services.refreshRateLimitsAria': 'Ratenlimits aktualisieren',
   'header.services.noRateLimits': 'Keine Ratenlimits verfügbar.',
   'header.services.noRateLimitsReported': 'Keine Ratenlimits berichtet.',
+  'header.services.usageRefreshFailedStale': 'Zuvor empfangene Nutzungsdaten werden angezeigt. Aktualisierung fehlgeschlagen: {error}',
   'header.services.remoteUpdate.title': 'Remote-Instanz-Update',
   'header.services.remoteUpdate.checking': 'Suche nach Updates...',
   'header.services.remoteUpdate.upToDate': 'Diese Instanz ist auf dem neuesten Stand.',
