@@ -1,0 +1,79 @@
+{
+  "homeDirectory": "C:/Users/99-ErofeenkoVA",
+  "draftStartersCraftGoalAdded": true,
+  "draftStartersScheduleTaskAdded": true,
+  "autoSaveEnabled": true,
+  "sidebarProjectDisplayMode": "all",
+  "sidebarSessionGroupingMode": "by-worktree",
+  "sidebarProjectSortOrder": "manual",
+  "sidebarShowRecentSection": true,
+  "themeId": "vscode-auto",
+  "useSystemTheme": true,
+  "lightThemeId": "openchamber-light",
+  "darkThemeId": "openchamber-dark",
+  "splashBgLight": "#fdfcfa",
+  "splashFgLight": "#393a34",
+  "splashBgDark": "#120f0e",
+  "splashFgDark": "#c9c5ba",
+  "favoriteModels": [
+    {
+      "providerID": "ofox",
+      "modelID": "z-ai/glm-5.3-flash"
+    },
+    {
+      "providerID": "ofox",
+      "modelID": "deepseek/deepseek-v4-flash-vision-exp"
+    }
+  ],
+  "hiddenModels": [],
+  "collapsedModelProviders": [],
+  "recentModels": [
+    {
+      "providerID": "ofox",
+      "modelID": "z-ai/glm-5.3-flash"
+    },
+    {
+      "providerID": "ofox",
+      "modelID": "deepseek/deepseek-v4-flash-vision-exp"
+    },
+    {
+      "providerID": "ofox",
+      "modelID": "anthropic/claude-sonnet-4.6"
+    }
+  ],
+  "recentAgents": [],
+  "recentEfforts": {
+    "ofox/deepseek/deepseek-v4-flash-vision-exp": [
+      "default"
+    ],
+    "ofox/anthropic/claude-sonnet-4.6": [
+      "default"
+    ],
+    "ofox/z-ai/glm-5.3-flash": [
+      "high",
+      "low",
+      "default"
+    ]
+  },
+  "monoFont": "source-code-pro",
+  "usageDisplayMode": "usage",
+  "timeFormatPreference": "24h",
+  "uiFont": "source-sans-3",
+  "fontSize": 95,
+  "padding": 105,
+  "userMessageRenderingMode": "markdown",
+  "mermaidRenderingMode": "svg",
+  "showExpandedBashTools": false,
+  "wideChatLayoutEnabled": false,
+  "defaultAgent": "build",
+  "smallModelUseDefault": false,
+  "autoDeleteEnabled": true,
+  "showReasoningTraces": true,
+  "collapsibleThinkingBlocks": true,
+  "stickyUserHeader": true,
+  "editorFontSize": 10,
+  "draftStartersVisible": true,
+  "defaultFileViewerPreview": true,
+  "defaultModel": "ofox/z-ai/glm-5.3-flash",
+  "showDeletionDialog": true
+}
