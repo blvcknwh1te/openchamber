@@ -287,7 +287,12 @@ export class AgentManagerPanelProvider {
     return { id, type, success: true, data: { stopped: true } };
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview): string {
+      // [OC-PATCH: custom-assets-live]
+    public postCustomAssets(assets: { themes: unknown[]; css: string }): void {
+        void this._panel?.webview.postMessage({ type: 'customAssets', themes: assets.themes, css: assets.css });
+    }
+
+    private _getHtmlForWebview(webview: vscode.Webview): string {
     const workspaceFolder = normalizeWindowsDriveLetter(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ''
     );

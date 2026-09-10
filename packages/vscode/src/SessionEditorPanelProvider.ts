@@ -656,6 +656,13 @@ export class SessionEditorPanelProvider {
         }
     }
 
+    // [OC-PATCH: custom-assets-live]
+    public postCustomAssets(assets: { themes: unknown[]; css: string }): void {
+        for (const entry of this._panels.values()) {
+            void entry.panel.webview.postMessage({ type: 'customAssets', themes: assets.themes, css: assets.css });
+        }
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview, sessionId: string | null) {
     const workspaceFolder = normalizeWindowsDriveLetter(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ''

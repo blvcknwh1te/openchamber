@@ -13,7 +13,7 @@ import type { WorkspaceFolderCandidate } from './workspaceResolver';
 // validates them with the same `isValidTheme` filter used for server themes.
 const MAX_CUSTOM_THEME_FILE_BYTES = 512 * 1024;
 
-const readCustomThemesForInjection = (): unknown[] => {
+export const readCustomThemesForInjection = (): unknown[] => {
   const themesDir = path.join(os.homedir(), '.config', 'openchamber', 'themes');
   try {
     const entries = fs.readdirSync(themesDir, { withFileTypes: true });
@@ -37,7 +37,7 @@ const readCustomThemesForInjection = (): unknown[] => {
 // [OC-PATCH: custom-css] User-level CSS overrides applied to every webview:
 // `~/.config/openchamber/custom.css` is inlined into <head> so layout and
 // token tweaks (e.g. --chat-inline-pad) survive without rebuilding the fork.
-const readCustomCssForInjection = (): string => {
+export const readCustomCssForInjection = (): string => {
   try {
     const cssPath = path.join(os.homedir(), '.config', 'openchamber', 'custom.css');
     if (fs.statSync(cssPath).size > MAX_CUSTOM_THEME_FILE_BYTES) return '';

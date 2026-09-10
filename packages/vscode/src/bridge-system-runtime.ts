@@ -637,7 +637,14 @@ export async function handleSystemBridgeMessage(
         return { id, type, success: false, error: 'Command is required' };
       }
       try {
-        const result = await vscode.commands.executeCommand(command, ...(args || []));
+        // [OC-PATCH: bnw-command-routing] The shared UI still speaks the
+        // upstream `openchamber.*` command ids; this fork registers them as
+        // `openchamberBnw.*`. Rewrite the prefix so a BNW webview never drives
+        // the original extension's global commands.
+        const routedCommand = command.startsWith('openchamber.')
+          ? `openchamberBnw.${command.slice('openchamber.'.length)}`
+          : command;
+        const result = await vscode.commands.executeCommand(routedCommand, ...(args || []));
         return { id, type, success: true, data: { result } };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

@@ -1,7 +1,7 @@
 import { createVSCodeAPIs } from './api';
 import { createRemovalTombstones } from './inlineCommentRemovals';
 import { resolveCommentTarget } from './inlineCommentTarget';
-import { onCommand, onThemeChange, postBridgeNotification, proxyApiRequest, proxySessionMessageRequest, sendBridgeMessage, startSseProxy, stopSseProxy } from './api/bridge';
+import { onCommand, onCustomAssets, onThemeChange, postBridgeNotification, proxyApiRequest, proxySessionMessageRequest, sendBridgeMessage, startSseProxy, stopSseProxy } from './api/bridge';
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
 import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
@@ -41,6 +41,8 @@ declare global {
       panelType?: PanelType;
       viewMode?: 'sidebar' | 'editor';
       initialSessionId?: string | null;
+      // [OC-PATCH: custom-themes-vscode] Themes read from disk by the host.
+      customThemes?: unknown[];
     };
     __OPENCHAMBER_VSCODE_THEME__?: VSCodeThemePayload['theme'];
     __OPENCHAMBER_VSCODE_SHIKI_THEMES__?: { light?: Record<string, unknown>; dark?: Record<string, unknown> } | null;
@@ -243,6 +245,16 @@ onThemeChange((payload) => {
   }
 
   scheduleThemeRecompute(kind);
+});
+
+// [OC-PATCH: custom-assets-live] Forward host-pushed theme/CSS refreshes to
+// the UI (ThemeSystemContext listens for this event and applies them live).
+onCustomAssets((payload) => {
+  const config = window.__VSCODE_CONFIG__;
+  if (config) {
+    config.customThemes = payload.themes;
+  }
+  window.dispatchEvent(new CustomEvent('openchamber:custom-assets', { detail: payload }));
 });
 
 const workspaceFolder = window.__VSCODE_CONFIG__?.workspaceFolder;

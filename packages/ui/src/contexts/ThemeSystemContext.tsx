@@ -226,6 +226,35 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     return () => window.removeEventListener('openchamber:theme-hmr', handleThemeHmr);
   }, []);
 
+  // [OC-PATCH: custom-assets-live] The VS Code host watches
+  // ~/.config/openchamber/{themes/*.json,custom.css} and pushes refreshed
+  // assets; apply them without a webview reload.
+  useEffect(() => {
+    if (!isVSCode || typeof window === 'undefined') {
+      return;
+    }
+    const handleCustomAssets = (event: Event) => {
+      const detail = (event as CustomEvent<{ themes?: unknown; css?: unknown }>).detail ?? {};
+      if (Array.isArray(detail.themes)) {
+        setCustomThemes(detail.themes.filter(isValidTheme));
+      }
+      if (typeof detail.css === 'string') {
+        const style = document.querySelector('style[data-openchamber-custom]');
+        if (style) {
+          style.textContent = detail.css;
+          document.head.appendChild(style);
+        } else if (detail.css) {
+          const created = document.createElement('style');
+          created.setAttribute('data-openchamber-custom', '');
+          created.textContent = detail.css;
+          document.head.appendChild(created);
+        }
+      }
+    };
+    window.addEventListener('openchamber:custom-assets', handleCustomAssets);
+    return () => window.removeEventListener('openchamber:custom-assets', handleCustomAssets);
+  }, [isVSCode]);
+
   const getThemeByIdFromAvailable = useCallback(
     (themeId: string): Theme | undefined => availableThemes.find((theme) => theme.metadata.id === themeId),
     [availableThemes],

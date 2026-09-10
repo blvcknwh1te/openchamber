@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
+import { CustomAssetsWatcher } from './customAssetsWatcher';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
 import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider } from './sessionActivityWatcher';
 import { pathsEqualWithNormalizedDriveLetter } from './pathUtils';
@@ -210,6 +211,16 @@ export async function activate(context: vscode.ExtensionContext) {
   // Create Agent Manager panel provider
   agentManagerProvider = new AgentManagerPanelProvider(context, context.extensionUri, openCodeManager);
   sessionEditorProvider = new SessionEditorPanelProvider(context, context.extensionUri, openCodeManager);
+
+  // [OC-PATCH: custom-assets-live] Push theme/custom.css file edits to every
+  // open webview so changes apply on save without a reload.
+  const customAssetsWatcher = new CustomAssetsWatcher(context, (assets) => {
+    chatViewProvider?.postCustomAssets(assets);
+    sessionEditorProvider?.postCustomAssets(assets);
+    agentManagerProvider?.postCustomAssets(assets);
+  });
+  customAssetsWatcher.start();
+  context.subscriptions.push(customAssetsWatcher);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('openchamberBnw.internal.settingsSynced', (settings: unknown) => {

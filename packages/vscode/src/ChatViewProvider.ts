@@ -693,6 +693,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    // [OC-PATCH: custom-assets-live]
+    public postCustomAssets(assets: { themes: unknown[]; css: string }): void {
+        void this._view?.webview.postMessage({ type: 'customAssets', themes: assets.themes, css: assets.css });
+    }
+
     private _getHtmlForWebview(webview: vscode.Webview) {
     const workspaceFolder = normalizeWindowsDriveLetter(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ''

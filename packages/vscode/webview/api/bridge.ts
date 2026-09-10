@@ -257,3 +257,24 @@ window.addEventListener('message', (event: MessageEvent) => {
     themeChangeHandler(message.theme);
   }
 });
+
+// [OC-PATCH: custom-assets-live] Host pushes refreshed themes/custom.css on
+// file-system changes; the webview applies them without a reload.
+type CustomAssetsPayload = { themes: unknown[]; css: string };
+type CustomAssetsHandler = (payload: CustomAssetsPayload) => void;
+let customAssetsHandler: CustomAssetsHandler | null = null;
+
+export function onCustomAssets(handler: CustomAssetsHandler): () => void {
+  customAssetsHandler = handler;
+  return () => { customAssetsHandler = null; };
+}
+
+window.addEventListener('message', (event: MessageEvent) => {
+  const message = event.data;
+  if (message?.type === 'customAssets' && customAssetsHandler) {
+    customAssetsHandler({
+      themes: Array.isArray(message.themes) ? message.themes : [],
+      css: typeof message.css === 'string' ? message.css : '',
+    });
+  }
+});
