@@ -85,6 +85,12 @@
       "enabled": true
     }
   },
+  "plugin": [
+    "./plugins/prepend-system-rule.ts",
+    "./plugins/session-autotitle.ts",
+    "./plugins/tool-timeout.ts",
+    "./plugins/zz-dump-system-prompt.ts"
+  ],
   "instructions": [
     "C:/Users/99-ErofeenkoVA/.config/opencode/rules/*.md"
   ]

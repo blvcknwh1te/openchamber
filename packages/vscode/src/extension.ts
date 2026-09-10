@@ -5,7 +5,7 @@ import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { CustomAssetsWatcher } from './customAssetsWatcher';
 import { OpenCodeConfigWatcher } from './opencodeConfigWatcher';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
-import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider } from './sessionActivityWatcher';
+import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider, getSessionActivitySnapshot } from './sessionActivityWatcher';
 import { pathsEqualWithNormalizedDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders } from './workspaceResolver';
 import { InlineCommentThreads, SIDEBAR_SURFACE_ID } from './InlineCommentThreads';
@@ -226,8 +226,21 @@ export async function activate(context: vscode.ExtensionContext) {
   // [OC-PATCH: opencode-config-live] Restart the managed opencode server when
   // opencode.json(c) (global or project) changes on disk, so config edits are
   // picked up without manual "Reload OpenCode".
+  let configRestartPending = false;
   const opencodeConfigWatcher = new OpenCodeConfigWatcher(context, async () => {
-    await openCodeManager?.restart();
+    // [OC-PATCH: opencode-config-live] Never cut an active turn: while any
+    // session is busy or in cooldown, wait; then restart once (coalesced).
+    if (configRestartPending) return;
+    configRestartPending = true;
+    try {
+      const isBusy = () => Object.values(getSessionActivitySnapshot()).some((s) => s.type === 'busy' || s.type === 'cooldown');
+      while (isBusy()) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      await openCodeManager?.restart();
+    } finally {
+      configRestartPending = false;
+    }
   });
   opencodeConfigWatcher.start();
   context.subscriptions.push(opencodeConfigWatcher);
