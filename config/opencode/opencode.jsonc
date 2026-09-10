@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "ofox/z-ai/glm-5.3-flash",
+  "model": "ofox/qwen/qwen3.8-flash",
   "small_model": "ofox/bailian/qwen-flash",
   "agent": {
     "title": {
@@ -8,7 +8,7 @@
       "prompt": "Сформируй короткий заголовок сессии — максимум 5-6 слов, по сути задачи, на русском. Верни ТОЛЬКО заголовок, без кавычек, без пояснений, одной строкой."
     },
     "build": {
-      "model": "ofox/z-ai/glm-5.3-flash",
+      "model": "ofox/qwen/qwen3.8-flash",
       "permission": {
         "glob": "allow",
         "external_directory": "allow"
@@ -24,6 +24,22 @@
     "ofox": {
       "options": {
         "setCacheKey": true
+      },
+      "models": {
+        "qwen/qwen3.8-flash": {
+          "name": "Qwen3.8 Flash",
+          "attachment": true,
+          "reasoning": true,
+          "tool_call": true, "temperature": true,
+          "modalities": {
+            "input": ["text", "image", "video", "pdf"],
+            "output": ["text"]
+          },
+          "limit": {
+            "context": 1000000,
+            "output": 131072
+          }
+        }
       }
     }
   },
@@ -68,5 +84,8 @@
       },
       "enabled": true
     }
-  }
+  },
+  "instructions": [
+    "C:/Users/99-ErofeenkoVA/.config/opencode/rules/*.md"
+  ]
 }

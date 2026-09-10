@@ -76,7 +76,8 @@
       {
         "command": "openchamberBnw.reloadTab",
         "category": "OpenChamber BNW",
-        "title": "%command.reloadTab.title%"
+        "title": "%command.reloadTab.title%",
+        "icon": "$(refresh)"
       },
       {
         "command": "openchamberBnw.restartApi",
@@ -210,6 +211,11 @@
       ],
       "editor/title": [
         {
+          "command": "openchamberBnw.reloadTab",
+          "when": "activeWebviewPanelId == openchamberBnw.sessionEditor || activeWebviewPanelId == openchamberBnw.agentManager",
+          "group": "navigation@2"
+        },
+        {
           "command": "openchamberBnw.openNewSessionInEditor",
           "group": "navigation@1"
         }
@@ -222,6 +228,11 @@
       }
     ],
     "view/title": [
+        {
+          "command": "openchamberBnw.reloadTab",
+          "when": "view == openchamberBnw.chatView",
+          "group": "navigation@0"
+        },
         {
           "command": "openchamberBnw.newSession",
           "when": "view == openchamberBnw.chatView",

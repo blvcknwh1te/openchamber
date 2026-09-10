@@ -1,5 +1,10 @@
 {
   "homeDirectory": "C:/Users/99-ErofeenkoVA",
+  "splashBgLight": "#fdfcfa",
+  "splashFgLight": "#393a34",
+  "splashBgDark": "#120f0e",
+  "splashFgDark": "#c9c5ba",
+  "autoDeleteEnabled": true,
   "draftStartersCraftGoalAdded": true,
   "draftStartersScheduleTaskAdded": true,
   "autoSaveEnabled": true,
@@ -9,12 +14,8 @@
   "sidebarShowRecentSection": true,
   "themeId": "vscode-auto",
   "useSystemTheme": true,
-  "lightThemeId": "openchamber-light",
-  "darkThemeId": "openchamber-dark",
-  "splashBgLight": "#fdfcfa",
-  "splashFgLight": "#393a34",
-  "splashBgDark": "#120f0e",
-  "splashFgDark": "#c9c5ba",
+  "lightThemeId": "bright-chat-dark",
+  "darkThemeId": "bright-chat-dark",
   "favoriteModels": [
     {
       "providerID": "ofox",
@@ -30,6 +31,10 @@
   "recentModels": [
     {
       "providerID": "ofox",
+      "modelID": "qwen/qwen3.8-flash"
+    },
+    {
+      "providerID": "ofox",
       "modelID": "z-ai/glm-5.3-flash"
     },
     {
@@ -41,7 +46,9 @@
       "modelID": "anthropic/claude-sonnet-4.6"
     }
   ],
-  "recentAgents": [],
+  "recentAgents": [
+    "build"
+  ],
   "recentEfforts": {
     "ofox/deepseek/deepseek-v4-flash-vision-exp": [
       "default"
@@ -67,7 +74,6 @@
   "wideChatLayoutEnabled": false,
   "defaultAgent": "build",
   "smallModelUseDefault": false,
-  "autoDeleteEnabled": true,
   "showReasoningTraces": true,
   "collapsibleThinkingBlocks": true,
   "stickyUserHeader": true,

@@ -111,6 +111,12 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
         if (defaultExpanded === true) {
             return { expanded: true, source: 'user' };
         }
+        // [OC-PATCH: thinking-default] An explicit `false` pins the block
+        // collapsed even while the reasoning part is still streaming; only an
+        // omitted prop keeps the upstream auto-expand-while-live behavior.
+        if (defaultExpanded === false) {
+            return { expanded: false, source: 'user' };
+        }
         return { expanded: canAutoExpand, source: 'auto' };
     });
     const isExpanded = expansion.source === 'auto'
@@ -512,7 +518,9 @@ const ReasoningPart = React.memo(({
             blockId={part.id || `${messageId}-reasoning`}
             time={time}
             isStreaming={isStreaming}
-            defaultExpanded={reasoningExpandedByDefault || undefined}
+            // [OC-PATCH: thinking-default] Explicit boolean: off = collapsed by
+            // default even while streaming, on = expanded, per the setting.
+            defaultExpanded={reasoningExpandedByDefault}
         />
     );
 });

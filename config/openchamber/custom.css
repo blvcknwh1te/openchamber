@@ -1,0 +1,11 @@
+/*
+  Кастомные CSS-оверрайды OpenChamber (VS Code webview).
+  Применяются после Reload Window (Ctrl+Shift+P -> "Reload Window").
+  Здесь можно переопределять любые CSS-переменные UI.
+
+  --chat-inline-pad : горизонтальный отступ колонок чата
+                      (message / input / общая колонка — "зелёная линия")
+*/
+:root {
+  --chat-inline-pad: 2.8em;
+}
