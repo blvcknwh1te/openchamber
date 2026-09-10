@@ -1,11 +1,34 @@
 /*
-  Кастомные CSS-оверрайды OpenChamber (VS Code webview).
-  Применяются после Reload Window (Ctrl+Shift+P -> "Reload Window").
-  Здесь можно переопределять любые CSS-переменные UI.
-
-  --chat-inline-pad : горизонтальный отступ колонок чата
-                      (message / input / общая колонка — "зелёная линия")
+  Пользовательский CSS OpenChamber (VS Code webview).
+  Инжектируется расширением в webview и имеет приоритет над темой
+  (тема переприменяется, но этот файл переносится в конец <head>).
+  Правь значения здесь -> Reload Window или кнопка refresh на вкладке BNW.
 */
 :root {
-  --chat-inline-pad: 2.8em;
+  /* Горизонтальный отступ колонок чата (сообщения / инпут / контейнер) */
+  --chat-inline-pad: 1.2em !important;
+
+  /* Основной текст чата — ярче tool-блоков и thinking */
+  --chat-assistant-message: #FFFDF5 !important;
+  --chat-user-message: #F2EEE0 !important;
+  --chat-assistant-message-bg: #100F0F !important;
+  --chat-user-message-bg: #2d1d15 !important;
+
+  /* Вторичное: tool-блоки, thinking, таймстампы, разделители */
+  --tools-title: #9A958B !important;
+  --tools-description: #615E56 !important;
+  --tools-icon: #6E6B60 !important;
+  --chat-timestamp: #6E6B60 !important;
+  --chat-divider: #343331 !important;
+
+  /* Общие foreground-переменные (текст UI, приглушённый текст) */
+  --foreground: #E8E4D9 !important;
+  --muted-foreground: #7A766C !important;
+  --surface-muted-foreground: #7A766C !important;
+  --background: #100F0F !important;
+
+  /* Шрифты */
+  --font-sans: "Source Sans 3", sans-serif !important;
+  --font-heading: "Source Sans 3", sans-serif !important;
+  --font-mono: "Source Code Pro", monospace !important;
 }

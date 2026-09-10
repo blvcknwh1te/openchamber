@@ -411,6 +411,15 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
     const restoreTransitions = suppressTransitionsForThemeSwitch();
     cssGenerator.apply(currentTheme);
+    // [OC-PATCH: custom-css-last] The theme writes its variables into a style
+    // tag appended at runtime, which would override custom.css; re-append the
+    // user stylesheet after it so custom.css stays the authoritative override.
+    if (typeof document !== 'undefined') {
+      const customStyle = document.querySelector('style[data-openchamber-custom]');
+      if (customStyle) {
+        document.head.appendChild(customStyle);
+      }
+    }
     if (!receivesParentThemeSync) {
       publishEmbeddedThemeBootstrap(currentTheme);
     }
