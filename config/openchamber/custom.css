@@ -5,38 +5,29 @@
 */
 :root {
   /* Горизонтальный отступ колонок чата (сообщения / инпут / контейнер) */
-  --chat-inline-pad: 1.2em !important;
+  --chat-inline-pad: 2.75em !important;
 
-  /* Фон приложения и фон бабла пользовательских сообщений */
-  --background: #101012 !important;
-  --chat-user-message-bg: #232326 !important;
-
-  /* Фон ПОЛНОШИРИННОЙ СТРОКИ пользовательского сообщения (полоса под баблом).
-     transparent = как общий фон; задай цвет — полоса выделится */
-  --chat-user-row-bg: transparent !important;
+  /* Фон приложения и карточки пользовательского сообщения (единая переменная) */
+  --background: #131516 !important;
+  --chat-user-message-bg: #2a2a2b !important;
 
   /* Основной текст (ответы ассистента и текст сообщений идут от него) */
-  --foreground: #F0F0F0 !important;
+  --foreground: #f0f0f0 !important;
 
   /* Вторичный текст: таймстампы, подписи, мета */
-  --muted-foreground: #8C8C8C !important;
-  --surface-muted-foreground: #8C8C8C !important;
+  --muted-foreground: #8c8c8c !important;
+  --surface-muted-foreground: #8c8c8c !important;
 
   /* Tool-строки и thinking: заголовок / описание / иконка */
-  --tools-title: #A6A6A6 !important;
+  --tools-title: #a6a6a6 !important;
   --tools-description: #757575 !important;
   --tools-icon: #757575 !important;
 
   /* Разделители (в т.ч. перед итогом хода) */
-  --chat-divider: #2A2A2C !important;
+  --chat-divider: #2a2a2c !important;
 
   /* Markdown-заголовки в тексте ответов */
-  --markdown-heading1: #FFFFFF !important;
-  --markdown-heading2: #F2F2F2 !important;
-  --markdown-heading3: #E6E6E6 !important;
-}
-
-/* Строка пользовательского сообщения: фон под баблом (не канвас чата!) */
-.chat-user-row {
-  background-color: var(--chat-user-row-bg);
+  --markdown-heading1: #ffffff !important;
+  --markdown-heading2: #f2f2f2 !important;
+  --markdown-heading3: #e6e6e6 !important;
 }
