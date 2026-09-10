@@ -3,7 +3,7 @@
   "displayName": "OpenChamber BNW",
   "description": "%extension.description%",
   "version": "1.22.2-bnw.1",
-  "publisher": "blvcknwh1te",
+  "publisher": "blacknwhite",
   "private": true,
   "repository": {
     "type": "git",
