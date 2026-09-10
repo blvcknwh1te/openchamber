@@ -1,41 +1,33 @@
 /*
   Пользовательский CSS OpenChamber (VS Code webview).
-  Инжектируется расширением в webview и имеет приоритет над темой.
-  Правки применяются на лету (watcher), либо Reload Window / кнопка refresh.
+  Только реально потребляемые переменные (проверено по компонентам):
+  правки применяются на лету watcher'ом, либо Reload Window / кнопка refresh.
 */
 :root {
   /* Горизонтальный отступ колонок чата (сообщения / инпут / контейнер) */
   --chat-inline-pad: 1.2em !important;
 
-  /* Основной текст чата — яркий нейтральный, контраст держим за счёт
-     приглушённых вторичных цветов (без коричневого подтона Flexoki) */
-  --chat-assistant-message: #f7f7f7 !important;
-  --chat-user-message: #eaeaea !important;
-  --chat-assistant-message-bg: #101012 !important;
+  /* Фон приложения и фон бабла пользовательских сообщений */
+  --background: #101012 !important;
   --chat-user-message-bg: #232326 !important;
-  --chat-background: #101012 !important;
 
-  /* Вторичное: tool-блоки, thinking, таймстампы, разделители */
-  --tools-background: #17171a !important;
-  --tools-title: #a6a6a6 !important;
+  /* Основной текст (ответы ассистента и текст сообщений идут от него) */
+  --foreground: #F0F0F0 !important;
+
+  /* Вторичный текст: таймстампы, подписи, мета */
+  --muted-foreground: #8C8C8C !important;
+  --surface-muted-foreground: #8C8C8C !important;
+
+  /* Tool-строки и thinking: заголовок / описание / иконка */
+  --tools-title: #A6A6A6 !important;
   --tools-description: #757575 !important;
   --tools-icon: #757575 !important;
-  --chat-timestamp: #757575 !important;
-  --chat-divider: #2a2a2c !important;
 
-  /* Общие foreground-переменные (текст UI, приглушённый текст) */
-  --background: #101012 !important;
-  --foreground: #e6e6e6 !important;
-  --muted-foreground: #8c8c8c !important;
-  --surface-muted-foreground: #8c8c8c !important;
+  /* Разделители (в т.ч. перед итогом хода) */
+  --chat-divider: #2A2A2C !important;
 
-  /* Markdown-заголовки — нейтральные, от белого к светло-серому */
-  --markdown-heading1: #ffffff !important;
-  --markdown-heading2: #f2f2f2 !important;
-  --markdown-heading3: #e6e6e6 !important;
-
-  /* Шрифты */
-  --font-sans: "Source Sans 3", sans-serif !important;
-  --font-heading: "Source Sans 3", sans-serif !important;
-  --font-mono: "Source Code Pro", monospace !important;
+  /* Markdown-заголовки в тексте ответов */
+  --markdown-heading1: #FFFFFF !important;
+  --markdown-heading2: #F2F2F2 !important;
+  --markdown-heading3: #E6E6E6 !important;
 }
