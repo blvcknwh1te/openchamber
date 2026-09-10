@@ -2068,6 +2068,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': '显示推理轨迹',
   'settings.openchamber.visual.field.showReasoningTraces': '显示推理轨迹',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': '启用可折叠推理块',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': '启用可折叠推理块',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': '折叠较长的用户消息',
   'settings.openchamber.visual.field.collapsibleUserMessages': '折叠较长的用户消息',

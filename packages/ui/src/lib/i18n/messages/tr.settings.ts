@@ -2021,6 +2021,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': 'Akıl yürütme izlerini göster',
   'settings.openchamber.visual.field.showReasoningTraces': 'Akıl Yürütme İzlerini Göster',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': 'Daraltılabilir akıl yürütme bloklarını etkinleştir',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': 'Daraltılabilir Akıl Yürütme Bloklarını Etkinleştir',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': 'Uzun kullanıcı mesajlarını daralt',
   'settings.openchamber.visual.field.collapsibleUserMessages': 'Uzun Kullanıcı Mesajlarını Daralt',

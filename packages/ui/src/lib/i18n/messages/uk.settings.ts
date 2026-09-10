@@ -2068,6 +2068,8 @@ export const settingsDict = {
   "settings.openchamber.visual.field.showReasoningTracesAria": "Показати сліди міркувань",
   "settings.openchamber.visual.field.showReasoningTraces": "Показати сліди міркувань",
   "settings.openchamber.visual.field.collapsibleThinkingBlocksAria": "Увімкнути згортальні блоки міркувань",
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   "settings.openchamber.visual.field.collapsibleThinkingBlocks": "Увімкнути згортальні блоки міркувань",
   "settings.openchamber.visual.field.collapsibleUserMessagesAria": "Згортати довгі повідомлення користувача",
   "settings.openchamber.visual.field.collapsibleUserMessages": "Згортати довгі повідомлення користувача",

@@ -1975,6 +1975,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': 'Afficher les traces de raisonnement',
   'settings.openchamber.visual.field.showReasoningTraces': 'Afficher les traces de raisonnement',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': 'Activer les blocs de raisonnement pliables',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': 'Activer les blocs de raisonnement pliables',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': 'Réduire les longs messages utilisateur',
   'settings.openchamber.visual.field.collapsibleUserMessages': 'Réduire les longs messages utilisateur',

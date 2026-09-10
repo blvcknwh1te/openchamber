@@ -339,7 +339,9 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const streamingAutoFollowEnabled = useUIStore(state => state.streamingAutoFollowEnabled);
     const setStreamingAutoFollowEnabled = useUIStore(state => state.setStreamingAutoFollowEnabled);
     const collapsibleThinkingBlocks = useUIStore(state => state.collapsibleThinkingBlocks);
+const reasoningExpandedByDefault = useUIStore(state => state.reasoningExpandedByDefault);
     const setCollapsibleThinkingBlocks = useUIStore(state => state.setCollapsibleThinkingBlocks);
+const setReasoningExpandedByDefault = useUIStore(state => state.setReasoningExpandedByDefault);
 
     const mermaidRenderingMode = useUIStore(state => state.mermaidRenderingMode);
     const setMermaidRenderingMode = useUIStore(state => state.setMermaidRenderingMode);
@@ -1974,6 +1976,14 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                 onChange={setCollapsibleThinkingBlocks}
                                                 label={t('settings.openchamber.visual.field.collapsibleThinkingBlocks')}
                                                 ariaLabel={t('settings.openchamber.visual.field.collapsibleThinkingBlocksAria')}
+                                            />
+                                        )}
+                                        {showReasoningTraces && collapsibleThinkingBlocks && (
+                                            <SettingsCheckboxRow
+                                                checked={reasoningExpandedByDefault}
+                                                onChange={setReasoningExpandedByDefault}
+                                                label={t('settings.openchamber.visual.field.reasoningExpandedByDefault')}
+                                                ariaLabel={t('settings.openchamber.visual.field.reasoningExpandedByDefaultAria')}
                                             />
                                         )}
                                     </SettingsSection>

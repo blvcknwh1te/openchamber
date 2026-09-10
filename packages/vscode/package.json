@@ -74,6 +74,11 @@
         "title": "%command.focusChat.title%"
       },
       {
+        "command": "openchamberBnw.reloadTab",
+        "category": "OpenChamber BNW",
+        "title": "%command.reloadTab.title%"
+      },
+      {
         "command": "openchamberBnw.restartApi",
         "category": "OpenChamber BNW",
         "title": "%command.restartApi.title%"
@@ -209,7 +214,14 @@
           "group": "navigation@1"
         }
       ],
-      "view/title": [
+      "editor/title/context": [
+      {
+        "command": "openchamberBnw.reloadTab",
+        "group": "navigation",
+        "when": "activeWebviewPanelId == openchamberBnw.sessionEditor || activeWebviewPanelId == openchamberBnw.agentManager"
+      }
+    ],
+    "view/title": [
         {
           "command": "openchamberBnw.newSession",
           "when": "view == openchamberBnw.chatView",

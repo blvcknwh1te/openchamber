@@ -2013,6 +2013,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': 'Denkspuren anzeigen',
   'settings.openchamber.visual.field.showReasoningTraces': 'Denkspuren anzeigen',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': 'Zusammenklappbare Denkblöcke aktivieren',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': 'Zusammenklappbare Denkblöcke aktivieren',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': 'Lange Benutzernachrichten einklappen',
   'settings.openchamber.visual.field.collapsibleUserMessages': 'Lange Benutzernachrichten einklappen',

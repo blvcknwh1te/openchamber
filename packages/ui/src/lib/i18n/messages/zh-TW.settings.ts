@@ -1975,6 +1975,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': '顯示推理軌跡',
   'settings.openchamber.visual.field.showReasoningTraces': '顯示推理軌跡',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': '啟用可摺疊推理區塊',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': '啟用可摺疊推理區塊',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': '收合較長的使用者訊息',
   'settings.openchamber.visual.field.collapsibleUserMessages': '收合較長的使用者訊息',

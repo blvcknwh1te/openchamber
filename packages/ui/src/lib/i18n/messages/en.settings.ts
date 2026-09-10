@@ -2091,6 +2091,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': 'Show reasoning traces',
   'settings.openchamber.visual.field.showReasoningTraces': 'Show Reasoning Traces',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': 'Enable collapsible reasoning blocks',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': 'Enable Collapsible Reasoning Blocks',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': 'Collapse long user messages',
   'settings.openchamber.visual.field.collapsibleUserMessages': 'Collapse Long User Messages',

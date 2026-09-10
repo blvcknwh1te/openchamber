@@ -477,6 +477,7 @@ const ReasoningPart = React.memo(({
     streamPhase,
 }: ReasoningPartProps) => {
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
+    const reasoningExpandedByDefault = useUIStore((state) => state.reasoningExpandedByDefault);
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
     const textContent = React.useMemo(() => cleanReasoningText(rawText), [rawText]);
@@ -511,6 +512,7 @@ const ReasoningPart = React.memo(({
             blockId={part.id || `${messageId}-reasoning`}
             time={time}
             isStreaming={isStreaming}
+            defaultExpanded={reasoningExpandedByDefault || undefined}
         />
     );
 });

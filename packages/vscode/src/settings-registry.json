@@ -233,6 +233,9 @@
     "collapsibleThinkingBlocks": {
       "scope": "profile"
     },
+    "reasoningExpandedByDefault": {
+      "scope": "profile"
+    },
     "showTextJustificationActivity": {
       "scope": "profile"
     },

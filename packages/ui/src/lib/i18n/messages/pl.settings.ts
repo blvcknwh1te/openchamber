@@ -1126,6 +1126,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': 'Pokaż ślady rozumowania',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': 'Włącz zwijalne bloki rozumowania',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': 'Włącz zwijalne bloki rozumowania',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleUserMessages': 'Zwijaj długie wiadomości użytkownika',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': 'Zwijaj długie wiadomości użytkownika',
   'settings.openchamber.visual.field.showSplitAssistantMessageActions': 'Akcje asystenta w treści',

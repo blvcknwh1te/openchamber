@@ -2101,6 +2101,8 @@ export const settingsDict = {
   'settings.openchamber.visual.field.showReasoningTracesAria': '推論トレースを表示',
   'settings.openchamber.visual.field.showReasoningTraces': '推論トレースを表示',
   'settings.openchamber.visual.field.collapsibleThinkingBlocksAria': '折りたたみ可能な推論ブロックを有効化',
+  'settings.openchamber.visual.field.reasoningExpandedByDefault': 'Thinking expanded by default',
+  'settings.openchamber.visual.field.reasoningExpandedByDefaultAria': 'Expand thinking blocks by default',
   'settings.openchamber.visual.field.collapsibleThinkingBlocks': '折りたたみ可能な推論ブロックを有効化',
   'settings.openchamber.visual.field.collapsibleUserMessagesAria': '長いユーザーメッセージを折りたたむ',
   'settings.openchamber.visual.field.collapsibleUserMessages': '長いユーザーメッセージを折りたたむ',

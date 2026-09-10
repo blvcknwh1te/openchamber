@@ -111,8 +111,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this._extensionUri, distUri],
     };
 
-    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-    // Send theme payload (including optional Shiki theme JSON) after the webview is set up.
+    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);// Send theme payload (including optional Shiki theme JSON) after the webview is set up.
     void this.updateTheme(vscode.window.activeColorTheme.kind);
 
     // Send cached connection status and API URL (may have been set before webview was resolved)
@@ -686,7 +685,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return { id, type, success: true, data: { stopped: true } };
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview) {
+    // [OC-PATCH: reload-tab] Assigning html reloads the webview iframe, so it
+    // picks up fresh theme/CSS injections from disk.
+    public reloadWebview(): void {
+        if (this._view) {
+            this._view.webview.html = this._getHtmlForWebview(this._view.webview);
+        }
+    }
+
+    private _getHtmlForWebview(webview: vscode.Webview) {
     const workspaceFolder = normalizeWindowsDriveLetter(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ''
     );

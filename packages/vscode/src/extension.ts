@@ -307,6 +307,20 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // [OC-PATCH: reload-tab] Tab context menu: reload webview(s) + OpenCode API.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('openchamberBnw.reloadTab', async () => {
+      try {
+        sessionEditorProvider?.reloadWebviews();
+        chatViewProvider?.reloadWebview();
+        await openCodeManager?.restart();
+        vscode.window.showInformationMessage(t('OpenChamber: webview + API reloaded'));
+      } catch (e) {
+        vscode.window.showErrorMessage(t('OpenChamber: Failed to reload - {0}', String(e)));
+      }
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('openchamberBnw.addToContext', async () => {
       const editor = vscode.window.activeTextEditor;

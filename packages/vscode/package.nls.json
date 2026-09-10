@@ -19,5 +19,6 @@
   "command.showSettings.title": "Settings",
   "command.attachExplorerToChat.title": "Attach to OpenChamber Chat",
   "configuration.apiUrl.description": "URL of an external OpenCode API server. Leave empty to auto-start a local instance.",
-  "configuration.opencodeBinary.description": "Optional absolute path to the opencode CLI binary. Useful if PATH lookup fails. Requires window reload or API restart to apply."
+  "configuration.opencodeBinary.description": "Optional absolute path to the opencode CLI binary. Useful if PATH lookup fails. Requires window reload or API restart to apply.",
+  "command.reloadTab.title": "Reload (webview + API)"
 }

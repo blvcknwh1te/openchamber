@@ -648,7 +648,15 @@ export class SessionEditorPanelProvider {
     return { id, type, success: true, data: { stopped: true } };
   }
 
-  private _getHtmlForWebview(webview: vscode.Webview, sessionId: string | null) {
+    // [OC-PATCH: reload-tab] Assigning html reloads each webview iframe, so it
+    // picks up fresh theme/CSS injections from disk.
+    public reloadWebviews(): void {
+        for (const entry of this._panels.values()) {
+            entry.panel.webview.html = this._getHtmlForWebview(entry.panel.webview, entry.sessionId);
+        }
+    }
+
+    private _getHtmlForWebview(webview: vscode.Webview, sessionId: string | null) {
     const workspaceFolder = normalizeWindowsDriveLetter(
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ''
     );
