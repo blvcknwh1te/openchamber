@@ -1,31 +1,38 @@
 /*
   Пользовательский CSS OpenChamber (VS Code webview).
-  Инжектируется расширением в webview и имеет приоритет над темой
-  (тема переприменяется, но этот файл переносится в конец <head>).
-  Правь значения здесь -> Reload Window или кнопка refresh на вкладке BNW.
+  Инжектируется расширением в webview и имеет приоритет над темой.
+  Правки применяются на лету (watcher), либо Reload Window / кнопка refresh.
 */
 :root {
   /* Горизонтальный отступ колонок чата (сообщения / инпут / контейнер) */
   --chat-inline-pad: 1.2em !important;
 
-  /* Основной текст чата — ярче tool-блоков и thinking */
-  --chat-assistant-message: #FFFDF5 !important;
-  --chat-user-message: #F2EEE0 !important;
-  --chat-assistant-message-bg: #100F0F !important;
-  --chat-user-message-bg: #2d1d15 !important;
+  /* Основной текст чата — яркий нейтральный, контраст держим за счёт
+     приглушённых вторичных цветов (без коричневого подтона Flexoki) */
+  --chat-assistant-message: #f7f7f7 !important;
+  --chat-user-message: #eaeaea !important;
+  --chat-assistant-message-bg: #101012 !important;
+  --chat-user-message-bg: #232326 !important;
+  --chat-background: #101012 !important;
 
   /* Вторичное: tool-блоки, thinking, таймстампы, разделители */
-  --tools-title: #9A958B !important;
-  --tools-description: #615E56 !important;
-  --tools-icon: #6E6B60 !important;
-  --chat-timestamp: #6E6B60 !important;
-  --chat-divider: #343331 !important;
+  --tools-background: #17171a !important;
+  --tools-title: #a6a6a6 !important;
+  --tools-description: #757575 !important;
+  --tools-icon: #757575 !important;
+  --chat-timestamp: #757575 !important;
+  --chat-divider: #2a2a2c !important;
 
   /* Общие foreground-переменные (текст UI, приглушённый текст) */
-  --foreground: #E8E4D9 !important;
-  --muted-foreground: #7A766C !important;
-  --surface-muted-foreground: #7A766C !important;
-  --background: #100F0F !important;
+  --background: #101012 !important;
+  --foreground: #e6e6e6 !important;
+  --muted-foreground: #8c8c8c !important;
+  --surface-muted-foreground: #8c8c8c !important;
+
+  /* Markdown-заголовки — нейтральные, от белого к светло-серому */
+  --markdown-heading1: #ffffff !important;
+  --markdown-heading2: #f2f2f2 !important;
+  --markdown-heading3: #e6e6e6 !important;
 
   /* Шрифты */
   --font-sans: "Source Sans 3", sans-serif !important;

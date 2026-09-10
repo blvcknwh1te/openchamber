@@ -3,6 +3,7 @@ import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { CustomAssetsWatcher } from './customAssetsWatcher';
+import { OpenCodeConfigWatcher } from './opencodeConfigWatcher';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
 import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider } from './sessionActivityWatcher';
 import { pathsEqualWithNormalizedDriveLetter } from './pathUtils';
@@ -221,6 +222,15 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   customAssetsWatcher.start();
   context.subscriptions.push(customAssetsWatcher);
+
+  // [OC-PATCH: opencode-config-live] Restart the managed opencode server when
+  // opencode.json(c) (global or project) changes on disk, so config edits are
+  // picked up without manual "Reload OpenCode".
+  const opencodeConfigWatcher = new OpenCodeConfigWatcher(context, async () => {
+    await openCodeManager?.restart();
+  });
+  opencodeConfigWatcher.start();
+  context.subscriptions.push(opencodeConfigWatcher);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('openchamberBnw.internal.settingsSynced', (settings: unknown) => {
