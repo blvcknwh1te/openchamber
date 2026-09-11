@@ -250,7 +250,7 @@ const fakeUseUIStore = Object.assign(
 mock.module('@/stores/useUIStore', () => ({ useUIStore: fakeUseUIStore }));
 mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null }));
 mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ editor: undefined, runtime: { isVSCode: false } }) }));
-mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false }));
+mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false, revealDesktopPath: async () => false }));
 mock.module('@/lib/runtimeSurface', () => ({ isMobileSurfaceRuntime: () => false }));
 mock.module('@/lib/outsideFileGrants', () => ({ ensureOutsideFileGrantForDesktop: async () => undefined }));
 mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => true, toAbsoluteFilePath: () => '' }));
@@ -441,6 +441,16 @@ describe('parseFileReference', () => {
             line: 5,
             endLine: 9,
         });
+    });
+
+    test('parses absolute Windows directory path with spaces', () => {
+        expect(parse('D:\\Temp\\Work\\Experiments\\OpenCode blacknwhite FORK')).toEqual({
+            path: 'D:\\Temp\\Work\\Experiments\\OpenCode blacknwhite FORK',
+        });
+    });
+
+    test('parses absolute Windows file path with backslashes and line', () => {
+        expect(parse('C:\\repo\\src\\a.ts:12')).toEqual({ path: 'C:\\repo\\src\\a.ts', line: 12 });
     });
 
     test('preserves line:col form (does not interpret as range)', () => {

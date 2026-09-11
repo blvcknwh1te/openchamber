@@ -16,7 +16,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
-import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, revealDesktopPath } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
@@ -43,13 +43,14 @@ import { findTextPosition } from './markdown/textPosition';
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import {
   BLOCK_PATH_TOKEN_RE,
+  WINDOWS_ABSOLUTE_PATH_TOKEN_RE,
   isAbsoluteReferencePath,
   localPathFromFileUrl,
   normalizeReferencePath,
   parseFileReference,
   type ParsedFileReference,
 } from './fileReferenceParser';
-import { fileReferenceExists } from './fileReferenceStat';
+import { fileReferenceStat } from './fileReferenceStat';
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 import { detachedMarkdownDomCache, type DetachedMarkdownDomKey } from './markdown/detachedMarkdownDomCache';
 import { TimelineRevealGateContext } from './timelineRevealGate';
@@ -161,12 +162,14 @@ const toAbsolutePath = (basePath: string, targetPath: string): string => {
 };
 
 const hasFileExtension = (path: string): boolean => {
-  const base = path.split('/').filter(Boolean).pop() ?? '';
+  const base = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
   if (!base || base.endsWith('.')) {
     return false;
   }
   return /\.[A-Za-z0-9_-]{1,16}$/.test(base);
 };
+
+const RELATIVE_PATH_ANCHOR_RE = /^(?:\.{1,2}[\\/]|~[\\/])/;
 
 const isLikelyFilePathValue = (path: string): boolean => {
   if (!path || path.startsWith('--') || path.includes('://')) {
@@ -187,8 +190,21 @@ const isLikelyFilePathValue = (path: string): boolean => {
   if (KNOWN_FILE_BASENAMES.has(base) || (base.startsWith('.') && base.length > 1)) {
     return true;
   }
+  if (hasFileExtension(normalized)) {
+    return true;
+  }
 
-  return hasFileExtension(normalized);
+  // Extension-less references may still be real directories: an absolute path,
+  // a relative path with an explicit anchor (`./`, `../`, `~/`), or a path with
+  // at least two separators. The existence probe still decides whether the
+  // candidate becomes a link.
+  if (isAbsolutePath(normalized)) {
+    return true;
+  }
+  if (RELATIVE_PATH_ANCHOR_RE.test(normalized)) {
+    return true;
+  }
+  return (normalized.match(/\//g)?.length ?? 0) >= 2;
 };
 
 const isLikelyFilePath = (value: string): boolean => {
@@ -197,6 +213,36 @@ const isLikelyFilePath = (value: string): boolean => {
     return false;
   }
   return isLikelyFilePathValue(parsed.path);
+};
+
+// Runs both path matchers over a text run and de-overlaps the results. The
+// block matcher requires a file extension; the Windows matcher covers
+// extension-less absolute directories. When both match the same span, the
+// earlier (and, on a tie, longer) match wins.
+const collectPathMatches = (text: string): Array<{ start: number; end: number; raw: string }> => {
+  const found: Array<{ start: number; end: number; raw: string }> = [];
+  for (const pattern of [BLOCK_PATH_TOKEN_RE, WINDOWS_ABSOLUTE_PATH_TOKEN_RE]) {
+    pattern.lastIndex = 0;
+    let match = pattern.exec(text);
+    while (match) {
+      const raw = match[0];
+      if (raw && isLikelyFilePath(raw)) {
+        found.push({ start: match.index, end: match.index + raw.length, raw });
+      }
+      match = pattern.exec(text);
+    }
+  }
+
+  found.sort((left, right) => left.start - right.start || right.end - left.end);
+  const merged: Array<{ start: number; end: number; raw: string }> = [];
+  for (const candidate of found) {
+    const previous = merged[merged.length - 1];
+    if (previous && candidate.start < previous.end) {
+      continue;
+    }
+    merged.push(candidate);
+  }
+  return merged;
 };
 
 const unwrapBlockCodePathTokens = (container: HTMLElement): void => {
@@ -231,7 +277,7 @@ const extractPathCandidateFromElement = (element: HTMLElement): string => {
 // looks like a `path[:line[:col]]` reference in a span carrying
 // `data-openchamber-block-path-token`. `annotateFileLinks` then promotes those
 // spans into clickable file links via the same existing pipeline used for
-// inline code (parseFileReference → fileReferenceExists → openFileReference).
+// inline code (parseFileReference → fileReferenceStat → openFileReference).
 //
 // Idempotent: each `<code>` node is marked with
 // `data-openchamber-block-paths-scanned` once processed so the walk is not
@@ -272,21 +318,12 @@ const wrapBlockCodePathTokens = (container: HTMLElement): void => {
     }
 
     const fullText = getMarkdownCodeText(codeBlock);
-    if (!fullText.includes('.')) {
+    if (!fullText.includes('.') && !fullText.includes('\\')) {
       codeBlock.setAttribute(CODE_BLOCK_PATH_SCANNED_ATTR, 'true');
       continue;
     }
 
-    BLOCK_PATH_TOKEN_RE.lastIndex = 0;
-    const matches: Array<{ start: number; end: number; raw: string }> = [];
-    let match: RegExpExecArray | null = BLOCK_PATH_TOKEN_RE.exec(fullText);
-    while (match) {
-      const raw = match[0];
-      if (raw && isLikelyFilePath(raw)) {
-        matches.push({ start: match.index, end: match.index + raw.length, raw });
-      }
-      match = BLOCK_PATH_TOKEN_RE.exec(fullText);
-    }
+    const matches = collectPathMatches(fullText);
 
     for (const { start, end, raw } of matches.reverse()) {
       const startPosition = findTextPosition(textNodes, start, 'right');
@@ -346,7 +383,7 @@ const wrapProsePathTokens = (container: HTMLElement): void => {
     const textNode = node as Text;
     const parent = textNode.parentElement;
     const value = textNode.data;
-    if (parent && value && value.includes('.') && value.length <= MAX_BLOCK_CODE_SCAN_LENGTH
+    if (parent && value && (value.includes('.') || value.includes('\\')) && value.length <= MAX_BLOCK_CODE_SCAN_LENGTH
       && !parent.closest(PROSE_PATH_EXCLUDE_SELECTOR)) {
       textNodes.push(textNode);
     }
@@ -354,17 +391,7 @@ const wrapProsePathTokens = (container: HTMLElement): void => {
   }
 
   for (const textNode of textNodes) {
-    const value = textNode.data;
-    BLOCK_PATH_TOKEN_RE.lastIndex = 0;
-    const matches: Array<{ start: number; end: number; raw: string }> = [];
-    let match: RegExpExecArray | null = BLOCK_PATH_TOKEN_RE.exec(value);
-    while (match) {
-      const raw = match[0];
-      if (raw && isLikelyFilePath(raw)) {
-        matches.push({ start: match.index, end: match.index + raw.length, raw });
-      }
-      match = BLOCK_PATH_TOKEN_RE.exec(value);
-    }
+    const matches = collectPathMatches(textNode.data);
 
     for (const { start, end, raw } of matches.reverse()) {
       const tokenNode = textNode.splitText(start);
@@ -405,12 +432,14 @@ const useFileReferenceInteractions = ({
   effectiveDirectory,
   editor,
   preferRuntimeEditor,
+  revealPath,
   enabled,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
+  revealPath?: (path: string) => Promise<{ success: boolean }>;
   enabled: boolean;
 }) => {
   const annotationDebounceRef = React.useRef<number | null>(null);
@@ -431,7 +460,7 @@ const useFileReferenceInteractions = ({
     const fileReferenceLinkLimit = getFileReferenceLinkLimit();
     // On mobile surfaces, file-reference highlighting is disabled entirely — not
     // just visually. The annotation pass is what issues the filesystem `stat`
-    // probes (fileReferenceExists → /api/fs/stat), so skipping it here guarantees
+    // probes (fileReferenceStat → /api/fs/stat), so skipping it here guarantees
     // no probe requests are ever sent from a mobile runtime.
     const fileReferencesEnabled = enabled && !isMobileSurfaceRuntime();
 
@@ -439,7 +468,9 @@ const useFileReferenceInteractions = ({
       candidate.removeAttribute('data-openchamber-file-link');
       candidate.removeAttribute('data-openchamber-file-ref');
       candidate.removeAttribute('data-openchamber-file-path');
-      if (candidate.getAttribute('title') === 'Open file') {
+      candidate.removeAttribute('data-openchamber-file-dir');
+      const title = candidate.getAttribute('title');
+      if (title === 'Open file' || title === 'Open folder') {
         candidate.removeAttribute('title');
       }
       if (candidate.tagName.toLowerCase() !== 'a') {
@@ -520,11 +551,11 @@ const useFileReferenceInteractions = ({
         const canGrantOutsideFile = isDesktopShell()
           && isDesktopLocalOriginActive()
           && !isFilePathWithinDirectory(resolved.resolvedPath, effectiveDirectory);
-        const existsPromise = canGrantOutsideFile
-          ? Promise.resolve(true)
-          : fileReferenceExists(resolved.resolvedPath, effectiveDirectory);
+        const statPromise = canGrantOutsideFile
+          ? Promise.resolve({ exists: true, isDirectory: false })
+          : fileReferenceStat(resolved.resolvedPath, effectiveDirectory);
 
-        void existsPromise.then((exists) => {
+        void statPromise.then(({ exists, isDirectory }) => {
           if (cancelled || !exists || !container.contains(candidate)) {
             return;
           }
@@ -538,7 +569,12 @@ const useFileReferenceInteractions = ({
           candidate.setAttribute('data-openchamber-file-link', 'true');
           candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
           candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
-          candidate.setAttribute('title', 'Open file');
+          if (isDirectory) {
+            candidate.setAttribute('data-openchamber-file-dir', 'true');
+            candidate.setAttribute('title', 'Open folder');
+          } else {
+            candidate.setAttribute('title', 'Open file');
+          }
           if (candidate.tagName.toLowerCase() !== 'a') {
             candidate.setAttribute('role', 'button');
             candidate.setAttribute('tabindex', '0');
@@ -551,6 +587,17 @@ const useFileReferenceInteractions = ({
       const raw = sourceElement.getAttribute('data-openchamber-file-ref') || extractPathCandidateFromElement(sourceElement);
       const resolved = getResolvedReference(raw, effectiveDirectory);
       if (!resolved) {
+        return;
+      }
+
+      if (sourceElement.getAttribute('data-openchamber-file-dir') === 'true') {
+        if (revealPath) {
+          const result = await revealPath(resolved.resolvedPath).catch(() => null);
+          if (result?.success) {
+            return;
+          }
+        }
+        await revealDesktopPath(resolved.resolvedPath);
         return;
       }
 
@@ -648,7 +695,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, enabled]);
+  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, revealPath, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1251,7 +1298,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   if (isStreaming) streamPerfCount('ui.markdown_renderer.render.streaming');
   streamPerfObserve('ui.markdown_renderer.content_len', content.length);
   const currentTheme = useCurrentMermaidTheme();
-  const { editor, runtime } = useRuntimeAPIs();
+  const { editor, files, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const openContextPreview = useUIStore((state) => state.openContextPreview);
@@ -1274,6 +1321,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
+    revealPath: files?.revealPath,
     enabled: enableFileReferences && !isStreaming,
   });
   useLinkInteractions({ containerRef });
@@ -1374,7 +1422,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   allowMermaidWheelEvents = false,
   enableFileReferences = true,
 }) => {
-  const { editor, runtime } = useRuntimeAPIs();
+  const { editor, files, runtime } = useRuntimeAPIs();
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
@@ -1396,6 +1444,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
     effectiveDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
+    revealPath: files?.revealPath,
     enabled: enableFileReferences,
   });
   useLinkInteractions({ containerRef, enabled: !disableLinkSafety });

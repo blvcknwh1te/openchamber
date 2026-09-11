@@ -50,7 +50,7 @@ The webview build emits each worker as one self-contained file. VS Code webviews
 
 - `bridge-localfs-proxy-runtime.ts`
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.
-  - `/api/fs/directory-stat` returns 501 locally. Directory-availability probes remain unknown in VS Code rather than falling through to OpenCode.
+  - `/api/fs/directory-stat` answers locally: a directory returns 200 `{ path, isDirectory: true }`, a file returns 400 `not-directory`, and an optional 404 miss returns 200 `{ exists: false }`. The route stays inside this runtime rather than falling through to OpenCode.
   - Workspace-contained Markdown gallery images use these local filesystem
     routes without calling the server grant route. Grant requests for OpenCode
     temporary-directory images return an explicit unsupported response instead

@@ -170,11 +170,13 @@ export const parseFileReference = (value: string): ParsedFileReference | null =>
 // output. Requires a file extension (1-8 alphanumerics) so plain words don't
 // qualify; the path itself must contain at least one extension-bearing
 // segment. The line suffix is either `:N`, `:N:M`, or `:N-M` (range); col and
-// range are mutually exclusive.
-//
-// Known limitation: backslash-separated Windows paths (e.g.
-// `C:\Users\test\file.ts:12`) are not matched because the path character class
-// does not include `\`. Compiler output inside fenced code blocks predominantly
-// uses forward slashes, so this is a niche gap. The inline-code pipeline is not
-// affected — it reads full text content rather than matching with a regex.
-export const BLOCK_PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/])?[\w.\-/@+]*[\w\-/@+]\.[A-Za-z0-9]{1,8}(?::\d+(?:-\d+)?(?::\d+)?)?/g;
+// range are mutually exclusive. Both `/` and `\` separators are accepted so
+// Windows compiler output (`C:\Users\test\file.ts:12`) is covered.
+export const BLOCK_PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/])?[\w.\-\\/@+]*[\w\-\\/@+]\.[A-Za-z0-9]{1,8}(?::\d+(?:-\d+)?(?::\d+)?)?/g;
+
+// Absolute Windows paths with backslashes and no required extension, so
+// extension-less directories (`D:\Temp\Work\Experiments\OpenCode blacknwhite FORK`)
+// can be matched too. Directory segments may contain single spaces
+// (`C:\Program Files\App`); the final segment stays space-free so a match stops
+// before trailing prose instead of swallowing it.
+export const WINDOWS_ABSOLUTE_PATH_TOKEN_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\s]+/g;

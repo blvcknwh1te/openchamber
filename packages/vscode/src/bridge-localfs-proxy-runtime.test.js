@@ -1,15 +1,17 @@
 import { describe, expect, it, mock } from 'bun:test';
 
 const existingFiles = new Set();
+const existingDirectories = new Set();
 const fsPromises = {
   realpath: mock(async (filePath) => {
-    if (existingFiles.has(filePath)) return filePath;
+    if (existingFiles.has(filePath) || existingDirectories.has(filePath)) return filePath;
     const error = new Error('missing');
     error.code = 'ENOENT';
     throw error;
   }),
   stat: mock(async (filePath) => {
-    if (existingFiles.has(filePath)) return { isFile: () => true, size: 4, mtimeMs: 1 };
+    if (existingDirectories.has(filePath)) return { isFile: () => false, isDirectory: () => true, size: 0, mtimeMs: 1 };
+    if (existingFiles.has(filePath)) return { isFile: () => true, isDirectory: () => false, size: 4, mtimeMs: 1 };
     const error = new Error('missing');
     error.code = 'ENOENT';
     throw error;
@@ -61,9 +63,32 @@ describe('bridge local fs proxy', () => {
     expect(response?.status).toBe(404);
   });
 
-  it('does not forward directory availability probes to OpenCode', async () => {
-    const response = await tryHandleLocalFsProxy('GET', '/api/fs/directory-stat?path=%2Fmissing-dir');
-    expect(response?.status).toBe(501);
+  it('answers a directory availability probe locally', async () => {
+    existingDirectories.add('/workspace-two/src');
+    const response = await tryHandleLocalFsProxy('GET', '/api/fs/directory-stat?path=%2Fworkspace-two%2Fsrc&directory=%2Fworkspace-two');
+
+    expect(response?.status).toBe(200);
+    expect(JSON.parse(Buffer.from(response?.bodyBase64 ?? '', 'base64').toString('utf8'))).toEqual({
+      path: '/workspace-two/src',
+      isDirectory: true,
+    });
+  });
+
+  it('rejects a file passed to the directory availability probe', async () => {
+    existingFiles.add('/workspace/readme.md');
+    const response = await tryHandleLocalFsProxy('GET', '/api/fs/directory-stat?path=%2Fworkspace%2Freadme.md&directory=%2Fworkspace');
+
+    expect(response?.status).toBe(400);
+  });
+
+  it('returns a quiet optional directory miss', async () => {
+    const response = await tryHandleLocalFsProxy('GET', '/api/fs/directory-stat?path=%2Fmissing-dir&optional=true');
+
+    expect(response?.status).toBe(200);
+    expect(JSON.parse(Buffer.from(response?.bodyBase64 ?? '', 'base64').toString('utf8'))).toEqual({
+      path: '/missing-dir',
+      exists: false,
+    });
   });
 
   it('reads from the active directory when it is the second workspace root', async () => {

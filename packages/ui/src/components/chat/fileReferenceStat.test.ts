@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { fileReferenceExists } from './fileReferenceStat';
+import { fileReferenceExists, fileReferenceStat } from './fileReferenceStat';
 
 const originalFetch = globalThis.fetch;
 
@@ -52,7 +52,13 @@ describe('fileReferenceExists directory scoping (issue 3019)', () => {
 
     expect(rejectedUnderA).toBe(false);
     expect(acceptedUnderB).toBe(true);
-    expect(calls).toHaveLength(2);
+    // The rejected stat probe falls back to directory-stat under /repo-a, then
+    // the /repo-b probe is a fresh stat because the cache key includes the
+    // directory.
+    expect(calls).toHaveLength(3);
+    expect(calls[0].url).toBe(`/api/fs/stat?path=${encodeURIComponent('/repo-b/lib/main.ts')}&optional=true`);
+    expect(calls[1].url).toBe(`/api/fs/directory-stat?path=${encodeURIComponent('/repo-b/lib/main.ts')}&optional=true`);
+    expect(calls[2].url).toBe(`/api/fs/stat?path=${encodeURIComponent('/repo-b/lib/main.ts')}&optional=true`);
   });
 
   test('serves a repeated probe under the same directory from the cache', async () => {
@@ -63,5 +69,55 @@ describe('fileReferenceExists directory scoping (issue 3019)', () => {
 
     expect(warm).toBe(true);
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('fileReferenceStat classification', () => {
+  test('keeps a file probe off the directory fallback', async () => {
+    stubFetchWith(() => new Response(JSON.stringify({ path: '/repo/src/a.ts', isFile: true, size: 12 }), { status: 200 }));
+
+    const result = await fileReferenceStat('/repo/src/a.ts', '/repo');
+
+    expect(result).toEqual({ exists: true, isDirectory: false });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('classifies a directory through the directory-stat fallback', async () => {
+    stubFetchWith(() => {
+      const url = calls[calls.length - 1]?.url ?? '';
+      return url.startsWith('/api/fs/stat')
+        ? new Response(JSON.stringify({ error: 'Specified path is not a file' }), { status: 400 })
+        : new Response(JSON.stringify({ isDirectory: true }), { status: 200 });
+    });
+
+    const result = await fileReferenceStat('/repo/src', '/repo');
+
+    expect(result).toEqual({ exists: true, isDirectory: true });
+    expect(calls.map((call) => call.url)).toEqual([
+      `/api/fs/stat?path=${encodeURIComponent('/repo/src')}&optional=true`,
+      `/api/fs/directory-stat?path=${encodeURIComponent('/repo/src')}&optional=true`,
+    ]);
+  });
+
+  test('reports a missing path without a directory fallback', async () => {
+    stubFetchWith(() => new Response(JSON.stringify({ path: '/repo/gone', exists: false }), { status: 200 }));
+
+    const result = await fileReferenceStat('/repo/gone', '/repo');
+
+    expect(result).toEqual({ exists: false, isDirectory: false });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('treats a missing directory-stat as not existing', async () => {
+    stubFetchWith(() => {
+      const url = calls[calls.length - 1]?.url ?? '';
+      return url.startsWith('/api/fs/stat')
+        ? new Response(JSON.stringify({ error: 'Specified path is not a file' }), { status: 400 })
+        : new Response(JSON.stringify({ error: 'Directory not found', reason: 'not-found' }), { status: 404 });
+    });
+
+    const result = await fileReferenceStat('/repo/missing', '/repo');
+
+    expect(result).toEqual({ exists: false, isDirectory: false });
   });
 });

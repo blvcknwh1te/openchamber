@@ -40,8 +40,11 @@ const buildProxyJsonError = (status: number, error: string): ApiProxyResponsePay
   bodyBase64: base64EncodeUtf8(JSON.stringify({ error })),
 });
 
-const normalizeFsProxyPath = (pathname: string): '/api/fs/stat' | '/api/fs/read' | '/api/fs/raw' | null => {
+const normalizeFsProxyPath = (
+  pathname: string,
+): '/api/fs/stat' | '/api/fs/directory-stat' | '/api/fs/read' | '/api/fs/raw' | null => {
   if (pathname === '/api/fs/stat' || pathname === '/fs/stat') return '/api/fs/stat';
+  if (pathname === '/api/fs/directory-stat' || pathname === '/fs/directory-stat') return '/api/fs/directory-stat';
   if (pathname === '/api/fs/read' || pathname === '/fs/read') return '/api/fs/read';
   if (pathname === '/api/fs/raw' || pathname === '/fs/raw') return '/api/fs/raw';
   return null;
@@ -56,9 +59,6 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
   }
 
   const fsProxyPath = normalizeFsProxyPath(parsed.pathname);
-  if (parsed.pathname === '/api/fs/directory-stat') {
-    return buildProxyJsonError(501, 'Directory availability probes are not supported in the VS Code runtime');
-  }
   if (/^\/api\/openchamber\/sessions\/[^/]+\/markdown-image-grants$/.test(parsed.pathname)) {
     return buildProxyJsonError(501, 'Markdown image grants are not supported in the VS Code runtime');
   }
@@ -77,7 +77,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
     parsed.searchParams.get('directory') || undefined,
   );
   if (!resolution.ok) {
-    if (fsProxyPath === '/api/fs/stat' && optional && resolution.status === 404) {
+    if ((fsProxyPath === '/api/fs/stat' || fsProxyPath === '/api/fs/directory-stat') && optional && resolution.status === 404) {
       return {
         status: 200,
         headers: {
@@ -92,6 +92,24 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
 
   try {
     const stats = await fs.promises.stat(resolution.resolvedPath);
+
+    if (fsProxyPath === '/api/fs/directory-stat') {
+      if (!stats.isDirectory()) {
+        return buildProxyJsonError(400, 'Specified path is not a directory');
+      }
+      return {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'no-store',
+        },
+        bodyBase64: base64EncodeUtf8(JSON.stringify({
+          path: normalizeFsPath(resolution.resolvedPath),
+          isDirectory: true,
+        })),
+      };
+    }
+
     if (!stats.isFile()) {
       return buildProxyJsonError(400, 'Specified path is not a file');
     }
@@ -136,7 +154,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err?.code === 'ENOENT') {
-      if (fsProxyPath === '/api/fs/stat' && optional) {
+      if ((fsProxyPath === '/api/fs/stat' || fsProxyPath === '/api/fs/directory-stat') && optional) {
         return {
           status: 200,
           headers: {
@@ -146,10 +164,13 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
           bodyBase64: base64EncodeUtf8(JSON.stringify({ path: targetPath, exists: false })),
         };
       }
-      return buildProxyJsonError(404, 'File not found');
+      return buildProxyJsonError(404, fsProxyPath === '/api/fs/directory-stat' ? 'Directory not found' : 'File not found');
     }
     if (fsProxyPath === '/api/fs/stat') {
       return buildProxyJsonError(500, 'Unable to stat file');
+    }
+    if (fsProxyPath === '/api/fs/directory-stat') {
+      return buildProxyJsonError(500, 'Unable to stat directory');
     }
     return buildProxyJsonError(500, 'Unable to read file');
   }
