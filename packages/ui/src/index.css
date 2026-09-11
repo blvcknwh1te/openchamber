@@ -1237,13 +1237,17 @@ html:not(.dark) .chat-scroll {
    this to the arrow cursor through `html.desktop-runtime` below. */
 html:not(.desktop-runtime) .markdown-content a,
 html:not(.desktop-runtime) .markdown-content [data-openchamber-file-link="true"],
-html:not(.desktop-runtime) .markdown-content [role="button"] {
+html:not(.desktop-runtime) .markdown-content [role="button"],
+html.vscode-runtime .markdown-content a,
+html.vscode-runtime .markdown-content [data-openchamber-file-link="true"],
+html.vscode-runtime .markdown-content [role="button"] {
   cursor: pointer;
 }
 
 /* A URL written inside inline code is marked by the renderer as clickable;
    give it the same link look as an anchor. */
-html:not(.desktop-runtime) .markdown-content [data-openchamber-external-link] {
+html:not(.desktop-runtime) .markdown-content [data-openchamber-external-link],
+html.vscode-runtime .markdown-content [data-openchamber-external-link] {
   cursor: pointer;
   color: var(--markdown-link, var(--primary));
   text-decoration: underline;
@@ -1919,14 +1923,14 @@ textarea[data-terminal-hidden-input="true"]::placeholder {
    for clickable controls, not the web's hand/pointer. Neutralize pointer
    cursors under the desktop runtime only — web in a browser keeps them.
    Resize/grab/text cursors are untouched. */
-html.desktop-runtime
+html.desktop-runtime:not(.vscode-runtime)
   :where(button, [role="button"], a[href], summary, label[for]):not(:disabled):not([aria-disabled="true"]) {
   cursor: default;
 }
-html.desktop-runtime [class*="cursor-pointer"] {
+html.desktop-runtime:not(.vscode-runtime) [class*="cursor-pointer"] {
   cursor: default !important;
 }
-html.desktop-runtime .markdown-content [data-openchamber-file-link="true"] {
+html.desktop-runtime:not(.vscode-runtime) .markdown-content [data-openchamber-file-link="true"] {
   cursor: default;
 }
 

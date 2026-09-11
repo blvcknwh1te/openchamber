@@ -240,7 +240,7 @@
     },
     "packages/vscode": {
       "name": "openchamber-bnw",
-      "version": "1.23.0-bnw.9",
+      "version": "1.23.0-bnw.14",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode-ai/sdk": "1.18.30",

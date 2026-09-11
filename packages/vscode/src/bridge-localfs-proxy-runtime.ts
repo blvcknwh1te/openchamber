@@ -1,5 +1,25 @@
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { getFsMimeType, normalizeFsPath, resolveFileReadPath, type FsReadPathResolution } from './bridge-fs-helpers-runtime';
+
+// [OC-DEBUG: fileref] Opt-in diagnostics for file/dir link resolution. Set
+// OPENCHAMBER_FILEREF_DEBUG=1 (user environment) and restart VS Code to append
+// every `fs/stat` / `fs/directory-stat` probe and its resolution to
+// ~/.config/openchamber/fileref-debug.log. Disabled by default.
+const FILEREF_DEBUG = process.env.OPENCHAMBER_FILEREF_DEBUG === '1';
+const debugLog = (line: string): void => {
+  if (!FILEREF_DEBUG) {
+    return;
+  }
+  try {
+    const dir = path.join(os.homedir(), '.config', 'openchamber');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'fileref-debug.log'), `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // diagnostics are best-effort
+  }
+};
 
 type ApiProxyResponsePayload = {
   status: number;
@@ -66,6 +86,9 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
     return null;
   }
 
+  const debugFs = fsProxyPath === '/api/fs/stat' || fsProxyPath === '/api/fs/directory-stat';
+  if (debugFs) debugLog(`req ${fsProxyPath} ${requestPath}`);
+
   if (method !== 'GET' && method !== 'HEAD') {
     return buildProxyJsonError(405, 'Method not allowed');
   }
@@ -76,6 +99,7 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
     targetPath,
     parsed.searchParams.get('directory') || undefined,
   );
+  if (debugFs) debugLog(`res ${resolution.ok ? `ok path=${resolution.resolvedPath}` : `fail status=${resolution.status} error=${resolution.error}`} target=${targetPath}`);
   if (!resolution.ok) {
     if ((fsProxyPath === '/api/fs/stat' || fsProxyPath === '/api/fs/directory-stat') && optional && resolution.status === 404) {
       return {
