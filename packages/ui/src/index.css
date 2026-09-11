@@ -1212,6 +1212,7 @@ html:not(.dark) .chat-scroll {
   color: var(--markdown-link, var(--primary));
   text-decoration: underline;
   text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .markdown-content a:not([data-openchamber-agent-mention="true"]):not([data-skill-name]):hover {

@@ -248,6 +248,10 @@ const fakeUseUIStore = Object.assign(
     { getState: () => rendererUiState },
 );
 mock.module('@/stores/useUIStore', () => ({ useUIStore: fakeUseUIStore }));
+mock.module('@/stores/useDirectoryStore', () => ({
+  useDirectoryStore: (selector: (state: { homeDirectory: string; directoryHistory: string[] }) => unknown) =>
+    selector({ homeDirectory: '', directoryHistory: [] }),
+}));
 mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null }));
 mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ editor: undefined, runtime: { isVSCode: false } }) }));
 mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false, revealDesktopPath: async () => false }));

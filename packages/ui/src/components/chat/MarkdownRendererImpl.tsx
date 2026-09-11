@@ -13,6 +13,7 @@ import { attachAppLinkInteractions } from './appLinkInteractions';
 import type { ToolPopupContent } from './message/types';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { useUIStore } from '@/stores/useUIStore';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
@@ -430,6 +431,7 @@ const getContextDirectory = (effectiveDirectory: string, resolvedPath: string): 
 const useFileReferenceInteractions = ({
   containerRef,
   effectiveDirectory,
+  fallbackDirectories,
   editor,
   preferRuntimeEditor,
   revealPath,
@@ -437,6 +439,7 @@ const useFileReferenceInteractions = ({
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
+  fallbackDirectories?: string[];
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
   revealPath?: (path: string) => Promise<{ success: boolean }>;
@@ -449,11 +452,25 @@ const useFileReferenceInteractions = ({
     if (!container) {
       return;
     }
-    // Wait for the real directory: annotating against an empty/fallback
-    // directory issues stat probes under the wrong cache key (and the wrong
-    // server directory), and the pass reruns anyway once the directory
-    // resolves — every link ended up verified twice.
-    if (enabled && !effectiveDirectory) {
+    // Probe the session directory first, then the workspace/recent directories:
+    // a path written relative to a project root that differs from the session
+    // directory (common when the workspace folder is a parent of the repo) still
+    // resolves. Existence still gates the link, so a wrong base only costs a
+    // probe.
+    const baseDirectories = (() => {
+      const seen = new Set<string>();
+      const result: string[] = [];
+      for (const dir of [effectiveDirectory, ...(fallbackDirectories ?? [])]) {
+        const normalized = dir?.trim();
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized);
+          result.push(normalized);
+        }
+      }
+      return result;
+    })();
+
+    if (enabled && baseDirectories.length === 0) {
       return;
     }
     let cancelled = false;
@@ -533,12 +550,35 @@ const useFileReferenceInteractions = ({
       );
       let linkedCount = 0;
 
+      const resolveExistingReference = async (rawCandidate: string) => {
+        const seen = new Set<string>();
+        for (const base of baseDirectories) {
+          const candidate = getResolvedReference(rawCandidate, base);
+          if (!candidate || seen.has(candidate.resolvedPath)) {
+            continue;
+          }
+          seen.add(candidate.resolvedPath);
+
+          const canGrantOutsideFile = isDesktopShell()
+            && isDesktopLocalOriginActive()
+            && !isFilePathWithinDirectory(candidate.resolvedPath, base);
+          if (canGrantOutsideFile) {
+            return { resolvedPath: candidate.resolvedPath, isDirectory: false };
+          }
+
+          const stat = await fileReferenceStat(candidate.resolvedPath, base);
+          if (stat.exists) {
+            return { resolvedPath: candidate.resolvedPath, isDirectory: stat.isDirectory };
+          }
+        }
+        return null;
+      };
+
       for (const candidate of Array.from(candidates)) {
         const rawCandidate = extractPathCandidateFromElement(candidate);
-        const resolved = getResolvedReference(rawCandidate, effectiveDirectory);
         clearFileLinkAttributes(candidate);
 
-        if (!resolved) {
+        if (!isLikelyFilePath(rawCandidate)) {
           continue;
         }
 
@@ -548,28 +588,18 @@ const useFileReferenceInteractions = ({
 
         linkedCount += 1;
 
-        const canGrantOutsideFile = isDesktopShell()
-          && isDesktopLocalOriginActive()
-          && !isFilePathWithinDirectory(resolved.resolvedPath, effectiveDirectory);
-        const statPromise = canGrantOutsideFile
-          ? Promise.resolve({ exists: true, isDirectory: false })
-          : fileReferenceStat(resolved.resolvedPath, effectiveDirectory);
-
-        void statPromise.then(({ exists, isDirectory }) => {
-          if (cancelled || !exists || !container.contains(candidate)) {
+        void resolveExistingReference(rawCandidate).then((hit) => {
+          if (cancelled || !hit || !container.contains(candidate)) {
             return;
           }
-
-          const latestRawCandidate = extractPathCandidateFromElement(candidate);
-          const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory);
-          if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
+          if (extractPathCandidateFromElement(candidate) !== rawCandidate) {
             return;
           }
 
           candidate.setAttribute('data-openchamber-file-link', 'true');
-          candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
-          candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
-          if (isDirectory) {
+          candidate.setAttribute('data-openchamber-file-ref', rawCandidate);
+          candidate.setAttribute('data-openchamber-file-path', hit.resolvedPath);
+          if (hit.isDirectory) {
             candidate.setAttribute('data-openchamber-file-dir', 'true');
             candidate.setAttribute('title', 'Open folder');
           } else {
@@ -585,7 +615,10 @@ const useFileReferenceInteractions = ({
 
     const openFileReference = async (sourceElement: HTMLElement) => {
       const raw = sourceElement.getAttribute('data-openchamber-file-ref') || extractPathCandidateFromElement(sourceElement);
-      const resolved = getResolvedReference(raw, effectiveDirectory);
+      const storedPath = sourceElement.getAttribute('data-openchamber-file-path');
+      const resolved = storedPath
+        ? { path: raw, resolvedPath: storedPath }
+        : getResolvedReference(raw, effectiveDirectory);
       if (!resolved) {
         return;
       }
@@ -695,7 +728,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, revealPath, enabled]);
+  }, [containerRef, editor, effectiveDirectory, fallbackDirectories, preferRuntimeEditor, revealPath, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1301,6 +1334,12 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const { editor, files, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
+  const directoryHistory = useDirectoryStore((state) => state.directoryHistory);
+  const fallbackDirectories = React.useMemo(
+    () => [homeDirectory, ...directoryHistory.slice(-8)],
+    [homeDirectory, directoryHistory],
+  );
   const openContextPreview = useUIStore((state) => state.openContextPreview);
 
   const handlePreviewLoopback = React.useCallback((url: string) => {
@@ -1319,6 +1358,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   useFileReferenceInteractions({
     containerRef,
     effectiveDirectory,
+    fallbackDirectories,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     revealPath: files?.revealPath,
@@ -1426,6 +1466,12 @@ const SimpleMarkdownRendererImpl: React.FC<{
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
+  const directoryHistory = useDirectoryStore((state) => state.directoryHistory);
+  const fallbackDirectories = React.useMemo(
+    () => [homeDirectory, ...directoryHistory.slice(-8)],
+    [homeDirectory, directoryHistory],
+  );
 
   const renderedContent = React.useMemo(
     () => (stripFrontmatter ? stripLeadingFrontmatter(content) : content),
@@ -1442,6 +1488,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   useFileReferenceInteractions({
     containerRef,
     effectiveDirectory,
+    fallbackDirectories,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     revealPath: files?.revealPath,
