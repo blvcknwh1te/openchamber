@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { execGit } from './bridge-git-process-runtime';
+import { normalizeWindowsDriveLetter } from './pathUtils';
 
 const MAX_FILE_ATTACH_SIZE_BYTES = 20 * 1024 * 1024;
 
@@ -115,8 +116,11 @@ export const readUriAsAttachment = async (
 };
 
 const isPathInside = (candidatePath: string, parentPath: string): boolean => {
-  const normalizedCandidate = path.resolve(candidatePath);
-  const normalizedParent = path.resolve(parentPath);
+  // VS Code reports a lowercase drive letter (`d:\...`) while the webview and
+  // OpenCode use uppercase (`D:\...`). Compare with the drive letter normalized
+  // so a workspace check does not reject every path on Windows.
+  const normalizedCandidate = normalizeWindowsDriveLetter(path.resolve(candidatePath));
+  const normalizedParent = normalizeWindowsDriveLetter(path.resolve(parentPath));
   return normalizedCandidate === normalizedParent || normalizedCandidate.startsWith(`${normalizedParent}${path.sep}`);
 };
 
@@ -540,8 +544,8 @@ export const fetchModelsMetadata = async () => {
 
 const getFsAccessRoot = (requestedRoot?: string): string => {
   const workspaceRoots = vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [];
-  const requested = requestedRoot ? path.resolve(requestedRoot) : '';
-  return workspaceRoots.find((root) => path.resolve(root) === requested)
+  const requested = requestedRoot ? normalizeWindowsDriveLetter(path.resolve(requestedRoot)) : '';
+  return workspaceRoots.find((root) => normalizeWindowsDriveLetter(path.resolve(root)) === requested)
     || workspaceRoots[0]
     || os.homedir();
 };

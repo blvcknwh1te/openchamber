@@ -32,6 +32,7 @@ mock.module('vscode', () => ({
     workspaceFolders: [
       { uri: { fsPath: '/workspace' } },
       { uri: { fsPath: '/workspace-two' } },
+      { uri: { fsPath: 'd:/win-root' } },
     ],
   },
 }));
@@ -100,5 +101,21 @@ describe('bridge local fs proxy', () => {
 
     expect(response?.status).toBe(200);
     expect(Buffer.from(response?.bodyBase64 ?? '', 'base64').toString()).toBe('test');
+  });
+
+  it('accepts a workspace path whose drive-letter case differs', async () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    existingFiles.add('D:/win-root/file.ts');
+    const response = await tryHandleLocalFsProxy(
+      'GET',
+      '/api/fs/stat?path=D%3A%2Fwin-root%2Ffile.ts&directory=D%3A%2Fwin-root',
+    );
+
+    expect(response?.status).toBe(200);
+    expect(JSON.parse(Buffer.from(response?.bodyBase64 ?? '', 'base64').toString('utf8')))
+      .toMatchObject({ isFile: true });
   });
 });
