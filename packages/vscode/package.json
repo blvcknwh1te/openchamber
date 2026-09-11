@@ -2,7 +2,7 @@
   "name": "openchamber-bnw",
   "displayName": "OpenChamber BNW",
   "description": "%extension.description%",
-  "version": "1.22.2-bnw.1",
+  "version": "1.23.0-bnw.1",
   "publisher": "blacknwhite",
   "private": true,
   "repository": {
@@ -311,7 +311,7 @@
   },
   "dependencies": {
     "@openchamber/ui": "workspace:*",
-    "@opencode-ai/sdk": "1.18.29",
+    "@opencode-ai/sdk": "1.18.30",
     "adm-zip": "^0.6.0",
     "jsonc-parser": "^3.3.1",
     "react": "^19.1.1",
