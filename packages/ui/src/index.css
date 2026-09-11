@@ -1232,6 +1232,24 @@ html:not(.dark) .chat-scroll {
   color: var(--markdown-link-hover, var(--primary));
 }
 
+/* Explicit hand cursor for links, file/dir links and link-like buttons inside
+   markdown, for web and VS Code runtimes. The native desktop shell overrides
+   this to the arrow cursor through `html.desktop-runtime` below. */
+html:not(.desktop-runtime) .markdown-content a,
+html:not(.desktop-runtime) .markdown-content [data-openchamber-file-link="true"],
+html:not(.desktop-runtime) .markdown-content [role="button"] {
+  cursor: pointer;
+}
+
+/* A URL written inside inline code is marked by the renderer as clickable;
+   give it the same link look as an anchor. */
+html:not(.desktop-runtime) .markdown-content [data-openchamber-external-link] {
+  cursor: pointer;
+  color: var(--markdown-link, var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* Agent/skill mentions use the primary accent, not the markdown link color */
 .markdown-content a[data-openchamber-agent-mention="true"],
 .markdown-content a[data-skill-name] {

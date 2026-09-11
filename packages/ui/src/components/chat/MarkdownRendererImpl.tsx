@@ -484,6 +484,13 @@ const useFileReferenceInteractions = ({
       for (const candidate of Array.from(annotated)) {
         clearFileLinkAttributes(candidate);
       }
+      for (const element of Array.from(container.querySelectorAll<HTMLElement>('[data-openchamber-external-link]'))) {
+        element.removeAttribute('data-openchamber-external-link');
+        const currentTitle = element.getAttribute('title');
+        if (currentTitle && /^https?:\/\//.test(currentTitle)) {
+          element.removeAttribute('title');
+        }
+      }
       unwrapBlockCodePathTokens(container);
     };
 
@@ -580,6 +587,26 @@ const useFileReferenceInteractions = ({
             candidate.setAttribute('tabindex', '0');
           }
         });
+      }
+
+      // URLs written inside inline code stay `<code>` (markdown does not
+      // autolink code), so they are not clickable. Mark URL-only code spans so
+      // the shared link handler can open them externally; everything else is
+      // left untouched.
+      for (const element of Array.from(container.querySelectorAll<HTMLElement>('[data-markdown="inline-code"]'))) {
+        const value = (element.textContent ?? '').trim();
+        const isUrlOnly = /^https?:\/\/\S+$/.test(value)
+          && element.getAttribute('data-openchamber-file-link') !== 'true';
+        if (isUrlOnly) {
+          element.setAttribute('data-openchamber-external-link', value);
+          element.setAttribute('title', value);
+        } else {
+          element.removeAttribute('data-openchamber-external-link');
+          const currentTitle = element.getAttribute('title');
+          if (currentTitle && /^https?:\/\//.test(currentTitle)) {
+            element.removeAttribute('title');
+          }
+        }
       }
     };
 

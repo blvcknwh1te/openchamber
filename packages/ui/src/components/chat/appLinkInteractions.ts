@@ -47,9 +47,29 @@ export const attachAppLinkInteractions = (
   container: LinkInteractionContainer,
   options: AppLinkInteractionOptions,
 ): (() => void) => {
+  const findExternalMarker = (event: MouseEvent): Element | null => {
+    const target = event.target;
+    if (!(target instanceof Element)) return null;
+    return target.closest('[data-openchamber-external-link]');
+  };
+
+  const openExternalMarker = (event: MouseEvent): boolean => {
+    if (!options.allowExternalHttp) return false;
+    const marker = findExternalMarker(event);
+    if (!marker) return false;
+    const href = marker.getAttribute('data-openchamber-external-link') ?? '';
+    if (!isExternalHttpUrl(href)) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    options.openExternalHttp(href);
+    return true;
+  };
+
   const handleClick = (event: MouseEvent) => {
     if (interceptAppLink(event, options.openAppLink)) return;
-    if (!options.allowExternalHttp || event.defaultPrevented || !isPlainPrimaryClick(event)) return;
+    if (event.defaultPrevented || !isPlainPrimaryClick(event)) return;
+    if (openExternalMarker(event)) return;
+    if (!options.allowExternalHttp) return;
 
     const href = findLink(event)?.getAttribute('href') ?? '';
     if (!isExternalHttpUrl(href)) return;
