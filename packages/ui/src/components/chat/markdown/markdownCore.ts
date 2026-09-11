@@ -436,6 +436,15 @@ const createParser = (imageMode: MarkdownImageMode) => new Marked().use(
       if (skillName) {
         return `<a href="${escapeAttr(target)}" data-skill-name="${escapeAttr(skillName)}" class="text-primary hover:underline">${text}</a>`;
       }
+      // markdown autolinking turns a bare `x@y.z` into a `mailto:` link, which
+      // misfires on extension ids, package versions, and scoped handles. Keep
+      // the link only when the author wrote a distinct label; a bare address
+      // (label equals the address) stays plain text. Explicit labels such as
+      // `[mail](mailto:x@y.z)` or a literal `mailto:` stay clickable.
+      if (/^mailto:/i.test(target) && target.slice('mailto:'.length).trim() === text.trim()) {
+        return text;
+      }
+
       const titleAttr = title ? ` title="${escapeAttr(title)}"` : '';
       return `<a href="${escapeAttr(target)}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`;
     },
