@@ -1206,12 +1206,15 @@ html:not(.dark) .chat-scroll {
   }
 }
 
-/* Markdown links - use theme colors */
-.markdown-content a {
+/* Markdown links - use theme colors and a visible underline affordance.
+   Agent/skill mentions keep their own look (they are chips, not web links). */
+.markdown-content a:not([data-openchamber-agent-mention="true"]):not([data-skill-name]) {
   color: var(--markdown-link, var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-.markdown-content a:hover {
+.markdown-content a:not([data-openchamber-agent-mention="true"]):not([data-skill-name]):hover {
   color: var(--markdown-link-hover, var(--primary));
 }
 

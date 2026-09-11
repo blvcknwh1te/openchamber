@@ -311,6 +311,72 @@ const wrapBlockCodePathTokens = (container: HTMLElement): void => {
   }
 };
 
+// Bare paths written in prose (outside inline code, links, or fenced blocks)
+// never reach the file-link pipeline, so they render as inert text the user has
+// to copy. Wrap `path[:line[:col]]`-looking substrings found in ordinary text
+// nodes in the same `data-openchamber-block-path-token` span used for code
+// blocks, so the existing annotate → stat → open flow applies unchanged.
+// Idempotent: wrapped spans carry the token attribute and are skipped on later
+// passes; the existence probe still decides whether a candidate becomes a link.
+const PROSE_PATH_EXCLUDE_SELECTOR = [
+  'a',
+  'code',
+  'pre',
+  'summary',
+  'button',
+  'textarea',
+  'script',
+  'style',
+  `[${BLOCK_PATH_TOKEN_ATTR}]`,
+  FILE_LINK_SELECTOR,
+].join(',');
+
+const wrapProsePathTokens = (container: HTMLElement): void => {
+  const doc = container.ownerDocument;
+  if (!doc) {
+    return;
+  }
+
+  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    // SAFETY: the walker is bounded to NodeFilter.SHOW_TEXT, so every node it
+    // yields is a Text node.
+    const textNode = node as Text;
+    const parent = textNode.parentElement;
+    const value = textNode.data;
+    if (parent && value && value.includes('.') && value.length <= MAX_BLOCK_CODE_SCAN_LENGTH
+      && !parent.closest(PROSE_PATH_EXCLUDE_SELECTOR)) {
+      textNodes.push(textNode);
+    }
+    node = walker.nextNode();
+  }
+
+  for (const textNode of textNodes) {
+    const value = textNode.data;
+    BLOCK_PATH_TOKEN_RE.lastIndex = 0;
+    const matches: Array<{ start: number; end: number; raw: string }> = [];
+    let match: RegExpExecArray | null = BLOCK_PATH_TOKEN_RE.exec(value);
+    while (match) {
+      const raw = match[0];
+      if (raw && isLikelyFilePath(raw)) {
+        matches.push({ start: match.index, end: match.index + raw.length, raw });
+      }
+      match = BLOCK_PATH_TOKEN_RE.exec(value);
+    }
+
+    for (const { start, end, raw } of matches.reverse()) {
+      const tokenNode = textNode.splitText(start);
+      tokenNode.splitText(end - start);
+      const span = doc.createElement('span');
+      span.setAttribute(BLOCK_PATH_TOKEN_ATTR, 'true');
+      span.textContent = raw;
+      tokenNode.replaceWith(span);
+    }
+  }
+};
+
 const getResolvedReference = (rawValue: string, effectiveDirectory: string): (ParsedFileReference & { resolvedPath: string }) | null => {
   const parsed = parseFileReference(rawValue);
   if (!parsed || !isLikelyFilePathValue(parsed.path)) {
@@ -429,6 +495,7 @@ const useFileReferenceInteractions = ({
     const annotateFileLinksInner = () => {
       if (fileReferencesEnabled) {
         wrapBlockCodePathTokens(container);
+        wrapProsePathTokens(container);
       }
       const candidates = container.querySelectorAll<HTMLElement>(
         `[data-markdown="inline-code"], a, ${BLOCK_PATH_TOKEN_SELECTOR}`,

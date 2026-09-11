@@ -11,6 +11,7 @@ import { DiffPreview, WritePreview } from './DiffPreview';
 import { useI18n } from '@/lib/i18n';
 import { getVisiblePermissionPatterns } from './permissionCardPatterns';
 import { formatShortcutForDisplay } from '@/lib/shortcuts';
+import { usePermissionDescription } from '@/hooks/usePermissionDescription';
 
 // Newest pending card owns the keyboard; older cards wait their turn.
 const activePermissionCardIds: string[] = [];
@@ -48,6 +49,7 @@ const PERMISSION_JSON_CUSTOM_STYLE: React.CSSProperties = {
 interface PermissionCardProps {
   permission: PermissionRequest;
   onResponse?: (response: 'once' | 'always' | 'reject') => void;
+  directory?: string;
 }
 
 const getToolIcon = (toolName: string) => {
@@ -102,9 +104,10 @@ const getToolDisplayName = (toolName: string): string => {
 
 export const PermissionCard: React.FC<PermissionCardProps> = ({
   permission,
-  onResponse
+  onResponse,
+  directory,
 }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [isResponding, setIsResponding] = React.useState(false);
   const [hasResponded, setHasResponded] = React.useState(false);
   const respondToPermission = sessionActions.respondToPermission;
@@ -157,10 +160,6 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
     };
   }, [hasResponded, permission.id]);
 
-  if (hasResponded) {
-    return null;
-  }
-
   const toolName = permission.permission || 'unknown';
   const tool = toolName.toLowerCase();
   const isBashTool = tool === 'bash' || tool === 'shell' || tool === 'shell_command';
@@ -182,6 +181,23 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
     ? getMeta('command') || getMeta('cmd') || getMeta('script')
     : '';
   const visiblePatterns = getVisiblePermissionPatterns(permission.patterns, bashCommand);
+
+  // A shell command can already carry a tool-produced description; only fall
+  // back to the small model when it does not, so the card never shows two
+  // competing summaries.
+  const metaDescription = isBashTool ? getMeta('description') : '';
+  const commandDescription = usePermissionDescription({
+    permissionId: permission.id,
+    command: bashCommand,
+    enabled: isBashTool && Boolean(bashCommand) && !metaDescription && !hasResponded,
+    directory,
+    sessionID: permission.sessionID,
+    locale,
+  });
+
+  if (hasResponded) {
+    return null;
+  }
 
   const renderToolContent = () => {
 
@@ -216,6 +232,9 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
                 wrap
               />
             </div>
+          )}
+          {commandDescription && (
+            <div className="typography-meta text-muted-foreground mt-2">{commandDescription}</div>
           )}
         </>
       );
