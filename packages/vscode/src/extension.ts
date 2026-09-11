@@ -4,6 +4,7 @@ import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { CustomAssetsWatcher } from './customAssetsWatcher';
 import { OpenCodeConfigWatcher } from './opencodeConfigWatcher';
+import { ReloadSignalWatcher } from './reloadSignalWatcher';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
 import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider, getSessionActivitySnapshot } from './sessionActivityWatcher';
 import { pathsEqualWithNormalizedDriveLetter } from './pathUtils';
@@ -244,6 +245,16 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   opencodeConfigWatcher.start();
   context.subscriptions.push(opencodeConfigWatcher);
+
+  // [OC-PATCH: reload-signal] File-triggered reload: touching
+  // `~/.config/openchamber/reload.signal` runs the same action as the toolbar
+  // refresh button, so an agent or shell can reload OpenChamber's webviews and
+  // restart the managed OpenCode without driving the UI.
+  const reloadSignalWatcher = new ReloadSignalWatcher(context, () => {
+    void vscode.commands.executeCommand('openchamberBnw.reloadTab');
+  });
+  reloadSignalWatcher.start();
+  context.subscriptions.push(reloadSignalWatcher);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('openchamberBnw.internal.settingsSynced', (settings: unknown) => {
