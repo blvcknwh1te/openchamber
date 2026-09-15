@@ -1,4 +1,4 @@
-import { isAbsoluteFilePath, normalizeFilePath } from '@/lib/path-utils';
+import { expandHomePath, isAbsoluteFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 
 export type ParsedFileReference = {
     path: string;
@@ -23,6 +23,26 @@ const KNOWN_BASENAME_PATTERN = Array.from(KNOWN_FILE_BASENAMES)
 export const normalizeReferencePath = (value: string): string => normalizeFilePath(value);
 
 export const isAbsoluteReferencePath = (value: string): boolean => isAbsoluteFilePath(value);
+
+// Resolves a parsed reference into an absolute, normalized path: `~` expands
+// against the home directory, an absolute value is kept as-is, and anything else
+// is joined under the active directory.
+export const resolveReferencePath = (
+    value: string,
+    options: { directory?: string | null; homeDirectory?: string | null },
+): string => {
+    const expanded = expandHomePath(value, options.homeDirectory);
+    if (!expanded) {
+        return '';
+    }
+    // A remaining `~` means the home directory is not known yet or the `~user`
+    // form is unsupported; joining it under the directory would fabricate a
+    // path that cannot exist, so the reference is left unresolved instead.
+    if (expanded.startsWith('~')) {
+        return '';
+    }
+    return isAbsoluteFilePath(expanded) ? expanded : toAbsoluteFilePath(options.directory, expanded);
+};
 
 export const localPathFromFileUrl = (value: string): string | null => {
     let parsed: URL;
@@ -180,3 +200,11 @@ export const BLOCK_PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/])?[\w.\-\\/@+]*[\w\-\\/@+]\
 // (`C:\Program Files\App`); the final segment stays space-free so a match stops
 // before trailing prose instead of swallowing it.
 export const WINDOWS_ABSOLUTE_PATH_TOKEN_RE = /[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\s]+/g;
+
+// Home-anchored paths (`~/...`, `~\...`) with an optional `:line[:col]` or
+// `:start-end` suffix. Extension-less paths are covered so home directories
+// qualify. Mirrors the Windows matcher: intermediate segments may contain
+// spaces, the final segment is space-free so a match stops before trailing
+// prose, and the leading `~` is included in the match (without it a `~/x`
+// token would be captured as the absolute ` /x`, which does not exist).
+export const HOME_ANCHORED_PATH_TOKEN_RE = /~[\\/](?:[^\\/:*?"<>|\r\n]+[\\/])*[^\\/:*?"<>|\s]+(?::\d+(?:-\d+)?(?::\d+)?)?/g;

@@ -289,14 +289,14 @@ const initializePerformanceDom = async (): Promise<void> => {
   mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
   mock.module('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => null }));
   mock.module('@/stores/useUIStore', () => ({ useUIStore: Object.assign((selector: (state: typeof fakeState) => UIStateSelection) => selector(fakeState), { getState: () => fakeState }) }));
-  mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null }));
+  mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null, useHomeDirectory: () => '' }));
   mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ editor: undefined, runtime: { isVSCode: false } }) }));
   mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => ({ ok: false }) }));
   mock.module('@/lib/url', () => ({ getUrlScheme: () => null, isAppLinkUrl: () => false, isExternalHttpUrl: () => false, openConfirmedAppLinkUrl: async () => false, openExternalUrl: async () => undefined, getExternalFaviconUrl: () => null, isLoopbackHttpUrl: () => false }));
   mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false, revealDesktopPath: async () => false }));
   mock.module('@/lib/runtimeSurface', () => ({ isMobileSurfaceRuntime: () => false }));
   mock.module('@/lib/outsideFileGrants', () => ({ ensureOutsideFileGrantForDesktop: async () => undefined }));
-  mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => true, toAbsoluteFilePath: () => '', normalizeFilePath: (value: string) => value, isAbsoluteFilePath: (value: string) => value.startsWith('/') }));
+  mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => true, toAbsoluteFilePath: () => '', normalizeFilePath: (value: string) => value, isAbsoluteFilePath: (value: string) => value.startsWith('/'), expandHomePath: (value: string) => value }));
   mock.module('@/lib/clipboard', () => ({ copyTextToClipboard: async () => undefined }));
   mock.module('beautiful-mermaid', () => ({
     renderMermaidASCII: () => 'diagram',

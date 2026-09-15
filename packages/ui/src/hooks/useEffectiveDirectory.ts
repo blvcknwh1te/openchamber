@@ -57,3 +57,14 @@ export const useEffectiveDirectory = (): string | undefined => {
     // Fall back to the global directory
     return fallbackDirectory ?? undefined;
 };
+
+/**
+ * The user's home directory as resolved by the runtime (desktop/VS Code/web).
+ *
+ * File references written as `~/...` are expanded against this value before the
+ * existence probe, so the rendered link must agree with the same home the rest
+ * of the app uses for directory display.
+ */
+export const useHomeDirectory = (): string => {
+    return useDirectoryStore((state) => state.homeDirectory);
+};

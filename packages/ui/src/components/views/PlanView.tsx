@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { buildCodeMirrorCommentWidgets, normalizeLineRange, useInlineCommentController } from '@/components/comments';
 
+import { expandHomePath } from '@/lib/path-utils';
 import { getLanguageFromExtension } from '@/lib/toolHelpers';
 import { useDeviceInfo } from '@/lib/device';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -92,16 +93,6 @@ const buildRepoPlanPath = (directory: string, created: number, slug: string): st
 
 const buildHomePlanPath = (created: number, slug: string): string => {
   return `~/.opencode/plans/${created}-${slug}.md`;
-};
-
-const resolveTilde = (path: string, homeDir: string | null): string => {
-  const trimmed = path.trim();
-  if (!trimmed.startsWith('~')) return trimmed;
-  if (trimmed === '~') return homeDir || trimmed;
-  if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
-    return homeDir ? `${homeDir}${trimmed.slice(1)}` : trimmed;
-  }
-  return trimmed;
 };
 
 const toDisplayPath = (resolvedPath: string, options: { currentDirectory: string; homeDirectory: string }): string => {
@@ -630,7 +621,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null, savedProj
 
       try {
         const repoPath = buildRepoPlanPath(sessionDirectory, session.time.created, session.slug);
-        const homePath = resolveTilde(buildHomePlanPath(session.time.created, session.slug), homeDirectory || null);
+        const homePath = expandHomePath(buildHomePlanPath(session.time.created, session.slug), homeDirectory || null);
 
         let resolved: string | null = null;
 

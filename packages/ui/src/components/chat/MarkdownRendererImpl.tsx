@@ -13,13 +13,13 @@ import { attachAppLinkInteractions } from './appLinkInteractions';
 import type { ToolPopupContent } from './message/types';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { useUIStore } from '@/stores/useUIStore';
-import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useEffectiveDirectory, useHomeDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import type { EditorAPI } from '@/lib/api/types';
 import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, revealDesktopPath } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
-import { getDirectoryForFilePath, isFilePathWithinDirectory, toAbsoluteFilePath } from '@/lib/path-utils';
+import { getDirectoryForFilePath, isFilePathWithinDirectory } from '@/lib/path-utils';
 import {
   getCachedMarkdownBlocks,
   renderMarkdownBlocks,
@@ -43,11 +43,13 @@ import { findTextPosition } from './markdown/textPosition';
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import {
   BLOCK_PATH_TOKEN_RE,
+  HOME_ANCHORED_PATH_TOKEN_RE,
   WINDOWS_ABSOLUTE_PATH_TOKEN_RE,
   isAbsoluteReferencePath,
   localPathFromFileUrl,
   normalizeReferencePath,
   parseFileReference,
+  resolveReferencePath,
   type ParsedFileReference,
 } from './fileReferenceParser';
 import { fileReferenceStat } from './fileReferenceStat';
@@ -157,10 +159,6 @@ const isAbsolutePath = (value: string): boolean => {
   return isAbsoluteReferencePath(value);
 };
 
-const toAbsolutePath = (basePath: string, targetPath: string): string => {
-  return toAbsoluteFilePath(basePath, targetPath);
-};
-
 const hasFileExtension = (path: string): boolean => {
   const base = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
   if (!base || base.endsWith('.')) {
@@ -221,7 +219,7 @@ const isLikelyFilePath = (value: string): boolean => {
 // earlier (and, on a tie, longer) match wins.
 const collectPathMatches = (text: string): Array<{ start: number; end: number; raw: string }> => {
   const found: Array<{ start: number; end: number; raw: string }> = [];
-  for (const pattern of [BLOCK_PATH_TOKEN_RE, WINDOWS_ABSOLUTE_PATH_TOKEN_RE]) {
+  for (const pattern of [BLOCK_PATH_TOKEN_RE, WINDOWS_ABSOLUTE_PATH_TOKEN_RE, HOME_ANCHORED_PATH_TOKEN_RE]) {
     pattern.lastIndex = 0;
     let match = pattern.exec(text);
     while (match) {
@@ -404,15 +402,20 @@ const wrapProsePathTokens = (container: HTMLElement): void => {
   }
 };
 
-const getResolvedReference = (rawValue: string, effectiveDirectory: string): (ParsedFileReference & { resolvedPath: string }) | null => {
+const getResolvedReference = (
+  rawValue: string,
+  effectiveDirectory: string,
+  homeDirectory: string,
+): (ParsedFileReference & { resolvedPath: string }) | null => {
   const parsed = parseFileReference(rawValue);
   if (!parsed || !isLikelyFilePathValue(parsed.path)) {
     return null;
   }
 
-  const resolvedPath = isAbsolutePath(parsed.path)
-    ? normalizePath(parsed.path)
-    : toAbsolutePath(effectiveDirectory, parsed.path);
+  const resolvedPath = resolveReferencePath(parsed.path, {
+    directory: effectiveDirectory,
+    homeDirectory,
+  });
   if (!resolvedPath) {
     return null;
   }
@@ -430,6 +433,7 @@ const getContextDirectory = (effectiveDirectory: string, resolvedPath: string): 
 const useFileReferenceInteractions = ({
   containerRef,
   effectiveDirectory,
+  homeDirectory,
   editor,
   preferRuntimeEditor,
   revealPath,
@@ -437,6 +441,7 @@ const useFileReferenceInteractions = ({
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
+  homeDirectory: string;
   editor?: EditorAPI;
   preferRuntimeEditor?: boolean;
   revealPath?: (path: string) => Promise<{ success: boolean }>;
@@ -542,7 +547,7 @@ const useFileReferenceInteractions = ({
 
       for (const candidate of Array.from(candidates)) {
         const rawCandidate = extractPathCandidateFromElement(candidate);
-        const resolved = getResolvedReference(rawCandidate, effectiveDirectory);
+        const resolved = getResolvedReference(rawCandidate, effectiveDirectory, homeDirectory);
         clearFileLinkAttributes(candidate);
 
         if (!resolved) {
@@ -568,7 +573,7 @@ const useFileReferenceInteractions = ({
           }
 
           const latestRawCandidate = extractPathCandidateFromElement(candidate);
-          const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory);
+          const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory, homeDirectory);
           if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
             return;
           }
@@ -615,7 +620,7 @@ const useFileReferenceInteractions = ({
       const storedPath = sourceElement.getAttribute('data-openchamber-file-path');
       const resolved = storedPath
         ? { path: raw, resolvedPath: storedPath }
-        : getResolvedReference(raw, effectiveDirectory);
+        : getResolvedReference(raw, effectiveDirectory, homeDirectory);
       if (!resolved) {
         return;
       }
@@ -725,7 +730,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, preferRuntimeEditor, revealPath, enabled]);
+  }, [containerRef, editor, effectiveDirectory, homeDirectory, preferRuntimeEditor, revealPath, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1331,6 +1336,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const { editor, files, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const homeDirectory = useHomeDirectory();
   const openContextPreview = useUIStore((state) => state.openContextPreview);
 
   const handlePreviewLoopback = React.useCallback((url: string) => {
@@ -1349,6 +1355,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   useFileReferenceInteractions({
     containerRef,
     effectiveDirectory,
+    homeDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     revealPath: files?.revealPath,
@@ -1456,6 +1463,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const homeDirectory = useHomeDirectory();
 
   const renderedContent = React.useMemo(
     () => (stripFrontmatter ? stripLeadingFrontmatter(content) : content),
@@ -1472,6 +1480,7 @@ const SimpleMarkdownRendererImpl: React.FC<{
   useFileReferenceInteractions({
     containerRef,
     effectiveDirectory,
+    homeDirectory,
     editor,
     preferRuntimeEditor: runtime.isVSCode,
     revealPath: files?.revealPath,

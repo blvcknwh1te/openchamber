@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  expandHomePath,
   getDirectoryForFilePath,
   getRelativeFilePath,
   isAbsoluteFilePath,
@@ -55,5 +56,19 @@ describe('path-utils', () => {
       'C:/Users/Bohdan Triapitsyn/projects/openchamber/packages/ui/Button.tsx',
     )).toBe('C:/Users/Bohdan Triapitsyn/projects/openchamber/packages/ui');
     expect(getDirectoryForFilePath('', '/tmp/file.txt')).toBe('/tmp');
+  });
+
+  test('expands tilde paths against the home directory', () => {
+    expect(expandHomePath('~/projects/app.ts', 'C:/Users/Bohdan Triapitsyn')).toBe('C:/Users/Bohdan Triapitsyn/projects/app.ts');
+    expect(expandHomePath('~', 'C:/Users/Bohdan Triapitsyn')).toBe('C:/Users/Bohdan Triapitsyn');
+    expect(expandHomePath('~\\.config\\opencode', 'C:/Users/Bohdan Triapitsyn')).toBe('C:/Users/Bohdan Triapitsyn/.config/opencode');
+    expect(expandHomePath('C:/projects/app.ts', 'C:/Users/Bohdan Triapitsyn')).toBe('C:/projects/app.ts');
+    expect(expandHomePath('src/app.ts', 'C:/Users/Bohdan Triapitsyn')).toBe('src/app.ts');
+  });
+
+  test('leaves tilde paths untouched when the home directory is unknown or the form is unsupported', () => {
+    expect(expandHomePath('~/projects/app.ts', null)).toBe('~/projects/app.ts');
+    expect(expandHomePath('~/projects/app.ts', '')).toBe('~/projects/app.ts');
+    expect(expandHomePath('~other/app.ts', 'C:/Users/Bohdan Triapitsyn')).toBe('~other/app.ts');
   });
 });

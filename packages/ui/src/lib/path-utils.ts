@@ -33,6 +33,26 @@ export const isAbsoluteFilePath = (value: string | null | undefined): boolean =>
   return normalized.startsWith('/') || WINDOWS_DRIVE_ABSOLUTE_PATTERN.test(normalized);
 };
 
+// Expands `~` and `~/...` (also `~\...`, normalized to `~/...`) against the
+// home directory. The `~user` form is not supported — home directories are not
+// enumerable on the client — and is returned unchanged so callers can decide.
+export const expandHomePath = (value: string | null | undefined, homeDirectory: string | null | undefined): string => {
+  const normalized = normalizeFilePath(value);
+  if (!normalized.startsWith('~')) {
+    return normalized;
+  }
+  if (normalized !== '~' && !normalized.startsWith('~/')) {
+    return normalized;
+  }
+
+  const normalizedHome = normalizeFilePath(homeDirectory);
+  if (!normalizedHome) {
+    return normalized;
+  }
+
+  return normalized === '~' ? normalizedHome : normalizeFilePath(`${normalizedHome}${normalized.slice(1)}`);
+};
+
 const toComparableFilePath = (value: string | null | undefined): string => {
   const normalized = normalizeFilePath(value);
   return WINDOWS_DRIVE_ABSOLUTE_PATTERN.test(normalized) || normalized.startsWith('//')
