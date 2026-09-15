@@ -38,6 +38,7 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - Links and paths in messages are underlined and clickable. A file opens in the editor at the referenced line and column; a directory reveals in the file explorer.
 - Paths written as plain text, not only inline code, become links. Windows paths with backslashes and spaces are recognized. A path becomes a link only when it exists.
 - Home-anchored paths (`~/...`) are recognized too: the leading `~` is kept in the token and expanded against the resolved home directory before the existence probe, instead of being mistaken for an absolute `/...` path. When the home directory is not known yet, the reference stays unlinked rather than resolving to a bogus path.
+- A path with a line reference (`file.ts:12` or `file.ts:12:3`) opens the editor at that line and column. The position is re-read from the link text on click, so it survives the pre-resolved path stored during annotation.
 - URLs written inside inline code are clickable too.
 - Fixed a Windows case bug: the workspace folder came back as `d:\...` while the UI normalized it to `D:\...`, so every path probe failed with 403 and file links stayed dead.
 

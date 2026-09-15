@@ -45,11 +45,9 @@ import {
   BLOCK_PATH_TOKEN_RE,
   HOME_ANCHORED_PATH_TOKEN_RE,
   WINDOWS_ABSOLUTE_PATH_TOKEN_RE,
-  isAbsoluteReferencePath,
+  isLikelyFilePath,
   localPathFromFileUrl,
-  normalizeReferencePath,
-  parseFileReference,
-  resolveReferencePath,
+  resolveFileReference,
   type ParsedFileReference,
 } from './fileReferenceParser';
 import { fileReferenceStat } from './fileReferenceStat';
@@ -140,78 +138,6 @@ const FILE_REFERENCE_ANNOTATION_DELAY_MS = 160;
 const getFileReferenceLinkLimit = (): number => (
   isVSCodeRuntime() ? VSCODE_FILE_REFERENCE_LINK_LIMIT : FILE_REFERENCE_LINK_LIMIT
 );
-
-const KNOWN_FILE_BASENAMES = new Set([
-  'dockerfile',
-  'makefile',
-  'readme',
-  'license',
-  '.env',
-  '.gitignore',
-  '.npmrc',
-]);
-
-const normalizePath = (value: string): string => {
-  return normalizeReferencePath(value);
-};
-
-const isAbsolutePath = (value: string): boolean => {
-  return isAbsoluteReferencePath(value);
-};
-
-const hasFileExtension = (path: string): boolean => {
-  const base = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
-  if (!base || base.endsWith('.')) {
-    return false;
-  }
-  return /\.[A-Za-z0-9_-]{1,16}$/.test(base);
-};
-
-const RELATIVE_PATH_ANCHOR_RE = /^(?:\.{1,2}[\\/]|~[\\/])/;
-
-const isLikelyFilePathValue = (path: string): boolean => {
-  if (!path || path.startsWith('--') || path.includes('://')) {
-    return false;
-  }
-
-  if (/[<>]/.test(path) || /\s{2,}/.test(path)) {
-    return false;
-  }
-
-  const normalized = normalizePath(path);
-  const baseName = normalized.split('/').filter(Boolean).pop() ?? normalized;
-  if (!baseName || baseName === '.' || baseName === '..') {
-    return false;
-  }
-
-  const base = baseName.toLowerCase();
-  if (KNOWN_FILE_BASENAMES.has(base) || (base.startsWith('.') && base.length > 1)) {
-    return true;
-  }
-  if (hasFileExtension(normalized)) {
-    return true;
-  }
-
-  // Extension-less references may still be real directories: an absolute path,
-  // a relative path with an explicit anchor (`./`, `../`, `~/`), or a path with
-  // at least two separators. The existence probe still decides whether the
-  // candidate becomes a link.
-  if (isAbsolutePath(normalized)) {
-    return true;
-  }
-  if (RELATIVE_PATH_ANCHOR_RE.test(normalized)) {
-    return true;
-  }
-  return (normalized.match(/\//g)?.length ?? 0) >= 2;
-};
-
-const isLikelyFilePath = (value: string): boolean => {
-  const parsed = parseFileReference(value);
-  if (!parsed) {
-    return false;
-  }
-  return isLikelyFilePathValue(parsed.path);
-};
 
 // Runs both path matchers over a text run and de-overlaps the results. The
 // block matcher requires a file extension; the Windows matcher covers
@@ -406,25 +332,12 @@ const getResolvedReference = (
   rawValue: string,
   effectiveDirectory: string,
   homeDirectory: string,
-): (ParsedFileReference & { resolvedPath: string }) | null => {
-  const parsed = parseFileReference(rawValue);
-  if (!parsed || !isLikelyFilePathValue(parsed.path)) {
-    return null;
-  }
-
-  const resolvedPath = resolveReferencePath(parsed.path, {
-    directory: effectiveDirectory,
-    homeDirectory,
-  });
-  if (!resolvedPath) {
-    return null;
-  }
-
-  return {
-    ...parsed,
-    resolvedPath,
-  };
-};
+  storedPath?: string | null,
+): (ParsedFileReference & { resolvedPath: string }) | null => resolveFileReference(rawValue, {
+  directory: effectiveDirectory,
+  homeDirectory,
+  storedPath,
+});
 
 const getContextDirectory = (effectiveDirectory: string, resolvedPath: string): string => {
   return effectiveDirectory || getDirectoryForFilePath(effectiveDirectory, resolvedPath);
@@ -618,9 +531,7 @@ const useFileReferenceInteractions = ({
     const openFileReference = async (sourceElement: HTMLElement) => {
       const raw = sourceElement.getAttribute('data-openchamber-file-ref') || extractPathCandidateFromElement(sourceElement);
       const storedPath = sourceElement.getAttribute('data-openchamber-file-path');
-      const resolved = storedPath
-        ? { path: raw, resolvedPath: storedPath }
-        : getResolvedReference(raw, effectiveDirectory, homeDirectory);
+      const resolved = getResolvedReference(raw, effectiveDirectory, homeDirectory, storedPath);
       if (!resolved) {
         return;
       }

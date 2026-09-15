@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { HOME_ANCHORED_PATH_TOKEN_RE, parseFileReference, resolveReferencePath } from './fileReferenceParser';
+import { HOME_ANCHORED_PATH_TOKEN_RE, isLikelyFilePath, parseFileReference, resolveFileReference, resolveReferencePath } from './fileReferenceParser';
 
 const collectHomeTokens = (text: string): string[] => (
   [...text.matchAll(HOME_ANCHORED_PATH_TOKEN_RE)].map((match) => match[0])
@@ -49,5 +49,43 @@ describe('parseFileReference with a home anchor', () => {
     const parsed = parseFileReference('~/.config/opencode/opencode.jsonc:12');
     expect(parsed?.path).toBe('~/.config/opencode/opencode.jsonc');
     expect(parsed?.line).toBe(12);
+  });
+});
+
+describe('isLikelyFilePath', () => {
+  test('accepts file paths and rejects prose', () => {
+    expect(isLikelyFilePath('src/constants.ts:48')).toBe(true);
+    expect(isLikelyFilePath('README.md')).toBe(true);
+    expect(isLikelyFilePath('just some prose')).toBe(false);
+  });
+});
+
+describe('resolveFileReference', () => {
+  const base = { directory: 'D:/proj', homeDirectory: 'C:/Users/Bohdan' };
+
+  test('keeps the line suffix when the annotation already stored the path', () => {
+    const resolved = resolveFileReference('src/constants.ts:48', {
+      ...base,
+      storedPath: 'D:/elsewhere/src/constants.ts',
+    });
+    expect(resolved?.resolvedPath).toBe('D:/elsewhere/src/constants.ts');
+    expect(resolved?.line).toBe(48);
+  });
+
+  test('parses and resolves in one step', () => {
+    const resolved = resolveFileReference('src/constants.ts:48', base);
+    expect(resolved?.path).toBe('src/constants.ts');
+    expect(resolved?.line).toBe(48);
+    expect(resolved?.resolvedPath).toBe('D:/proj/src/constants.ts');
+  });
+
+  test('expands the home anchor and keeps the line', () => {
+    const resolved = resolveFileReference('~/.config/opencode/rules/tooling.md:5', base);
+    expect(resolved?.resolvedPath).toBe('C:/Users/Bohdan/.config/opencode/rules/tooling.md');
+    expect(resolved?.line).toBe(5);
+  });
+
+  test('rejects values that are not file references', () => {
+    expect(resolveFileReference('just some prose', base)).toBeNull();
   });
 });

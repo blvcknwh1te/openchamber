@@ -186,6 +186,77 @@ export const parseFileReference = (value: string): ParsedFileReference | null =>
     return { path: pathOnly };
 };
 
+const RELATIVE_PATH_ANCHOR_RE = /^(?:\.{1,2}[\\/]|~[\\/])/;
+
+const hasFileExtension = (path: string): boolean => {
+    const base = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
+    if (!base || base.endsWith('.')) {
+        return false;
+    }
+    return /\.[A-Za-z0-9_-]{1,16}$/.test(base);
+};
+
+// Whether a bare path (not a `path:line` reference) can be a file or directory
+// link. Extension-less references still qualify when they are absolute, carry
+// an explicit anchor (`./`, `../`, `~/`), or hold at least two separators.
+export const isLikelyFilePathValue = (path: string): boolean => {
+    if (!path || path.startsWith('--') || path.includes('://')) {
+        return false;
+    }
+    if (/[<>]/.test(path) || /\s{2,}/.test(path)) {
+        return false;
+    }
+
+    const normalized = normalizeFilePath(path);
+    const baseName = normalized.split('/').filter(Boolean).pop() ?? normalized;
+    if (!baseName || baseName === '.' || baseName === '..') {
+        return false;
+    }
+
+    const base = baseName.toLowerCase();
+    if (KNOWN_FILE_BASENAMES.has(base) || (base.startsWith('.') && base.length > 1)) {
+        return true;
+    }
+    if (hasFileExtension(normalized)) {
+        return true;
+    }
+    if (isAbsoluteFilePath(normalized)) {
+        return true;
+    }
+    if (RELATIVE_PATH_ANCHOR_RE.test(normalized)) {
+        return true;
+    }
+    return (normalized.match(/\//g)?.length ?? 0) >= 2;
+};
+
+// Parses `value` and reports whether the parsed path looks like a file
+// reference. `path:line` suffixes are stripped before the check.
+export const isLikelyFilePath = (value: string): boolean => {
+    const parsed = parseFileReference(value);
+    return parsed !== null && isLikelyFilePathValue(parsed.path);
+};
+
+// Resolves a reference into the absolute path to open. When the annotation
+// already stored the resolved path it is reused as-is, but the `:line[:col]`
+// suffix is still parsed from the raw text so the editor opens at the
+// referenced position instead of the top of the file.
+export const resolveFileReference = (
+    rawValue: string,
+    options: { directory?: string | null; homeDirectory?: string | null; storedPath?: string | null },
+): (ParsedFileReference & { resolvedPath: string }) | null => {
+    const parsed = parseFileReference(rawValue);
+    if (!parsed || !isLikelyFilePathValue(parsed.path)) {
+        return null;
+    }
+
+    const resolvedPath = options.storedPath || resolveReferencePath(parsed.path, options);
+    if (!resolvedPath) {
+        return null;
+    }
+
+    return { ...parsed, resolvedPath };
+};
+
 // Matches `path[:line[:col]]` or `path:start-end` inside shell/grep-style
 // output. Requires a file extension (1-8 alphanumerics) so plain words don't
 // qualify; the path itself must contain at least one extension-bearing
