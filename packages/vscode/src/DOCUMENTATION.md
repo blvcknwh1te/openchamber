@@ -42,7 +42,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     - active-directory selection across multi-root workspaces
     - dropped-file parsing and attachment reading
     - models metadata fetch helper
-  - Read paths are authorized in the requested workspace path space before symlink resolution, matching the web runtime; directly requested outside-workspace paths remain denied.
+  - Read paths are authorized in the requested workspace path space before symlink resolution, matching the web runtime; directly requested outside-workspace paths remain denied for content reads. Existence probes (`/api/fs/stat`, `/api/fs/directory-stat`) are allowed outside the access root so chat links to user files elsewhere (for example the OpenCode log under the home directory) resolve; they return metadata only and never file content.
 
 The webview CSP permits `blob:` only for `worker-src` so shared UI parsers can run bounded local decompression off the main thread. Blob scripts remain disallowed by `script-src`.
 

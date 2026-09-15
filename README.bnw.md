@@ -41,6 +41,8 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - A path with a line reference (`file.ts:12` or `file.ts:12:3`) opens the editor at that line and column. The position is re-read from the link text on click, so it survives the pre-resolved path stored during annotation.
 - URLs written inside inline code are clickable too.
 - Fixed a Windows case bug: the workspace folder came back as `d:\...` while the UI normalized it to `D:\...`, so every path probe failed with 403 and file links stayed dead.
+- A directory link opens the directory itself instead of revealing it inside its parent window. The same fix applies to "Open in File Explorer" in the files view and sidebar.
+- Paths outside the workspace stay clickable: existence probes are allowed outside the workspace root, while content reads remain restricted to it. This makes links such as the OpenCode log under the home directory work.
 
 ### Permission descriptions
 

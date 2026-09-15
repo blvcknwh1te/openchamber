@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { BridgeResponse } from './bridge';
+import { isDirectoryUri } from './bridge-fs-helpers-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -621,7 +622,17 @@ export async function handleFsBridgeMessage(
 
       try {
         const uri = value.includes('://') ? vscode.Uri.parse(value) : vscode.Uri.file(value);
-        await vscode.commands.executeCommand('revealFileInOS', uri);
+        // revealFileInOS highlights a folder inside its parent (opening the
+        // parent). A folder reveal is expected to open the folder itself, so
+        // directories go through the shell instead.
+        if (await isDirectoryUri(uri)) {
+          const opened = await vscode.env.openExternal(uri);
+          if (!opened) {
+            return { id, type, success: false, error: 'Failed to open folder' };
+          }
+        } else {
+          await vscode.commands.executeCommand('revealFileInOS', uri);
+        }
         return { id, type, success: true, data: { success: true } };
       } catch {
         return { id, type, success: false, error: 'Failed to reveal path' };

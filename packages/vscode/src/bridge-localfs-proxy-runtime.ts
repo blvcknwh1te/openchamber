@@ -95,9 +95,14 @@ export const tryHandleLocalFsProxy = async (method: string, requestPath: string)
 
   const targetPath = parsed.searchParams.get('path') || '';
   const optional = parsed.searchParams.get('optional') === 'true';
+  // Existence probes answer for paths outside the workspace root too, so chat
+  // links to files elsewhere (for example the OpenCode log under the home
+  // directory) become clickable. Reads keep the workspace restriction.
+  const existenceProbe = fsProxyPath === '/api/fs/stat' || fsProxyPath === '/api/fs/directory-stat';
   const resolution: FsReadPathResolution = await resolveFileReadPath(
     targetPath,
     parsed.searchParams.get('directory') || undefined,
+    { allowOutsideRoot: existenceProbe },
   );
   if (debugFs) debugLog(`res ${resolution.ok ? `ok path=${resolution.resolvedPath}` : `fail status=${resolution.status} error=${resolution.error}`} target=${targetPath}`);
   if (!resolution.ok) {

@@ -570,11 +570,24 @@ export const getFsMimeType = (filePath: string): string => {
   return mimeMap[ext] || 'application/octet-stream';
 };
 
+export const isDirectoryUri = async (uri: vscode.Uri): Promise<boolean> => {
+  try {
+    const stat = await vscode.workspace.fs.stat(uri);
+    return (stat.type & vscode.FileType.Directory) !== 0;
+  } catch {
+    return false;
+  }
+};
+
 export type FsReadPathResolution =
   | { ok: true; resolvedPath: string }
   | { ok: false; status: number; error: string };
 
-export const resolveFileReadPath = async (targetPath: string, requestedRoot?: string): Promise<FsReadPathResolution> => {
+export const resolveFileReadPath = async (
+  targetPath: string,
+  requestedRoot?: string,
+  options?: { allowOutsideRoot?: boolean },
+): Promise<FsReadPathResolution> => {
   const trimmed = targetPath.trim();
   if (!trimmed) {
     return { ok: false, status: 400, error: 'Path is required' };
@@ -588,7 +601,11 @@ export const resolveFileReadPath = async (targetPath: string, requestedRoot?: st
 
   try {
     const canonicalPath = await fs.promises.realpath(resolved);
-    if (!isPathInside(resolved, path.resolve(baseRoot))) {
+    // Existence probes (stat / directory-stat) may run outside the workspace
+    // root so chat links to user files elsewhere resolve; content reads stay
+    // restricted to the access root.
+    const allowOutsideRoot = options?.allowOutsideRoot === true;
+    if (!allowOutsideRoot && !isPathInside(resolved, path.resolve(baseRoot))) {
       return { ok: false, status: 403, error: 'Access to file denied' };
     }
 
