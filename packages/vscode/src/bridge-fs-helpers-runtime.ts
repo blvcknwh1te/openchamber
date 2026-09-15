@@ -570,15 +570,6 @@ export const getFsMimeType = (filePath: string): string => {
   return mimeMap[ext] || 'application/octet-stream';
 };
 
-export const isDirectoryUri = async (uri: vscode.Uri): Promise<boolean> => {
-  try {
-    const stat = await vscode.workspace.fs.stat(uri);
-    return (stat.type & vscode.FileType.Directory) !== 0;
-  } catch {
-    return false;
-  }
-};
-
 export type FsReadPathResolution =
   | { ok: true; resolvedPath: string }
   | { ok: false; status: number; error: string };

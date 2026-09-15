@@ -2,7 +2,7 @@
   "name": "openchamber-bnw",
   "displayName": "OpenChamber BNW",
   "description": "%extension.description%",
-  "version": "1.23.0-bnw.17",
+  "version": "1.23.0-bnw.18",
   "publisher": "blacknwhite",
   "private": true,
   "repository": {
@@ -221,13 +221,13 @@
         }
       ],
       "editor/title/context": [
-      {
-        "command": "openchamberBnw.reloadTab",
-        "group": "navigation",
-        "when": "activeWebviewPanelId == openchamberBnw.sessionEditor || activeWebviewPanelId == openchamberBnw.agentManager"
-      }
-    ],
-    "view/title": [
+        {
+          "command": "openchamberBnw.reloadTab",
+          "group": "navigation",
+          "when": "activeWebviewPanelId == openchamberBnw.sessionEditor || activeWebviewPanelId == openchamberBnw.agentManager"
+        }
+      ],
+      "view/title": [
         {
           "command": "openchamberBnw.reloadTab",
           "when": "view == openchamberBnw.chatView",

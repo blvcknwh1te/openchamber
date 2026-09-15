@@ -3,7 +3,15 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { BridgeResponse } from './bridge';
-import { isDirectoryUri } from './bridge-fs-helpers-runtime';
+
+const isDirectoryUri = async (uri: vscode.Uri): Promise<boolean> => {
+  try {
+    const stat = await vscode.workspace.fs.stat(uri);
+    return (stat.type & vscode.FileType.Directory) !== 0;
+  } catch {
+    return false;
+  }
+};
 
 type BridgeMessageInput = {
   id: string;
