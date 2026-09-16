@@ -96,7 +96,7 @@ which requests only providers enabled for this panel.
 
 | Block | Source | Notes |
 |---|---|---|
-| Context + cost | `contextUsage.ts` over `useSessionMessages`; cost via `useSubagentCostRollup` (own cost + every descendant subagent, recursively) | see below — the store getters cannot serve this |
+| Context + cost | `contextUsage.ts` over `useSessionMessages`; cost via `useSubagentCostRollup` (own cost + every descendant subagent, recursively, over monotonic session totals) | see below — the store getters cannot serve this |
 | Branch, ahead/behind, attention | `useGitStore` directory state | warmed via `runBackgroundNetworkTask(ensureStatus)` and refreshed from Git mutation hints |
 | Changed files | `useGitStore` status `files` + `diffStats` | working tree, not session-authored edits |
 | PR + checks | `useFreshestPrVisualSummaryForBranch` | **read-only**; follows the freshest remote-keyed entry for the branch |
@@ -178,6 +178,32 @@ Two further rules on this readout:
 There is no cost-only fallback row. A row labelled "Context" showing nothing but
 a price is not a context reading; cost rides along with the percentage or waits
 for it.
+
+### Cost totals never move backwards
+
+`Session.cost` and `Session.tokens` are session-wide totals, and the server
+replaces them wholesale on every `session.updated`. Switching the model
+mid-chat can bring back a lower total than the one already on screen: the
+server may recompute the total under the newly selected model, or send a
+partial payload without the totals at all. Neither cause is observable from the
+client, and a total that drops when the user changes nothing reads as lost
+spend.
+
+`sessionCostAccumulator.ts` therefore holds the high-water mark of what has
+been observed for each runtime and session, and `useSubagentCostRollup` applies
+it **before** the tree walk. Accumulating each session on its own is what keeps
+`ownCost + subagentCost === totalCost` true, and it is also why one place can
+serve every cost display: the panel's Context row, the per-row subagent costs,
+the VS Code header and the `ContextUsageDisplay` tooltip all read the same
+number. A session whose totals did not move keeps its reference, so the
+overlay costs nothing on the common path.
+
+One consequence is deliberate: reverting a turn legitimately lowers spend, and
+the panel keeps showing the high-water mark instead of following it down. The
+ledger refuses any lower observation rather than trying to tell the two cases
+apart. Observations are bounded, so memory tracks recently seen sessions, not
+the lifetime of the app. Both totals ride the ledger, not only the price, since
+they reset together and a future readout would inherit the same drop.
 
 ### Pinned messages load only what they need
 

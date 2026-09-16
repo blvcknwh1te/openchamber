@@ -65,6 +65,28 @@ describe('tokenizeMarkdown — block constructs', () => {
         expect(tokenize('  - nested')).toEqual([['-', 'listMarker']]);
     });
 
+    test('multi-level numeric markers are list markers', () => {
+        expect(tokenize('1.2) one')).toEqual([['1.2)', 'listMarker']]);
+        expect(tokenize('1.1. one')).toEqual([['1.1.', 'listMarker']]);
+        expect(tokenize('2.3.4) deep')).toEqual([['2.3.4)', 'listMarker']]);
+    });
+
+    test('an indented multi-level marker keeps its offset', () => {
+        expect(tokenize('  1.2) nested')).toEqual([['1.2)', 'listMarker']]);
+    });
+
+    test('a number without a closing separator is not a marker', () => {
+        expect(tokenize('1.2.3 plain')).toEqual([]);
+    });
+
+    test('a multi-level marker inside a fence stays code', () => {
+        expect(tokenize('```\n1.2) not a list\n```')).toEqual([
+            ['```', 'codeFence'],
+            ['1.2) not a list', 'codeFence'],
+            ['```', 'codeFence'],
+        ]);
+    });
+
     test('a list marker needs trailing whitespace', () => {
         expect(tokenize('-nodash')).toEqual([]);
     });

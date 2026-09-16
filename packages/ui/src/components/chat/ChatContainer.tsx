@@ -38,6 +38,7 @@ import { useChatTimelineScroll, type TimelineListHandle } from '@/hooks/useChatT
 import { useChatTimelineController } from './hooks/useChatTimelineController';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
+import { shouldShowPromptNavigator, PROMPT_NAVIGATOR_MIN_TURNS } from './lib/promptNavigatorRail';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
@@ -508,7 +509,7 @@ const ChatViewport = React.memo(({
                 />
               </TimelineRevealGateContext.Provider>
                 <OverlayScrollbar containerRef={scrollRef} disableHorizontal suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
-                {showPromptNavigator && promptTurnIds.length >= 2 ? (
+                {showPromptNavigator && promptTurnIds.length >= PROMPT_NAVIGATOR_MIN_TURNS ? (
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}
                         previewsByTurnId={promptPreviewsByTurnId}
@@ -1195,11 +1196,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         void navigation.scrollToTurnId(turnId, { behavior: 'auto' });
     }, [navigation]);
     const canLoadEarlierPrompts = timelineController.historySignals.canLoadEarlier;
-    const showPromptNavigator = !isMobile
-        && !isVSCode
-        && !isDesktopExpandedInput
-        && promptNavigatorEnabled
-        && timelineController.turnIds.length >= 2;
+    // The rail is an overlay that narrows itself on a squeezed message column,
+    // so it is not platform-gated; see shouldShowPromptNavigator.
+    const showPromptNavigator = shouldShowPromptNavigator({
+        isMobile,
+        isDesktopExpandedInput,
+        enabled: promptNavigatorEnabled,
+        turnCount: timelineController.turnIds.length,
+    });
 
     React.useEffect(() => {
         if (!showPromptNavigator) {

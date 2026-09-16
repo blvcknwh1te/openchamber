@@ -6,6 +6,12 @@ import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
 import { getMessagePreview } from '../lib/messagePreview';
+import {
+    resolveCenteredWindowStart,
+    resolvePromptTickWindow,
+    resolveVisibleTickCount,
+    resolveWindowStartContaining,
+} from '../lib/promptNavigatorRail';
 
 type PromptEntry = {
     turnId: string;
@@ -31,9 +37,6 @@ const PREVIEW_MAX_CHARS = 160;
 const GUTTER_WIDTH_PX = 28;
 const GUTTER_NARROW_WIDTH_PX = 12;
 const GUTTER_RIGHT_OFFSET_PX = 6;
-// The rail shows at most a window of ticks; hovering the gutter edges
-// carousels the window through the rest of the prompts.
-const MAX_VISIBLE_TICKS = 30;
 const TICK_PITCH_PX = 12;
 const EDGE_ZONE_PX = 18;
 const CAROUSEL_INTERVAL_MS = 80;
@@ -133,12 +136,13 @@ export function PromptNavigatorRail({
         [previewsByTurnId, t, turnIds],
     );
 
-    const visibleCount = Math.min(prompts.length, MAX_VISIBLE_TICKS);
-    const maxWindowStart = Math.max(0, prompts.length - visibleCount);
-    const clampedWindowStart = Math.min(windowStart, maxWindowStart);
-    const windowEnd = clampedWindowStart + visibleCount;
-    const hasMoreAbove = clampedWindowStart > 0;
-    const hasMoreBelow = windowEnd < prompts.length;
+    const {
+        visibleCount,
+        windowStart: clampedWindowStart,
+        windowEnd,
+        hasMoreAbove,
+        hasMoreBelow,
+    } = resolvePromptTickWindow(prompts.length, windowStart);
 
     const emptyPreviewLabel = t('chat.timeline.noTextContent');
     const currentPromptLabel = t('chat.promptNavigator.currentPrompt');
@@ -161,19 +165,7 @@ export function PromptNavigatorRail({
     const carouselDirRef = React.useRef<0 | 1 | -1>(0);
 
     const ensureWindowContains = React.useCallback((index: number) => {
-        setWindowStart((start) => {
-            const length = promptsLengthRef.current;
-            const count = Math.min(length, MAX_VISIBLE_TICKS);
-            const maxStart = Math.max(0, length - count);
-            const clamped = Math.min(start, maxStart);
-            if (index < clamped) {
-                return index;
-            }
-            if (index >= clamped + count) {
-                return Math.min(maxStart, index - count + 1);
-            }
-            return clamped;
-        });
+        setWindowStart((start) => resolveWindowStartContaining(start, index, promptsLengthRef.current));
     }, []);
 
     // Load-earlier prepends shift every index; move the window with them so
@@ -199,12 +191,7 @@ export function PromptNavigatorRail({
             return;
         }
         const target = activeIndex >= 0 ? activeIndex : prompts.length - 1;
-        setWindowStart(() => {
-            const length = promptsLengthRef.current;
-            const count = Math.min(length, MAX_VISIBLE_TICKS);
-            const maxStart = Math.max(0, length - count);
-            return Math.max(0, Math.min(maxStart, target - Math.floor(count / 2)));
-        });
+        setWindowStart(() => resolveCenteredWindowStart(target, promptsLengthRef.current));
     }, [activeIndex, highlightedIndex, prompts.length]);
 
     const relativeIndexFromPointer = React.useCallback((clientY: number): number | null => {
@@ -214,7 +201,7 @@ export function PromptNavigatorRail({
         }
         const rect = gutter.getBoundingClientRect();
         const raw = Math.floor((clientY - rect.top) / TICK_PITCH_PX);
-        const count = Math.min(promptsLengthRef.current, MAX_VISIBLE_TICKS);
+        const count = resolveVisibleTickCount(promptsLengthRef.current);
         if (count === 0) {
             return null;
         }
@@ -236,10 +223,8 @@ export function PromptNavigatorRail({
             return;
         }
         const length = promptsLengthRef.current;
-        const count = Math.min(length, MAX_VISIBLE_TICKS);
-        const maxStart = Math.max(0, length - count);
-        const current = Math.min(windowStartRef.current, maxStart);
-        const next = Math.max(0, Math.min(maxStart, current + dir));
+        const { windowStart: current, maxWindowStart } = resolvePromptTickWindow(length, windowStartRef.current);
+        const next = Math.max(0, Math.min(maxWindowStart, current + dir));
         if (next === current) {
             stopCarousel();
             return;

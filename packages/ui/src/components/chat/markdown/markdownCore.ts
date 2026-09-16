@@ -1,4 +1,4 @@
-import { Marked, marked, type Tokens, type TokenizerAndRendererExtension } from 'marked';
+import { Marked, marked, type Token, type Tokens, type TokenizerAndRendererExtension } from 'marked';
 import markedLinkifyIt from 'marked-linkify-it';
 import remend from 'remend';
 import katex from 'katex';
@@ -7,6 +7,7 @@ import { buildAgentMentionUrl, parseAgentHref, parseSkillHref } from '@/lib/mess
 import { isAppLinkUrl } from '@/lib/url';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { contentFingerprint, HighlightResultCache, utf16Bytes } from './highlightResultCache';
+import { MULTILEVEL_MARKER_SOURCE, parseMultilevelList } from './listMarker';
 import { highlightCodeInWorker } from './markdown-worker';
 import { escapeRawMarkdownHtml, isLocalFileUrl, MARKDOWN_FORBIDDEN_TAGS } from './markdownSecurity';
 
@@ -410,6 +411,50 @@ const detailsExtension: TokenizerAndRendererExtension = {
   childTokens: ['summary', 'tokens'],
 };
 
+// A dotted, multi-level numeric marker (`1.2)`, `2.3.4.`) is not a CommonMark
+// list marker, so marked renders such a line as a paragraph. Claim the run of
+// those lines as a list and carry each marker into the item's data attribute;
+// the stylesheet paints it in place of a browser number.
+type MultilevelListToken = Tokens.Generic & {
+  type: 'multilevelList';
+  items: Array<{ marker: string; tokens: Token[] }>;
+};
+
+const MULTILEVEL_LINE_START_RE = new RegExp(
+  `^[ \\t]{0,3}(?=${MULTILEVEL_MARKER_SOURCE}[ \\t])`,
+  'm',
+);
+
+const multilevelListExtension: TokenizerAndRendererExtension = {
+  name: 'multilevelList',
+  level: 'block',
+  start(src) {
+    const match = MULTILEVEL_LINE_START_RE.exec(src);
+    return match ? match.index : undefined;
+  },
+  tokenizer(src) {
+    const list = parseMultilevelList(src);
+    if (!list) return undefined;
+    return {
+      type: 'multilevelList',
+      raw: list.raw,
+      items: list.items.map((item) => ({
+        marker: item.marker,
+        tokens: this.lexer.inlineTokens(item.text),
+      })),
+    };
+  },
+  renderer(token) {
+    // SAFETY: marked passes back the token this extension produced, and only
+    // `multilevelListExtension` emits the `multilevelList` type.
+    const items = (token as MultilevelListToken).items
+      .map((item) => `<li data-md-list-marker="${escapeAttr(item.marker)}">${this.parser.parseInline(item.tokens)}</li>`)
+      .join('');
+    return `<ul>${items}</ul>\n`;
+  },
+  childTokens: ['items'],
+};
+
 // marked's GFM autolink swallows CJK punctuation after a bare URL, so switch
 // to marked-linkify-it, which treats Unicode punctuation as a URL boundary.
 // Plain CJK characters right after a URL are still consumed, matching GitHub.
@@ -418,7 +463,7 @@ const createParser = (imageMode: MarkdownImageMode) => new Marked().use(
   {
     gfm: true,
     breaks: false,
-    extensions: [inlineMathExtension, blockMathExtension, detailsExtension],
+    extensions: [multilevelListExtension, inlineMathExtension, blockMathExtension, detailsExtension],
   renderer: {
     // Assistant output is untrusted. Markdown constructs still render as HTML,
     // but raw HTML must remain visible text so it cannot introduce active DOM

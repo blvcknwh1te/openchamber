@@ -147,6 +147,16 @@ describe('Markdown disclosures', () => {
     expect(finished[2]?.html).toContain('<p>After</p>');
   });
 
+  test('keeps a streamed multi-level list in a single block', async () => {
+    const first = await renderMarkdownBlocks('1.2) first', true);
+    const next = await renderMarkdownBlocks('1.2) first\n1.3) second', true);
+
+    expect(first).toHaveLength(1);
+    expect(first[0]?.html).toContain('<li data-md-list-marker="1.2)">first</li>');
+    expect(next).toHaveLength(1);
+    expect(next[0]?.html).toContain('<li data-md-list-marker="1.3)">second</li>');
+  });
+
   test('handles incomplete summary and closing tag prefixes without losing content', async () => {
     const source = '<details><summary>Review</summary>\n\n**Body**\n\n</details>';
     for (let length = 1; length <= source.length; length += 1) {
@@ -409,5 +419,68 @@ describe('Escaped brackets versus display math', () => {
   test('still renders display math that owns its line', () => {
     expect(renderMarkdownSync('\\[x = y\\]')).toContain('katex');
     expect(renderMarkdownSync('Before\n\n\\[\nx = y\n\\]\n\nAfter')).toContain('katex');
+  });
+});
+
+describe('Multi-level numeric list markers', () => {
+  test('renders dotted numeric lines as list items that keep their marker', () => {
+    const html = renderMarkdownSync('1.2) first\n1.3) second');
+
+    expect(html).toContain('<ul>');
+    expect(html).toContain('<li data-md-list-marker="1.2)">first</li>');
+    expect(html).toContain('<li data-md-list-marker="1.3)">second</li>');
+    expect(html).not.toContain('<p>1.2)');
+  });
+
+  test('keeps the marker verbatim for every dotted shape', () => {
+    expect(renderMarkdownSync('1.1. first')).toContain('data-md-list-marker="1.1."');
+    expect(renderMarkdownSync('2.3.4) deep')).toContain('data-md-list-marker="2.3.4)"');
+  });
+
+  test('keeps a continuation line inside its own item', () => {
+    const html = renderMarkdownSync('1.2) first\ncontinued');
+
+    expect(html).toContain('data-md-list-marker="1.2)"');
+    expect(html).toContain('continued');
+    expect(html.match(/<li /g)).toHaveLength(1);
+  });
+
+  test('starts the list after an ordinary paragraph', () => {
+    const html = renderMarkdownSync('Intro line\n1.2) first');
+
+    expect(html).toContain('<p>Intro line</p>');
+    expect(html).toContain('<li data-md-list-marker="1.2)">first</li>');
+  });
+
+  test('leaves single-level ordered and bullet lists unchanged', () => {
+    const ordered = renderMarkdownSync('1. first\n2. second');
+    expect(ordered).toContain('<ol>');
+    expect(ordered).not.toContain('data-md-list-marker');
+
+    const single = renderMarkdownSync('2) second');
+    expect(single.startsWith('<ol')).toBe(true);
+    expect(single).not.toContain('data-md-list-marker');
+
+    const bullets = renderMarkdownSync('- first\n- second');
+    expect(bullets).toContain('<ul>');
+    expect(bullets).not.toContain('data-md-list-marker');
+  });
+
+  test('leaves mid-line and unterminated numbers as plain text', () => {
+    expect(renderMarkdownSync('see 1.2) here')).toContain('<p>see 1.2) here</p>');
+    expect(renderMarkdownSync('1.2.3 plain')).toContain('<p>1.2.3 plain</p>');
+  });
+
+  test('never rewrites multi-level markers inside a fence', () => {
+    const html = renderMarkdownSync('```\n1.2) not a list\n```');
+
+    expect(html).toContain('1.2) not a list');
+    expect(html).not.toContain('data-md-list-marker');
+  });
+
+  test('scans item content for images like any other list item', () => {
+    expect(extractMarkdownImageCandidates(['1.2) ![shot](screens/shot.png)'])).toEqual([
+      { source: 'screens/shot.png', filename: 'shot.png' },
+    ]);
   });
 });

@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { computeRollup } from './useSubagentCostRollup';
+import { accumulateLiveSessionTotals, resetSessionCostLedger } from './sessionCostAccumulator';
 
 function makeSession(id: string, cost: number, parentID?: string): Session {
   return {
@@ -66,5 +67,45 @@ describe('computeRollup', () => {
     const childSum = Array.from(result.perChildCost.values()).reduce((sum, v) => sum + v, 0);
     const rootOwnCost = 1;
     expect(childSum + rootOwnCost).toBe(result.totalCost);
+  });
+});
+
+describe('computeRollup over accumulated session totals', () => {
+  const runtimeKey = 'runtime-a';
+
+  beforeEach(() => {
+    resetSessionCostLedger();
+  });
+
+  test('keeps the total after the server reports a lower cost for a switched model', () => {
+    const before = computeRollup(accumulateLiveSessionTotals(runtimeKey, sessions), 'root');
+    const afterServerReset = sessions.map((session) => ({ ...session, cost: 0 }));
+    const after = computeRollup(accumulateLiveSessionTotals(runtimeKey, afterServerReset), 'root');
+
+    expect(before.totalCost).toBe(11);
+    expect(after.totalCost).toBe(11);
+    expect(after.ownCost + after.subagentCost).toBe(after.totalCost);
+  });
+
+  test('keeps counting past the previous peak when the new model spends more', () => {
+    computeRollup(accumulateLiveSessionTotals(runtimeKey, sessions), 'root');
+
+    const continued = sessions.map((session) => (session.id === 'root' ? { ...session, cost: 4 } : session));
+    const after = computeRollup(accumulateLiveSessionTotals(runtimeKey, continued), 'root');
+
+    expect(after.ownCost).toBe(4);
+    expect(after.totalCost).toBe(14);
+    expect(after.ownCost + after.subagentCost).toBe(after.totalCost);
+  });
+
+  test('recovers a dropped subagent share as its own subtree total', () => {
+    computeRollup(accumulateLiveSessionTotals(runtimeKey, sessions), 'root');
+
+    const childReset = sessions.map((session) => (session.id === 'a1' ? { ...session, cost: 0 } : session));
+    const after = computeRollup(accumulateLiveSessionTotals(runtimeKey, childReset), 'root');
+
+    expect(after.perChildCost.get('a')).toBe(7);
+    expect(after.totalCost).toBe(11);
+    expect(after.ownCost + after.subagentCost).toBe(after.totalCost);
   });
 });

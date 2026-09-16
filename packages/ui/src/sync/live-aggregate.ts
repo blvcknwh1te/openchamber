@@ -15,6 +15,25 @@ const getSessionUpdatedAt = (session: Session): number => {
   return typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0
 }
 
+// Totals are part of the signature: the work-status panel, the VS Code header
+// and the context readout all report the session's spend, so a cost/token
+// change that keeps every other field identical must still reach React.
+const getSessionTotalsSignature = (session: Session): string => {
+  const cost = session.cost !== undefined && Number.isFinite(session.cost) ? session.cost : 0
+  const tokens = session.tokens
+  if (!tokens) {
+    return `${cost}`
+  }
+  return [
+    cost,
+    tokens.input ?? 0,
+    tokens.output ?? 0,
+    tokens.reasoning ?? 0,
+    tokens.cache?.read ?? 0,
+    tokens.cache?.write ?? 0,
+  ].join(',')
+}
+
 const getSessionSignature = (session: Session): string => {
   const directory = (session as Session & { directory?: string | null }).directory ?? ''
   const parentID = (session as Session & { parentID?: string | null }).parentID ?? ''
@@ -27,6 +46,7 @@ const getSessionSignature = (session: Session): string => {
     directory,
     parentID,
     session.share?.url ?? '',
+    getSessionTotalsSignature(session),
   ].join('|')
 }
 

@@ -15,7 +15,6 @@ import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { useUIStore } from '@/stores/useUIStore';
 import { useEffectiveDirectory, useHomeDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import type { EditorAPI } from '@/lib/api/types';
 import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, revealDesktopPath } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
@@ -347,19 +346,17 @@ const useFileReferenceInteractions = ({
   containerRef,
   effectiveDirectory,
   homeDirectory,
-  editor,
-  preferRuntimeEditor,
-  revealPath,
   enabled,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   effectiveDirectory: string;
   homeDirectory: string;
-  editor?: EditorAPI;
-  preferRuntimeEditor?: boolean;
-  revealPath?: (path: string) => Promise<{ success: boolean }>;
   enabled: boolean;
 }) => {
+  // Runtime APIs are read when a file link is activated, never during render:
+  // painting the transcript must not depend on the host runtime, and a message
+  // must stay renderable in a surface without runtime providers.
+  const runtimeApis = useRuntimeAPIs();
   const annotationDebounceRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
@@ -537,6 +534,7 @@ const useFileReferenceInteractions = ({
       }
 
       if (sourceElement.getAttribute('data-openchamber-file-dir') === 'true') {
+        const revealPath = runtimeApis.files?.revealPath;
         if (revealPath) {
           const result = await revealPath(resolved.resolvedPath).catch(() => null);
           if (result?.success) {
@@ -548,7 +546,8 @@ const useFileReferenceInteractions = ({
       }
 
       const contextDirectory = getContextDirectory(effectiveDirectory, resolved.resolvedPath);
-      if (preferRuntimeEditor && editor) {
+      const { editor } = runtimeApis;
+      if (runtimeApis.runtime.isVSCode && editor) {
         void editor.openFile(
           resolved.resolvedPath,
           Number.isFinite(resolved.line ?? Number.NaN)
@@ -641,7 +640,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, editor, effectiveDirectory, homeDirectory, preferRuntimeEditor, revealPath, enabled]);
+  }, [containerRef, runtimeApis, effectiveDirectory, homeDirectory, enabled]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -1244,7 +1243,6 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   if (isStreaming) streamPerfCount('ui.markdown_renderer.render.streaming');
   streamPerfObserve('ui.markdown_renderer.content_len', content.length);
   const currentTheme = useCurrentMermaidTheme();
-  const { editor, files, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const homeDirectory = useHomeDirectory();
@@ -1267,9 +1265,6 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     containerRef,
     effectiveDirectory,
     homeDirectory,
-    editor,
-    preferRuntimeEditor: runtime.isVSCode,
-    revealPath: files?.revealPath,
     enabled: enableFileReferences && !isStreaming,
   });
   useLinkInteractions({ containerRef });
@@ -1370,7 +1365,6 @@ const SimpleMarkdownRendererImpl: React.FC<{
   allowMermaidWheelEvents = false,
   enableFileReferences = true,
 }) => {
-  const { editor, files, runtime } = useRuntimeAPIs();
   const currentTheme = useCurrentMermaidTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
@@ -1392,9 +1386,6 @@ const SimpleMarkdownRendererImpl: React.FC<{
     containerRef,
     effectiveDirectory,
     homeDirectory,
-    editor,
-    preferRuntimeEditor: runtime.isVSCode,
-    revealPath: files?.revealPath,
     enabled: enableFileReferences,
   });
   useLinkInteractions({ containerRef, enabled: !disableLinkSafety });

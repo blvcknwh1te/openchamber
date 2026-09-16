@@ -4,6 +4,7 @@ import { normalizePath } from '@/lib/pathNormalization';
 import { isChatDirectoryPath } from '@/lib/chatDirectories';
 import { resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
 import { getPinnedSessionKey } from '@/stores/useSessionPinnedStore';
+import type { Session } from '@opencode-ai/sdk/v2';
 import type { SessionNode } from '../types';
 
 /**
@@ -338,6 +339,18 @@ export const nodeHasPinnedMembershipChange = (
   };
 
   return visit(prevNode, nextNode);
+};
+
+/**
+ * Tokens the session has processed, or null when it reports no usage. The row
+ * tooltip renders a usage line only for a real count, so a session that never
+ * ran does not claim a zero total.
+ */
+export const sessionTotalTokens = (session: Session): number | null => {
+  const tokens = session.tokens;
+  if (!tokens) return null;
+  const total = tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write;
+  return total > 0 ? total : null;
 };
 
 /**

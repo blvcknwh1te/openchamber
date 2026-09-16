@@ -221,7 +221,8 @@
      depth stays readable without extra indentation. */
   .markdown-content ul,
   .markdown-content ol {
-    padding-left: 1.25rem !important;
+    --markdown-list-gutter: 1.25rem;
+    padding-left: var(--markdown-list-gutter) !important;
   }
 
   .markdown-content ul {
@@ -265,13 +266,31 @@
     margin-top: 0.25rem;
   }
 
+  /* Multi-level numeric markers (`1.2)`, `2.3.4)`) have no native list form: a
+     browser would renumber them. The author's marker text travels in a data
+     attribute, and the pseudo-element paints it verbatim instead of the number,
+     aligned to the same gutter and colour as a native marker. */
+  .markdown-content li[data-md-list-marker] {
+    list-style: none !important;
+  }
+
+  .markdown-content li[data-md-list-marker]::before {
+    content: attr(data-md-list-marker);
+    display: inline-block;
+    min-width: var(--markdown-list-gutter);
+    margin-left: calc(-1 * var(--markdown-list-gutter));
+    margin-right: 0.35em;
+    color: currentColor;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* GitHub-style task lists: the checkbox replaces the list marker. */
   .markdown-content li:has(> input[type="checkbox"]:first-child) {
     list-style-type: none !important;
   }
 
   .markdown-content li > input[type="checkbox"]:first-child {
-    margin: 0 0.35em 0.15em -1.25rem;
+    margin: 0 0.35em 0.15em calc(-1 * var(--markdown-list-gutter));
     vertical-align: middle;
   }
 

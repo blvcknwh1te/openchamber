@@ -3,6 +3,7 @@ import { describe, expect, it } from 'bun:test'
 import {
   aggregateLiveSessions,
   aggregateLiveSessionStatuses,
+  areSessionListsEquivalent,
   areStatusMapsEquivalent,
   findLiveSession,
   findLiveSessionStatus,
@@ -93,4 +94,37 @@ describe('live aggregate', () => {
     )).toBe(false)
   })
 
+  it('treats a cost-only change as a list difference', () => {
+    const withCost = (cost) => aggregateLiveSessions([
+      { session: [session('ses-1', '/a', 10, { cost })], session_status: {} },
+    ])
+
+    expect(areSessionListsEquivalent(withCost(2), withCost(2))).toBe(true)
+    expect(areSessionListsEquivalent(withCost(2), withCost(3))).toBe(false)
+  })
+
+  it('treats a token-only change as a list difference', () => {
+    const withTokens = (input) => aggregateLiveSessions([
+      {
+        session: [session('ses-1', '/a', 10, {
+          tokens: { input, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        })],
+        session_status: {},
+      },
+    ])
+
+    expect(areSessionListsEquivalent(withTokens(10), withTokens(10))).toBe(true)
+    expect(areSessionListsEquivalent(withTokens(10), withTokens(11))).toBe(false)
+  })
+
+  it('treats a missing totals payload as different from reported totals', () => {
+    const withoutCost = aggregateLiveSessions([
+      { session: [session('ses-1', '/a', 10)], session_status: {} },
+    ])
+    const withCost = aggregateLiveSessions([
+      { session: [session('ses-1', '/a', 10, { cost: 1 })], session_status: {} },
+    ])
+
+    expect(areSessionListsEquivalent(withoutCost, withCost)).toBe(false)
+  })
 })

@@ -31,7 +31,7 @@ import { usePrefetchSessionMessages, useSessionMessageRecordsForExport } from '@
 import { getSyncSessionMaterializationStatus } from '@/sync/sync-refs';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from '../folders/sessionFolderDnd';
-import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass } from './sessionNodeItemUtils';
+import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass, sessionTotalTokens } from './sessionNodeItemUtils';
 import type { SessionNode } from '../types';
 import { formatProjectLabel, formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText } from '../utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -43,7 +43,7 @@ import { SessionActivityDuration } from '@/components/session/SessionActivityDur
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import { useI18n } from '@/lib/i18n';
 import { useShiftKeyHeld } from '@/hooks/useShiftKeyHeld';
-import { getSessionGoal } from '@/lib/sessionGoalMetadata';
+import { formatGoalTokens, getSessionGoal } from '@/lib/sessionGoalMetadata';
 import { sessionGoalStatusColor, sessionGoalStatusLabelKey } from '@/lib/sessionGoalPresentation';
 import { getRuntimeBearerTokenSync } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
@@ -61,6 +61,10 @@ import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { getProviderModelDisplayName } from '@/lib/modelDisplay';
+import { formatMoney } from '@/lib/money';
+import { toSessionLastModel, useSessionLastModel } from '@/sync/session-last-model';
 import type { WorktreeMetadata } from '@/types/worktree';
 import {
   getSessionWorktreeMenuState,
@@ -387,6 +391,19 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   // the mixed-context recent list.
   const showInlineBranchMarker = Boolean(tooltipBranchLabel)
     && (renderContext === 'recent' || sessionGroupingMode === 'flat');
+  // The last model the session ran on. The node's own record only carries a
+  // model from the tree rebuild that produced it, and the server records a new
+  // model against a recency-only `time.updated`, so the live value comes from
+  // the narrow `session-last-model` index: a row subscribes to its own session
+  // ID instead of loading history or forcing a tree rebuild. The record stays
+  // as the fallback for sessions the global cache does not list yet.
+  const sessionLastModel = useSessionLastModel(session.id) ?? toSessionLastModel(resolvedSession.model);
+  const providers = useConfigStore((state) => state.providers);
+  const lastModelLabel = React.useMemo(() => {
+    if (!sessionLastModel) return '';
+    const provider = providers.find((entry) => entry.id === sessionLastModel.providerID);
+    return getProviderModelDisplayName(provider, sessionLastModel.modelID);
+  }, [providers, sessionLastModel]);
   const prStatusLabel = React.useMemo(() => {
     if (!prSummary) return null;
     switch (prSummary.visualState) {
@@ -486,6 +503,16 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
       <Icon name="target" className="h-3 w-3" style={{ color: sessionGoalStatusColor[sessionGoal.status] }} />
     </span>
   ) : null;
+  // Shares the goal/branch metadata slot, so it carries the same typography and
+  // muted tone in both the inline and the hover-revealed layouts.
+  const lastModelBadge = lastModelLabel ? (
+    <span className="inline-flex flex-shrink-0 items-center gap-1 typography-micro text-muted-foreground/75">
+      <Icon name="brain-ai-3" className="h-3 w-3 flex-shrink-0 text-muted-foreground/60" />
+      <span className="max-w-[7em] truncate">{lastModelLabel}</span>
+    </span>
+  ) : null;
+  const sessionCost = resolvedSession.cost ?? 0;
+  const sessionTokensUsed = sessionTotalTokens(resolvedSession);
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
   const hasChildren = node.children.length > 0;
   const isPinnedSession = isSessionPinned(pinnedSessionIds, sessionDirectory, session.id);
@@ -1454,11 +1481,12 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                   style={prIconColor ? { color: prIconColor } : undefined}
                                 />
                               ) : null}
+                              {lastModelBadge}
                               {sessionCompactUpdatedLabel}
                             </>
                           )}
                         </span>
-                      ) : (showActivityDuration || sessionGoalGlyph || showInlineBranchMarker || renderContext === 'recent') ? (
+                      ) : (showActivityDuration || sessionGoalGlyph || showInlineBranchMarker || lastModelLabel || renderContext === 'recent') ? (
                         <div className={cn(
                             'relative ml-1 flex h-4 flex-shrink-0 items-center justify-end',
                             isSessionMenuOpen
@@ -1484,6 +1512,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                     style={prIconColor ? { color: prIconColor } : undefined}
                                   />
                                 ) : null}
+                                {lastModelBadge}
                                 {/* The recent activity list shows its compact
                                     timestamp inline (touch runtimes already get
                                     it through the alwaysShowActions branch);
@@ -1516,9 +1545,6 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                     </div>
                   </button>
                 </TooltipTrigger>
-                {/* VS Code already shows project context via workspace headers, so
-                    the per-row metadata tooltip is redundant noise there. */}
-                {!isVSCode ? (
                 <TooltipContent side="right" sideOffset={8} className="max-w-xs text-left">
                   <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
                     <div className="flex items-center justify-between gap-3">
@@ -1545,9 +1571,26 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                         </span>
                       </div>
                     ) : null}
+                    {lastModelLabel ? (
+                      <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                        <Icon name="brain-ai-3" className="h-3 w-3 flex-shrink-0" />
+                        <span className="min-w-0 truncate">{t('sessions.sidebar.session.tooltip.model', { model: lastModelLabel })}</span>
+                      </div>
+                    ) : null}
+                    {sessionCost > 0 ? (
+                      <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                        <Icon name="bar-chart-2" className="h-3 w-3 flex-shrink-0" />
+                        <span className="min-w-0 truncate">{t('sessions.sidebar.session.tooltip.cost', { cost: formatMoney(sessionCost) })}</span>
+                      </div>
+                    ) : null}
+                    {sessionTokensUsed ? (
+                      <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                        <Icon name="database-2" className="h-3 w-3 flex-shrink-0" />
+                        <span className="min-w-0 truncate">{t('sessions.sidebar.session.tooltip.tokens', { tokens: formatGoalTokens(sessionTokensUsed) })}</span>
+                      </div>
+                    ) : null}
                   </div>
                 </TooltipContent>
-                ) : null}
               </Tooltip>
             )}
           </div>

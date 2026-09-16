@@ -70,6 +70,7 @@ const DOM_GLOBAL_NAMES = [
   'Element',
   'HTMLElement',
   'SVGElement',
+  'HTMLAnchorElement',
   'requestAnimationFrame',
   'cancelAnimationFrame',
   'getComputedStyle',
@@ -112,6 +113,7 @@ const installDomStub = () => {
     Element: happyWindow.Element,
     HTMLElement: happyWindow.HTMLElement,
     SVGElement: happyWindow.SVGElement,
+    HTMLAnchorElement: happyWindow.HTMLAnchorElement,
     requestAnimationFrame: happyWindow.requestAnimationFrame.bind(happyWindow),
     cancelAnimationFrame: happyWindow.cancelAnimationFrame.bind(happyWindow),
     getComputedStyle: happyWindow.getComputedStyle.bind(happyWindow),
@@ -310,8 +312,37 @@ describe('ReasoningPart streaming gating (issue #2020)', () => {
 
   test('live in-progress reasoning still renders as streaming', () => {
     // Genuinely live: the message-level stream phase reports streaming and the
-    // part has not ended. The block auto-expands and shows the busy indicator.
+    // part has not ended. The busy header appears immediately instead of
+    // waiting for committed text.
     const markup = renderPart(makeReasoningPart({ start: 1_000 }), 'streaming');
+
+    expect(markup).toContain(BUSY_INDICATOR);
+  });
+
+  test('live in-progress reasoning stays collapsed under the default off setting', () => {
+    // Fork behavior: an explicit off setting pins the block collapsed even
+    // while live, so the streamed body stays behind the disclosure.
+    const markup = renderPart(makeReasoningPart({ start: 1_000 }), 'streaming');
+
+    expect(markup).toContain(BUSY_INDICATOR);
+    expect(markup).toContain('aria-expanded="false"');
+  });
+
+  test('live in-progress reasoning auto-expands when the expanded setting is on', () => {
+    // ReasoningPart forwards the store setting as an explicit boolean. Assert
+    // that contract on the block itself: server rendering reads the store's
+    // initial value, not the live snapshot.
+    const markup = renderToStaticMarkup(
+      <TestProviders>
+        <ReasoningTimelineBlock
+          text={SHORT_REASONING}
+          variant="thinking"
+          blockId="prt_reasoning_2020"
+          isStreaming
+          defaultExpanded
+        />
+      </TestProviders>,
+    );
 
     expect(markup).toContain(BUSY_INDICATOR);
     expect(markup).toContain('aria-expanded="true"');

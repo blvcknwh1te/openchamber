@@ -18,6 +18,8 @@
  * decoration, so avoid font-family and font-size.)
  */
 
+import { LIST_MARKER_SOURCE } from './markdown/listMarker';
+
 type HighlightStyle =
     | 'marker'
     | 'code'
@@ -267,6 +269,9 @@ function scanInline(segment: string, base: number, out: HighlightRange[]): void 
  */
 const FENCE_OPEN = /^(\s*)(`{3,}|~{3,})\s*(\S*)/;
 
+/** A line opening with a list marker, including multi-level numeric markers. */
+const LIST_LINE_RE = new RegExp(`^(\\s*)(${LIST_MARKER_SOURCE})(\\s+)`);
+
 export interface FenceOpen {
     /** The full opening fence run, e.g. "```" or "~~~~". */
     marker: string;
@@ -364,7 +369,7 @@ export function tokenizeMarkdown(text: string): HighlightRange[] {
             continue;
         }
 
-        const list = /^(\s*)([-*+]|\d{1,9}[.)])(\s+)/.exec(line);
+        const list = LIST_LINE_RE.exec(line);
         if (list) {
             const markerStart = lineStart + list[1].length;
             const markerEnd = markerStart + list[2].length;

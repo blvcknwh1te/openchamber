@@ -1,7 +1,8 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { useAllLiveSessions } from '@/sync/sync-context';
+import { useAllLiveSessions, useSyncRuntime } from '@/sync/sync-context';
 import { buildChildrenIndex, computeSubtreeCost } from './subagentCost';
+import { accumulateLiveSessionTotals } from './sessionCostAccumulator';
 
 export type SubagentCostRollup = {
   totalCost: number | null;
@@ -64,8 +65,19 @@ export function computeRollup(liveSessions: Session[], sessionId: string | null)
  * Own cost plus every descendant subagent's cost, recursively summed, for a
  * given root session. Reads the same `useAllLiveSessions()` subscription
  * WorkStatusSubagentsSection already holds — no new store subscription.
+ *
+ * The session costs feed through `accumulateLiveSessionTotals` first, so the
+ * rollup sums monotonically-held per-session totals: the shown number keeps
+ * counting across a model switch instead of following the server's total down.
+ * The split stays consistent because each session is accumulated on its own,
+ * before the tree walk, so `ownCost + subagentCost === totalCost` still holds.
+ * This hook is the single source of the number for every cost display.
  */
 export function useSubagentCostRollup(sessionId: string | null): SubagentCostRollup {
   const liveSessions = useAllLiveSessions();
-  return React.useMemo(() => computeRollup(liveSessions, sessionId), [liveSessions, sessionId]);
+  const { runtimeKey } = useSyncRuntime();
+  return React.useMemo(
+    () => computeRollup(accumulateLiveSessionTotals(runtimeKey, liveSessions), sessionId),
+    [liveSessions, runtimeKey, sessionId],
+  );
 }

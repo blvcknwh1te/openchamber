@@ -49,4 +49,14 @@ describe('prepareUserMarkdownContent', () => {
         expect(content).toContain('[/skill-name](#openchamber-skill:skill-name)');
         expect(content).toContain('hello  \n[/skill-name]');
     });
+
+    test('keeps multi-level numeric markers intact for the markdown renderer', () => {
+        const content = prepareUserMarkdownContent({
+            textContent: '1.2) first\n1.1. second',
+            skillNames: new Set(),
+        });
+
+        expect(content.split('\n').map((line) => line.trimEnd()))
+            .toEqual(['1.2) first', '1.1. second']);
+    });
 });
