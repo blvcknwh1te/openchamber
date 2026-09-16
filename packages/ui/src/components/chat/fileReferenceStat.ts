@@ -6,6 +6,10 @@ import { normalizeReferencePath } from './fileReferenceParser';
 const FILE_REFERENCE_STAT_CONCURRENCY = 4;
 const FILE_REFERENCE_STAT_CACHE_MAX = 1000;
 const VSCODE_FILE_REFERENCE_STAT_CACHE_MAX = 200;
+// A miss is only true for the moment it was probed: a path the assistant has
+// just announced can exist a few seconds later, and a settled message only
+// re-probes once the entry expires. Confirmed paths stay cached for the session.
+const FILE_REFERENCE_STAT_MISS_TTL_MS = 5_000;
 
 export type FileReferenceStat = {
   exists: boolean;
@@ -14,7 +18,21 @@ export type FileReferenceStat = {
 
 const MISSING_FILE_REFERENCE_STAT: FileReferenceStat = { exists: false, isDirectory: false };
 
-const FILE_REFERENCE_STAT_CACHE = new Map<string, Promise<FileReferenceStat>>();
+type FileReferenceStatCacheEntry = {
+  stat: Promise<FileReferenceStat>;
+  // `null` for a confirmed path; a timestamp while the answer is only a miss.
+  expiresAt: number | null;
+};
+
+// `cacheable: false` marks an answer built on a failed request: the runtime
+// rejected the probe, so it says nothing about the path and must never be
+// remembered as "missing".
+type FileReferenceStatProbe = {
+  stat: FileReferenceStat;
+  cacheable: boolean;
+};
+
+const FILE_REFERENCE_STAT_CACHE = new Map<string, FileReferenceStatCacheEntry>();
 let activeFileReferenceStatCount = 0;
 const pendingFileReferenceStats: Array<() => void> = [];
 
@@ -33,7 +51,7 @@ const directoryHeaders = (effectiveDirectory: string): HeadersInit | undefined =
   effectiveDirectory ? { 'x-opencode-directory': effectiveDirectory } : undefined
 );
 
-const probeFileReferenceStat = async (normalizedPath: string, effectiveDirectory: string): Promise<FileReferenceStat> => {
+const probeFileReferenceStat = async (normalizedPath: string, effectiveDirectory: string): Promise<FileReferenceStatProbe> => {
   const requestPath = encodeURIComponent(normalizedPath);
   const headers = directoryHeaders(effectiveDirectory);
 
@@ -46,7 +64,7 @@ const probeFileReferenceStat = async (normalizedPath: string, effectiveDirectory
     // SAFETY: `/api/fs/stat` answers JSON with an optional `exists` flag; a
     // non-JSON body degrades to null and is treated as existing.
     const payload = await statResponse.json().catch(() => null) as { exists?: unknown } | null;
-    return { exists: payload?.exists !== false, isDirectory: false };
+    return { stat: { exists: payload?.exists !== false, isDirectory: false }, cacheable: true };
   }
 
   // Directories answer 400 on `/api/fs/stat` in both web and VS Code, so a
@@ -57,13 +75,43 @@ const probeFileReferenceStat = async (normalizedPath: string, effectiveDirectory
     headers,
   });
   if (!directoryResponse.ok) {
-    return MISSING_FILE_REFERENCE_STAT;
+    return { stat: MISSING_FILE_REFERENCE_STAT, cacheable: false };
   }
 
-  // SAFETY: `/api/fs/directory-stat` answers JSON with an optional
-  // `isDirectory` flag; a non-JSON body degrades to null and counts as a file.
-  const payload = await directoryResponse.json().catch(() => null) as { isDirectory?: unknown } | null;
-  return { exists: true, isDirectory: payload?.isDirectory === true };
+  // SAFETY: `/api/fs/directory-stat` answers JSON with an optional `exists`
+  // flag and `isDirectory`; a non-JSON body degrades to null.
+  const payload = await directoryResponse.json().catch(() => null) as { exists?: unknown; isDirectory?: unknown } | null;
+  // The VS Code bridge answers an optional miss on this route with a 200 and
+  // `{ exists: false }`, so the flag decides before `isDirectory` does.
+  if (payload?.exists === false) {
+    return { stat: MISSING_FILE_REFERENCE_STAT, cacheable: true };
+  }
+  return { stat: { exists: true, isDirectory: payload?.isDirectory === true }, cacheable: true };
+};
+
+const trimFileReferenceStatCache = (maxCacheEntries: number): void => {
+  while (FILE_REFERENCE_STAT_CACHE.size >= maxCacheEntries) {
+    const oldest = FILE_REFERENCE_STAT_CACHE.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    FILE_REFERENCE_STAT_CACHE.delete(oldest);
+  }
+};
+
+const settleFileReferenceStatEntry = (
+  cacheKey: string,
+  entry: FileReferenceStatCacheEntry,
+  probe: FileReferenceStatProbe,
+): void => {
+  if (FILE_REFERENCE_STAT_CACHE.get(cacheKey) !== entry) {
+    return;
+  }
+  if (!probe.cacheable) {
+    FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
+    return;
+  }
+  entry.expiresAt = probe.stat.exists ? null : Date.now() + FILE_REFERENCE_STAT_MISS_TTL_MS;
 };
 
 export const fileReferenceStat = (resolvedPath: string, effectiveDirectory: string): Promise<FileReferenceStat> => {
@@ -74,42 +122,51 @@ export const fileReferenceStat = (resolvedPath: string, effectiveDirectory: stri
 
   const cacheKey = statCacheKey(effectiveDirectory, normalizedPath);
   const cached = FILE_REFERENCE_STAT_CACHE.get(cacheKey);
-  if (cached) {
+  if (cached && (cached.expiresAt === null || cached.expiresAt > Date.now())) {
     FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
     FILE_REFERENCE_STAT_CACHE.set(cacheKey, cached);
-    return cached;
+    return cached.stat;
+  }
+  if (cached) {
+    FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
   }
 
-  const request = new Promise<FileReferenceStat>((resolve) => {
-    const run = () => {
-      activeFileReferenceStatCount += 1;
-      void probeFileReferenceStat(normalizedPath, effectiveDirectory)
-        .then(resolve)
-        .catch(() => resolve(MISSING_FILE_REFERENCE_STAT))
-        .finally(() => {
-          activeFileReferenceStatCount = Math.max(0, activeFileReferenceStatCount - 1);
-          pendingFileReferenceStats.shift()?.();
-        });
-    };
+  const entry: FileReferenceStatCacheEntry = {
+    // Until the probe answers, the key counts as a miss, so a lookup landing
+    // after the TTL re-probes instead of waiting on a stale promise.
+    expiresAt: Date.now() + FILE_REFERENCE_STAT_MISS_TTL_MS,
+    stat: new Promise<FileReferenceStat>((resolve) => {
+      const run = () => {
+        activeFileReferenceStatCount += 1;
+        void probeFileReferenceStat(normalizedPath, effectiveDirectory)
+          .then((probe) => {
+            settleFileReferenceStatEntry(cacheKey, entry, probe);
+            resolve(probe.stat);
+          })
+          .catch(() => {
+            if (FILE_REFERENCE_STAT_CACHE.get(cacheKey) === entry) {
+              FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
+            }
+            resolve(MISSING_FILE_REFERENCE_STAT);
+          })
+          .finally(() => {
+            activeFileReferenceStatCount = Math.max(0, activeFileReferenceStatCount - 1);
+            pendingFileReferenceStats.shift()?.();
+          });
+      };
 
-    if (activeFileReferenceStatCount < FILE_REFERENCE_STAT_CONCURRENCY) {
-      run();
-      return;
-    }
+      if (activeFileReferenceStatCount < FILE_REFERENCE_STAT_CONCURRENCY) {
+        run();
+        return;
+      }
 
-    pendingFileReferenceStats.push(run);
-  });
+      pendingFileReferenceStats.push(run);
+    }),
+  };
 
-  const maxCacheEntries = getFileReferenceStatCacheMax();
-  while (FILE_REFERENCE_STAT_CACHE.size >= maxCacheEntries) {
-    const oldest = FILE_REFERENCE_STAT_CACHE.keys().next().value;
-    if (oldest === undefined) {
-      break;
-    }
-    FILE_REFERENCE_STAT_CACHE.delete(oldest);
-  }
-  FILE_REFERENCE_STAT_CACHE.set(cacheKey, request);
-  return request;
+  trimFileReferenceStatCache(getFileReferenceStatCacheMax());
+  FILE_REFERENCE_STAT_CACHE.set(cacheKey, entry);
+  return entry.stat;
 };
 
 export const fileReferenceExists = async (resolvedPath: string, effectiveDirectory: string): Promise<boolean> => {

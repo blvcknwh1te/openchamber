@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 
 import { fileReferenceExists, fileReferenceStat } from './fileReferenceStat';
 
@@ -119,5 +119,67 @@ describe('fileReferenceStat classification', () => {
     const result = await fileReferenceStat('/repo/missing', '/repo');
 
     expect(result).toEqual({ exists: false, isDirectory: false });
+  });
+
+  test('treats an optional miss on the directory route as not existing', async () => {
+    // The VS Code bridge answers an optional miss on either route with a 200
+    // and `{ exists: false }`, so the flag decides instead of `isDirectory`.
+    stubFetchWith(() => {
+      const url = calls[calls.length - 1]?.url ?? '';
+      return url.startsWith('/api/fs/stat')
+        ? new Response(JSON.stringify({ error: 'Specified path is not a file' }), { status: 400 })
+        : new Response(JSON.stringify({ path: '/repo-bridge/gone', exists: false }), { status: 200 });
+    });
+
+    const result = await fileReferenceStat('/repo-bridge/gone', '/repo-bridge');
+
+    expect(result).toEqual({ exists: false, isDirectory: false });
+  });
+});
+
+describe('fileReferenceStat cache authority', () => {
+  test('does not remember a rejected probe as a missing path', async () => {
+    let unavailable = true;
+    stubFetchWith(() => (unavailable
+      ? new Response(JSON.stringify({ error: 'OpenCode API unavailable' }), { status: 503 })
+      : new Response(JSON.stringify({ path: '/repo-outage/ok.ts', isFile: true, size: 4 }), { status: 200 })));
+
+    const rejected = await fileReferenceStat('/repo-outage/ok.ts', '/repo-outage');
+    unavailable = false;
+    const afterRecovery = await fileReferenceStat('/repo-outage/ok.ts', '/repo-outage');
+
+    expect(rejected).toEqual({ exists: false, isDirectory: false });
+    // The rejected probe is not evidence of absence, so the path is probed
+    // again instead of staying unlinked for the rest of the session.
+    expect(afterRecovery).toEqual({ exists: true, isDirectory: false });
+    expect(calls.map((call) => call.url)).toEqual([
+      `/api/fs/stat?path=${encodeURIComponent('/repo-outage/ok.ts')}&optional=true`,
+      `/api/fs/directory-stat?path=${encodeURIComponent('/repo-outage/ok.ts')}&optional=true`,
+      `/api/fs/stat?path=${encodeURIComponent('/repo-outage/ok.ts')}&optional=true`,
+    ]);
+  });
+
+  test('re-probes a stale miss so a file created later can become a link', async () => {
+    let missing = true;
+    stubFetchWith(() => (missing
+      ? new Response(JSON.stringify({ path: '/repo-late/late.ts', exists: false }), { status: 200 })
+      : new Response(JSON.stringify({ path: '/repo-late/late.ts', isFile: true, size: 8 }), { status: 200 })));
+
+    const clock = spyOn(Date, 'now');
+    clock.mockReturnValue(1_000);
+    try {
+      const beforeFileExists = await fileReferenceStat('/repo-late/late.ts', '/repo-late');
+      const stillCached = await fileReferenceStat('/repo-late/late.ts', '/repo-late');
+      missing = false;
+      clock.mockReturnValue(1_000_000);
+      const afterFileExists = await fileReferenceStat('/repo-late/late.ts', '/repo-late');
+
+      expect(beforeFileExists).toEqual({ exists: false, isDirectory: false });
+      expect(stillCached).toEqual({ exists: false, isDirectory: false });
+      expect(afterFileExists).toEqual({ exists: true, isDirectory: false });
+      expect(calls).toHaveLength(2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

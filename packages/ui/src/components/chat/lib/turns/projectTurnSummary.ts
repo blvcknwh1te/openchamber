@@ -1,5 +1,6 @@
 import type { SnapshotFileDiff } from '@opencode-ai/sdk/v2';
 import { summarizeLiveActivity } from './liveActivitySummary';
+import { isCompactionSummaryMessage } from './transcriptMessages';
 import type { ChatMessageEntry, TurnChangedFile, TurnDiffStats, TurnSummaryRecord } from './types';
 
 interface SummaryDiff {
@@ -23,10 +24,6 @@ const getTextFromPart = (part: unknown): string | undefined => {
         return content;
     }
     return undefined;
-};
-
-const isCompactionSummaryMessage = (message: ChatMessageEntry): boolean => {
-    return (message.info as { summary?: unknown }).summary === true;
 };
 
 export const projectTurnSummary = (assistantMessages: ChatMessageEntry[]): TurnSummaryRecord => {

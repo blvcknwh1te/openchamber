@@ -1,4 +1,5 @@
 import { ACTIVITY_STANDALONE_TOOL_NAMES } from './constants';
+import { isCompactionSummaryMessage } from './transcriptMessages';
 import type {
     ChatMessageEntry,
     TurnActivityGroup,
@@ -34,10 +35,6 @@ const getPartText = (part: unknown): string | undefined => {
 const getMessageFinish = (message: ChatMessageEntry): string | undefined => {
     const finish = (message.info as { finish?: unknown }).finish;
     return typeof finish === 'string' ? finish : undefined;
-};
-
-const isCompactionSummaryMessage = (message: ChatMessageEntry): boolean => {
-    return (message.info as { summary?: unknown }).summary === true;
 };
 
 const buildTurnPartRecord = (

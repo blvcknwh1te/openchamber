@@ -43,6 +43,8 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - Fixed a Windows case bug: the workspace folder came back as `d:\...` while the UI normalized it to `D:\...`, so every path probe failed with 403 and file links stayed dead.
 - A directory link opens the directory itself instead of revealing it inside its parent window. The same fix applies to "Open in File Explorer" in the files view and sidebar.
 - Paths outside the workspace stay clickable: existence probes are allowed outside the workspace root, while content reads remain restricted to it. This makes links such as the OpenCode log under the home directory work.
+- Link checks recover: a rejected or unreachable probe is no longer remembered as "file missing", and a "missing" answer is re-checked, so a link appears once the file exists even if the first check ran before it was written.
+- The automatic compaction summary is no longer rendered as an assistant answer. Compaction itself is unchanged, and the summary stays in the session.
 
 ### Permission descriptions
 

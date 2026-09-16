@@ -12,6 +12,7 @@ import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/tu
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
+import { selectTranscriptMessages } from './lib/turns/transcriptMessages';
 import { getNormalizedMessageForDisplay, hasCompactionPart } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
@@ -489,19 +490,26 @@ const TurnBlock = React.memo(({
         return null;
     }, [activeStreamingMessageId, turn.assistantMessages]);
 
+    // `/compact` (and automatic compaction) stores its summary as an assistant
+    // message; it feeds the model's context, it is not a transcript answer.
+    const transcriptAssistantMessages = React.useMemo(
+        () => selectTranscriptMessages(turn.assistantMessages),
+        [turn.assistantMessages],
+    );
+
     const visibleAssistantMessages = React.useMemo(() => {
         if (chatRenderMode === 'live') {
-            return turn.assistantMessages;
+            return transcriptAssistantMessages;
         }
 
-        const completed = turn.assistantMessages.filter(isAssistantMessageCompleted);
-        if (completed.length === turn.assistantMessages.length) {
-            return turn.assistantMessages;
+        const completed = transcriptAssistantMessages.filter(isAssistantMessageCompleted);
+        if (completed.length === transcriptAssistantMessages.length) {
+            return transcriptAssistantMessages;
         }
 
         if (streamingAssistantMessageId) {
             const completedIds = new Set(completed.map((assistant) => assistant.info.id));
-            return turn.assistantMessages.filter((assistant) => (
+            return transcriptAssistantMessages.filter((assistant) => (
                 completedIds.has(assistant.info.id)
                 || assistant.info.id === streamingAssistantMessageId
             ));
@@ -510,16 +518,16 @@ const TurnBlock = React.memo(({
         if (completed.length > 0) {
             return completed;
         }
-        const firstAssistant = turn.assistantMessages[0];
+        const firstAssistant = transcriptAssistantMessages[0];
         return firstAssistant ? [firstAssistant] : [];
-    }, [chatRenderMode, streamingAssistantMessageId, turn.assistantMessages]);
+    }, [chatRenderMode, streamingAssistantMessageId, transcriptAssistantMessages]);
 
     const completedAssistantMessages = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
-            return turn.assistantMessages;
+            return transcriptAssistantMessages;
         }
-        return turn.assistantMessages.filter(isAssistantMessageCompleted);
-    }, [chatRenderMode, turn.assistantMessages]);
+        return transcriptAssistantMessages.filter(isAssistantMessageCompleted);
+    }, [chatRenderMode, transcriptAssistantMessages]);
 
     const visibleAssistantIds = React.useMemo(() => {
         const ids = new Map<string, number>();
