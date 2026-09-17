@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { commandMatchesSearch, mergeCommandAutocompleteItems } from '../commandAutocompleteItems';
+import { commandMatchesSearch, filterAndSortCommandItems, mergeCommandAutocompleteItems } from '../commandAutocompleteItems';
 
 interface Item {
   name: string;
@@ -153,5 +153,52 @@ describe('mergeCommandAutocompleteItems', () => {
 
   test('handles empty inputs', () => {
     expect(mergeCommandAutocompleteItems([], [], [])).toEqual([]);
+  });
+});
+
+describe('filterAndSortCommandItems', () => {
+  test('keeps every named command and skill when the query is empty', () => {
+    const items: Item[] = [
+      { name: 'ship', source: 'opencode' },
+      { name: 'vm-ssh-plink', source: 'skill', isSkill: true },
+      { name: 'compact', source: 'openchamber', isBuiltIn: true },
+    ];
+
+    expect(filterAndSortCommandItems(items, '').map((item) => item.name)).toEqual([
+      'compact',
+      'ship',
+      'vm-ssh-plink',
+    ]);
+  });
+
+  test('drops a nameless entry instead of failing the whole palette', () => {
+    const items: Item[] = [
+      { name: 'ship', source: 'opencode' },
+      { name: '   ', source: 'skill', isSkill: true },
+    ];
+
+    expect(filterAndSortCommandItems(items, '').map((item) => item.name)).toEqual(['ship']);
+  });
+
+  test('tolerates a missing query and ranks prefix matches first', () => {
+    const items: Item[] = [
+      { name: 'vm-ssh-plink', source: 'skill', isSkill: true },
+      { name: 'ship', source: 'opencode' },
+    ];
+
+    expect(filterAndSortCommandItems(items, undefined).length).toBe(2);
+    expect(filterAndSortCommandItems(items, 'ship')[0]?.name).toBe('ship');
+  });
+
+  test('matches descriptions and aliases', () => {
+    const items: Item[] = [{
+      name: 'deploy',
+      source: 'opencode',
+      description: 'Ship the service',
+      searchAliases: ['release'],
+    }];
+
+    expect(filterAndSortCommandItems(items, 'release').length).toBe(1);
+    expect(filterAndSortCommandItems(items, 'service').length).toBe(1);
   });
 });

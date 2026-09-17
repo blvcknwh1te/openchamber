@@ -10,11 +10,9 @@ import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { commitStreamedText } from '../../lib/streamTextCommit';
+import { TOOL_ROW_DESCRIPTION_CLASS, TOOL_ROW_TITLE_CLASS } from './toolRowClasses';
 import type { StreamPhase } from '../types';
 
-const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
-const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
-const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 
 type PartWithText = Part & { text?: string; content?: string; time?: { start?: number; end?: number } };
 

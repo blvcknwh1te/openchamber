@@ -21,6 +21,8 @@ import { deriveMessageRole } from './message/messageRole';
 import { filterVisibleParts, normalizeParts } from './message/partUtils';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { isHiddenUserMessage } from './message/hiddenUserMessage';
+import { CompactionNotice } from './message/CompactionNotice';
+import { hasCompactionPart } from './lib/messageDisplayNormalization';
 import { flattenAssistantTextParts, flattenUserTextParts } from '@/lib/messages/messageText';
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/lib/messages/providerAuthError';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
@@ -820,6 +822,21 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     }
 
     const allowAnimation = shouldAnimateMessage && !isAnimationSettled && !isStreamingPhase && !hasEverStreamedRef.current;
+
+    // The compaction command is a service action: the transcript shows a notice
+    // instead of a bubble carrying the command text.
+    if (hasCompactionPart(message)) {
+        return (
+            <div
+                className="group w-full pt-4"
+                id={`message-${message.info.id}`}
+                data-message-id={message.info.id}
+                ref={messageContainerRef}
+            >
+                <CompactionNotice />
+            </div>
+        );
+    }
 
     if (shouldHideUserMessage) {
         return null;

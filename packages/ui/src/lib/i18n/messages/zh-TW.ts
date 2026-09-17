@@ -2190,6 +2190,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.redoDescription': '重做之前復原的訊息',
   'chat.commandAutocomplete.command.timelineDescription': '開啟對話時間線',
   'chat.commandAutocomplete.command.compactDescription': '使用 AI 壓縮會話歷史以減少上下文大小',
+  'chat.compaction.notice': '上下文已壓縮',
   'chat.commandAutocomplete.command.summaryDescription': '非破壞性會話總結。命令後可選填主題提示。',
   'chat.commandAutocomplete.command.workspaceReviewDescription': '審查工作區 diff 的意圖、正確性與充分性，並依嚴重程度分級。',
   'chat.commandAutocomplete.command.handoffReviewDescription': '根據生成的交接內容建立或重用獨立的審查會話。',

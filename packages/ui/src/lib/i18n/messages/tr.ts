@@ -2180,6 +2180,7 @@ export const dict = {
   'chat.commandAutocomplete.command.redoDescription': 'Önceden geri alınan mesajları geri getirir',
   'chat.commandAutocomplete.command.timelineDescription': 'Konuşma zaman çizelgesini açar',
   'chat.commandAutocomplete.command.compactDescription': 'Bağlam boyutunu küçültmek için session geçmişini AI ile sıkıştırır',
+  'chat.compaction.notice': 'Bağlam sıkıştırıldı',
   'chat.commandAutocomplete.command.summaryDescription': 'Session geçmişini değiştirmeden özet çıkarır. Komuttan sonra isteğe bağlı konu ipucu verilebilir.',
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'Çalışma alanı diff\'ini amaç, doğruluk ve yeterlilik açısından inceler ve önem derecesine göre sınıflandırır.',
   'chat.commandAutocomplete.command.handoffReviewDescription': 'Oluşturulan bir handoff\'tan ayrı bir inceleme session\'ı oluşturur veya yeniden kullanır.',

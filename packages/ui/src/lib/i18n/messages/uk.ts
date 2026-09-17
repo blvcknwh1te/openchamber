@@ -2198,6 +2198,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.commandAutocomplete.command.redoDescription": "Повторити раніше скасовані повідомлення",
   "chat.commandAutocomplete.command.timelineDescription": "Відкрити хронологію розмови",
   "chat.commandAutocomplete.command.compactDescription": "Стиснути історію сесії за допомогою ШІ, щоб зменшити розмір контексту",
+  "chat.compaction.notice": "Контекст стиснуто",
   "chat.commandAutocomplete.command.summaryDescription": "Неруйнівний підсумок сесії. Після команди можна додати тему.",
   "chat.commandAutocomplete.command.workspaceReviewDescription": "Перевірити diff робочого простору на намір, коректність і адекватність — зі знахідками за рівнем критичності.",
   "chat.commandAutocomplete.command.handoffReviewDescription": "Створити або повторно використати окрему сесію ревʼю зі згенерованого handoff.",

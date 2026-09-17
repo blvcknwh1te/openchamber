@@ -2186,6 +2186,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.redoDescription': '重做之前撤销的消息',
   'chat.commandAutocomplete.command.timelineDescription': '打开对话时间线',
   'chat.commandAutocomplete.command.compactDescription': '使用 AI 压缩会话历史以减少上下文大小',
+  'chat.compaction.notice': '上下文已压缩',
   'chat.commandAutocomplete.command.summaryDescription': '非破坏性会话总结。命令后可选填主题提示。',
   'chat.commandAutocomplete.command.workspaceReviewDescription': '审查工作区 diff 的意图、正确性与充分性，并按严重程度分级。',
   'chat.commandAutocomplete.command.handoffReviewDescription': '根据生成的交接内容创建或复用独立的审查会话。',

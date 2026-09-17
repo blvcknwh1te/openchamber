@@ -52,6 +52,7 @@ import {
     type TaskToolSummaryEntry,
 } from './taskToolModel';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
+import { TOOL_ROW_DESCRIPTION_CLASS, TOOL_ROW_TITLE_CLASS } from './toolRowClasses';
 import { useI18n } from '@/lib/i18n';
 import {
     extractFirstChangedLineFromDiff,
@@ -74,9 +75,6 @@ import { openApplyPatchFileInEditor } from './applyPatchEditorAction';
 
 type ToolJsonViewMode = 'summary' | 'formatted' | 'raw';
 
-const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
-const TOOL_ROW_TITLE_CLASS = cn('typography-meta font-medium', TOOL_ROW_TEXT_CLASS);
-const TOOL_ROW_DESCRIPTION_CLASS = cn('typography-meta', TOOL_ROW_TEXT_CLASS);
 
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: string; time?: { start: number; end?: number }; attachments?: Array<FilePart> };
 

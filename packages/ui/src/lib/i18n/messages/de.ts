@@ -2015,6 +2015,7 @@ export const dict = {
   'chat.commandAutocomplete.command.redoDescription': 'Zuvor rückgängig gemachte Nachrichten erneut ausführen',
   'chat.commandAutocomplete.command.timelineDescription': 'Konversations-Zeitleiste öffnen',
   'chat.commandAutocomplete.command.compactDescription': 'Sitzungsverlauf mit KI komprimieren, um die Kontextgröße zu reduzieren',
+  'chat.compaction.notice': 'Kontext komprimiert',
   'chat.commandAutocomplete.command.summaryDescription': 'Nicht-destructive Zusammenfassung der Sitzung. Optionaler Themenhinweis nach dem Befehl.',
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'Überprüfung des Arbeitsbereichs-Unterschieds hinsichtlich Absicht, Richtigkeit und Angemessenheit, bewertet nach Schweregrad.',
   'chat.commandAutocomplete.command.handoffReviewDescription': 'Erstellen oder Wiederverwenden einer separaten Überprüfungssitzung aus einem generierten Handoff.',

@@ -68,3 +68,30 @@ export function commandMatchesSearch(command: CommandAutocompleteSearchItem, que
     || Boolean(command.description && fuzzyMatch(command.description, query))
     || Boolean(command.searchAliases?.some((alias) => fuzzyMatch(alias, query)));
 }
+
+/**
+ * Narrows and orders a merged command list for the palette.
+ *
+ * Discovery feeds this from several sources (built-ins, OpenCode commands,
+ * skills); one malformed entry must cost only itself. Entries without a usable
+ * name are dropped instead of reaching lookups and sorting, so a single bad
+ * record cannot blank out the whole palette.
+ */
+export function filterAndSortCommandItems<T extends CommandAutocompleteSearchItem>(
+  items: readonly T[],
+  query: string | undefined,
+): T[] {
+  const normalizedQuery = (query ?? '').trim();
+  const named = items.filter((item) => item.name.trim().length > 0);
+  const matched = normalizedQuery
+    ? named.filter((item) => commandMatchesSearch(item, normalizedQuery))
+    : named;
+  const loweredQuery = normalizedQuery.toLowerCase();
+
+  return [...matched].sort((left, right) => {
+    const leftStarts = left.name.toLowerCase().startsWith(loweredQuery);
+    const rightStarts = right.name.toLowerCase().startsWith(loweredQuery);
+    if (leftStarts !== rightStarts) return leftStarts ? -1 : 1;
+    return left.name.localeCompare(right.name);
+  });
+}

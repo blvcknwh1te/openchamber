@@ -68,6 +68,7 @@ data/
 workspaces/
 *.pid
 .worktrees/
+.temp/
 
 # OpenChamber app runtime state (sessions db, screenshots)
 .openchamber/screenshots/

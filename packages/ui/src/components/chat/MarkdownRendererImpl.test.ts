@@ -249,9 +249,16 @@ const fakeUseUIStore = Object.assign(
     { getState: () => rendererUiState },
 );
 mock.module('@/stores/useUIStore', () => ({ useUIStore: fakeUseUIStore }));
+const fakeSearchFiles = async () => [];
+const fakeFileSearchState = { searchFiles: fakeSearchFiles };
+mock.module('@/stores/useFileSearchStore', () => ({
+  useFileSearchStore: <T>(selector: (state: typeof fakeFileSearchState) => T) => selector(fakeFileSearchState),
+}));
 mock.module('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null, useHomeDirectory: () => '' }));
 mock.module('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ editor: undefined, runtime: { isVSCode: false } }) }));
-mock.module('@/lib/desktop', () => ({ isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false, revealDesktopPath: async () => false }));
+// Modules under test import other desktop helpers too; keep the real ones.
+const desktop = await import('@/lib/desktop');
+mock.module('@/lib/desktop', () => ({ ...desktop, isDesktopLocalOriginActive: () => false, isDesktopShell: () => false, isVSCodeRuntime: () => false, revealDesktopPath: async () => false }));
 mock.module('@/lib/runtimeSurface', () => ({ isMobileSurfaceRuntime: () => false }));
 mock.module('@/lib/outsideFileGrants', () => ({ ensureOutsideFileGrantForDesktop: async () => undefined }));
 mock.module('@/lib/path-utils', () => ({ getDirectoryForFilePath: () => '', isFilePathWithinDirectory: () => true, toAbsoluteFilePath: () => '', expandHomePath, isAbsoluteFilePath, normalizeFilePath }));

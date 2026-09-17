@@ -13,6 +13,7 @@ import { attachAppLinkInteractions } from './appLinkInteractions';
 import type { ToolPopupContent } from './message/types';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { useUIStore } from '@/stores/useUIStore';
+import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useEffectiveDirectory, useHomeDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, revealDesktopPath } from '@/lib/desktop';
@@ -49,6 +50,7 @@ import {
   resolveFileReference,
   type ParsedFileReference,
 } from './fileReferenceParser';
+import { lookupWorkspaceFileReference } from './fileReferenceLookup';
 import { fileReferenceStat } from './fileReferenceStat';
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 import { detachedMarkdownDomCache, type DetachedMarkdownDomKey } from './markdown/detachedMarkdownDomCache';
@@ -357,6 +359,7 @@ const useFileReferenceInteractions = ({
   // painting the transcript must not depend on the host runtime, and a message
   // must stay renderable in a surface without runtime providers.
   const runtimeApis = useRuntimeAPIs();
+  const searchFiles = useFileSearchStore((state) => state.searchFiles);
   const annotationDebounceRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
@@ -477,9 +480,23 @@ const useFileReferenceInteractions = ({
           ? Promise.resolve({ exists: true, isDirectory: false })
           : fileReferenceStat(resolved.resolvedPath, effectiveDirectory);
 
-        void statPromise.then(({ exists, isDirectory }) => {
-          if (cancelled || !exists || !container.contains(candidate)) {
+        void statPromise.then(async ({ exists, isDirectory }) => {
+          if (cancelled || !container.contains(candidate)) {
             return;
+          }
+
+          // A reference the direct probe missed was written from another root
+          // (a repository inside the opened folder, or the folder inside the
+          // opened repository), so the shared file search locates it.
+          let targetPath = resolved.resolvedPath;
+          let targetIsDirectory = isDirectory;
+          if (!exists) {
+            const located = await lookupWorkspaceFileReference(resolved.resolvedPath, effectiveDirectory, searchFiles);
+            if (cancelled || !container.contains(candidate) || !located) {
+              return;
+            }
+            targetPath = located;
+            targetIsDirectory = false;
           }
 
           const latestRawCandidate = extractPathCandidateFromElement(candidate);
@@ -490,8 +507,8 @@ const useFileReferenceInteractions = ({
 
           candidate.setAttribute('data-openchamber-file-link', 'true');
           candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
-          candidate.setAttribute('data-openchamber-file-path', latestResolved.resolvedPath);
-          if (isDirectory) {
+          candidate.setAttribute('data-openchamber-file-path', targetPath);
+          if (targetIsDirectory) {
             candidate.setAttribute('data-openchamber-file-dir', 'true');
             candidate.setAttribute('title', 'Open folder');
           } else {
@@ -640,7 +657,7 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('click', handleClick);
       container.removeEventListener('keydown', handleKeyDown);
     };
-  }, [containerRef, runtimeApis, effectiveDirectory, homeDirectory, enabled]);
+  }, [containerRef, runtimeApis, searchFiles, effectiveDirectory, homeDirectory, enabled]);
 };
 
 const useMermaidInlineInteractions = ({

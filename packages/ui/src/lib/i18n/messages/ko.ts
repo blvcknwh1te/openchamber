@@ -2222,6 +2222,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.redoDescription': '이전에 실행 취소한 메시지 다시 실행',
   'chat.commandAutocomplete.command.timelineDescription': '대화 타임라인 열기',
   'chat.commandAutocomplete.command.compactDescription': 'AI로 세션 기록을 압축해 컨텍스트 크기를 줄입니다',
+  'chat.compaction.notice': '컨텍스트가 압축되었습니다',
   'chat.commandAutocomplete.command.summaryDescription': '세션 기록을 안전하게 요약합니다. 명령 뒤에 선택적으로 주제 힌트를 넣을 수 있습니다.',
   'chat.commandAutocomplete.command.workspaceReviewDescription': '워크스페이스 diff의 의도, 정확성, 적절성을 검토하고 심각도별로 분류합니다.',
   'chat.commandAutocomplete.command.handoffReviewDescription': '생성된 인수인계로 별도의 리뷰 세션을 만들거나 재사용합니다.',

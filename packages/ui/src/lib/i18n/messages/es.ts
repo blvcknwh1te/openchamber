@@ -2198,6 +2198,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.commandAutocomplete.command.redoDescription": "Rehacer mensajes previamente deshechos",
   "chat.commandAutocomplete.command.timelineDescription": "Abrir la línea de tiempo de la conversación",
   "chat.commandAutocomplete.command.compactDescription": "Comprimir el historial de la sesión usando IA para reducir el tamaño del contexto",
+  "chat.compaction.notice": "Contexto compactado",
   "chat.commandAutocomplete.command.summaryDescription": "Resumen no destructivo de la sesión. Pista opcional del tema después del comando.",
   "chat.commandAutocomplete.command.workspaceReviewDescription": "Revisa el diff del espacio de trabajo en intención, corrección y adecuación, con hallazgos por severidad.",
   "chat.commandAutocomplete.command.handoffReviewDescription": "Crea o reutiliza una sesión de revisión separada a partir de un handoff generado.",

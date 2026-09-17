@@ -171,9 +171,6 @@ export const normalizeUserDisplayParts = (parts: Part[], options?: { planModeEna
         })
         .map((part) => {
             const rawPart = part as Record<string, unknown>;
-            if (rawPart.type === 'compaction') {
-                return { type: 'text', text: '/compact' } as Part;
-            }
             if (rawPart.type === 'text') {
                 const text = typeof rawPart.text === 'string' ? rawPart.text.trim() : '';
                 const synthetic = rawPart.synthetic === true;

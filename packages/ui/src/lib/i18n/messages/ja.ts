@@ -2216,6 +2216,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.redoDescription': '元に戻したメッセージをやり直す',
   'chat.commandAutocomplete.command.timelineDescription': '会話タイムラインを開く',
   'chat.commandAutocomplete.command.compactDescription': 'AIを使用してセッション履歴を圧縮しコンテキストサイズを削減',
+  'chat.compaction.notice': 'コンテキストを圧縮しました',
   'chat.commandAutocomplete.command.summaryDescription': '非破壊的なセッション要約。コマンドの後にオプションのトピックヒント。',
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'ワークスペースの差分を意図、正確性、妥当性について重大度で評価。',
   'chat.commandAutocomplete.command.handoffReviewDescription': '生成されたハンドオフから別のレビューセッションを作成または再利用。',

@@ -870,6 +870,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.undoDescription': 'Cofnij ostatnią wiadomość',
   'chat.commandAutocomplete.command.redoDescription': 'Ponów poprzednio cofnięte wiadomości',
   'chat.commandAutocomplete.command.compactDescription': 'Skompresuj historię sesji używając AI aby zredukować rozmiar kontekstu',
+  'chat.compaction.notice': 'Kontekst skompresowany',
   'chat.commandAutocomplete.command.summaryDescription': 'Niedestrukcyjne podsumowanie sesji. Opcjonalna wskazówka tematu po poleceniu.',
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'Sprawdź diff obszaru roboczego pod kątem zamiaru, poprawności i adekwatności — ze znaleziskami według wagi.',
   'chat.commandAutocomplete.command.handoffReviewDescription': 'Utwórz lub użyj ponownie osobnej sesji przeglądu z wygenerowanego handoffu.',

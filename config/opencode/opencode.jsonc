@@ -1,14 +1,14 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "ofox/qwen/qwen3.8-flash",
-  "small_model": "ofox/bailian/qwen-flash",
+  "model": "opencode-go/qwen3.8-flash",
+  "small_model": "opencode-go/qwen3.8-flash",
   "agent": {
     "title": {
-      "model": "ofox/bailian/qwen-flash",
+      "model": "opencode-go/qwen3.8-flash",
       "prompt": "Сформируй короткий заголовок сессии — максимум 5-6 слов, по сути задачи, на русском. Верни ТОЛЬКО заголовок, без кавычек, без пояснений, одной строкой."
     },
     "build": {
-      "model": "ofox/qwen/qwen3.8-flash",
+      "model": "opencode-go/qwen3.8-flash",
       "permission": {
         "glob": "allow",
         "external_directory": "allow"
@@ -21,12 +21,12 @@
     "reserved": 8000
   },
   "provider": {
-    "ofox": {
+    "opencode-go": {
       "options": {
         "setCacheKey": true
       },
       "models": {
-        "qwen/qwen3.8-flash": {
+        "qwen3.8-flash": {
           "name": "Qwen3.8 Flash",
           "attachment": true,
           "reasoning": true,
@@ -87,7 +87,6 @@
   },
   "plugin": [
     "./plugins/prepend-system-rule.ts",
-    "./plugins/session-autotitle.ts",
     "./plugins/tool-timeout.ts",
     "./plugins/zz-dump-system-prompt.ts"
   ],

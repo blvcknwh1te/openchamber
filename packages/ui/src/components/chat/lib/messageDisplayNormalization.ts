@@ -1,5 +1,3 @@
-import type { Part } from '@opencode-ai/sdk/v2';
-
 import { filterSyntheticParts } from '@/lib/messages/synthetic';
 import { normalizeParts } from '../message/partUtils';
 import type { ChatMessageEntry } from './turns/types';
@@ -11,37 +9,25 @@ export const hasCompactionPart = (message: ChatMessageEntry): boolean => {
     });
 };
 
+// A compaction part is a service action, not message content: it is kept in
+// place (the transcript renders it as a notice, not as text) so the turn keeps
+// its boundary, and only the display role is settled here.
 const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessageEntry => {
     if (!hasCompactionPart(message)) {
         return message;
     }
 
-    let changedParts = false;
-    const nextParts = message.parts.map((part) => {
-        const type = (part as { type?: unknown } | null | undefined)?.type;
-        if (type !== 'compaction') {
-            return part;
-        }
-        changedParts = true;
-        return { type: 'text', text: '/compact' } as Part;
-    });
-
     const info = message.info as unknown as { clientRole?: string | null | undefined };
-    const needsClientRole = info.clientRole !== 'user';
-
-    if (!changedParts && !needsClientRole) {
+    if (info.clientRole === 'user') {
         return message;
     }
 
     return {
         ...message,
-        info: needsClientRole
-            ? ({
-                ...(message.info as unknown as Record<string, unknown>),
-                clientRole: 'user',
-            } as unknown as typeof message.info)
-            : message.info,
-        parts: changedParts ? nextParts : message.parts,
+        info: ({
+            ...(message.info as unknown as Record<string, unknown>),
+            clientRole: 'user',
+        } as unknown as typeof message.info),
     };
 };
 

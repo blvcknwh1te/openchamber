@@ -18,45 +18,38 @@
   "darkThemeId": "bright-chat-dark",
   "favoriteModels": [
     {
-      "providerID": "ofox",
-      "modelID": "z-ai/glm-5.3-flash"
+      "providerID": "opencode-go",
+      "modelID": "glm-5.3-flash"
     },
     {
-      "providerID": "ofox",
-      "modelID": "deepseek/deepseek-v4-flash-vision-exp"
+      "providerID": "opencode-go",
+      "modelID": "deepseek-v4-flash-vision-exp"
     }
   ],
   "hiddenModels": [],
   "collapsedModelProviders": [],
   "recentModels": [
     {
-      "providerID": "ofox",
-      "modelID": "qwen/qwen3.8-flash"
+      "providerID": "opencode-go",
+      "modelID": "qwen3.8-flash"
     },
     {
-      "providerID": "ofox",
-      "modelID": "z-ai/glm-5.3-flash"
+      "providerID": "opencode-go",
+      "modelID": "glm-5.3-flash"
     },
     {
-      "providerID": "ofox",
-      "modelID": "deepseek/deepseek-v4-flash-vision-exp"
-    },
-    {
-      "providerID": "ofox",
-      "modelID": "anthropic/claude-sonnet-4.6"
+      "providerID": "opencode-go",
+      "modelID": "deepseek-v4-flash-vision-exp"
     }
   ],
   "recentAgents": [
     "build"
   ],
   "recentEfforts": {
-    "ofox/deepseek/deepseek-v4-flash-vision-exp": [
+    "opencode-go/deepseek-v4-flash-vision-exp": [
       "default"
     ],
-    "ofox/anthropic/claude-sonnet-4.6": [
-      "default"
-    ],
-    "ofox/z-ai/glm-5.3-flash": [
+    "opencode-go/glm-5.3-flash": [
       "high",
       "low",
       "default"
@@ -80,6 +73,6 @@
   "editorFontSize": 10,
   "draftStartersVisible": true,
   "defaultFileViewerPreview": true,
-  "defaultModel": "ofox/z-ai/glm-5.3-flash",
+  "defaultModel": "opencode-go/glm-5.3-flash",
   "showDeletionDialog": true
 }

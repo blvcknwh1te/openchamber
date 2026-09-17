@@ -2220,6 +2220,7 @@ export const dict = {
   'chat.commandAutocomplete.command.redoDescription': 'Redo previously undone messages',
   'chat.commandAutocomplete.command.timelineDescription': 'Open the conversation timeline',
   'chat.commandAutocomplete.command.compactDescription': 'Compress session history using AI to reduce context size',
+  'chat.compaction.notice': 'Context compacted',
   'chat.commandAutocomplete.command.summaryDescription': 'Non-destructive session summary. Optional topic hint after the command.',
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'Review the workspace diff for intent, correctness, and adequacy, graded by severity.',
   'chat.commandAutocomplete.command.handoffReviewDescription': 'Create or reuse a separate review session from a generated handoff.',
