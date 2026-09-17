@@ -1,12 +1,37 @@
+import type { Part } from '@opencode-ai/sdk/v2';
 import { filterSyntheticParts } from '@/lib/messages/synthetic';
 import { normalizeParts } from '../message/partUtils';
 import type { ChatMessageEntry } from './turns/types';
 
+/**
+ * Command texts that carry a service compaction instead of message content.
+ * OpenCode stores the command as a `text` part while only the local echo exists
+ * and rewrites the turn into a `compaction` part once the server takes over, so
+ * both shapes are one turn on every surface. A new compaction command is added
+ * here, never by comparing its text at a call site.
+ */
+export const COMPACTION_COMMAND_TEXTS: readonly string[] = ['/compact'];
+
+const isCompactionPart = (part: Part): boolean => part.type === 'compaction';
+
+const isCompactionCommandPart = (part: Part): boolean =>
+    part.type === 'text' && COMPACTION_COMMAND_TEXTS.includes(part.text.trim());
+
+/**
+ * Server-written compaction part only. The transcript notice keys off this
+ * marker, which the command-text shape never has.
+ */
 export const hasCompactionPart = (message: ChatMessageEntry): boolean => {
-    return message.parts.some((part) => {
-        const type = (part as { type?: unknown } | null | undefined)?.type;
-        return type === 'compaction';
-    });
+    return message.parts.some(isCompactionPart);
+};
+
+/**
+ * Service compaction in either shape OpenCode reports it: a `compaction` part,
+ * or the command text while only the local echo exists. Single source of truth
+ * for "this turn is a service action, not message content".
+ */
+export const hasServiceCompaction = (parts: readonly Part[]): boolean => {
+    return parts.some((part) => isCompactionPart(part) || isCompactionCommandPart(part));
 };
 
 // A compaction part is a service action, not message content: it is kept in

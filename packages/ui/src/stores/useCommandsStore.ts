@@ -237,7 +237,12 @@ export const useCommandsStore = create<CommandsStore>()(
             set({ commands: cachedCommands ?? EMPTY_COMMANDS });
           }
 
-          if (cachedCommands !== undefined && now - loadedAt < COMMANDS_LOAD_CACHE_TTL_MS) {
+          // A non-empty list is the only cache worth trusting: an empty
+          // successful answer can just be a scan that ran before OpenCode was
+          // ready, and trusting it would hide the list for the whole TTL while
+          // the palette never asked again.
+          const hasCachedCommands = (cachedCommands?.length ?? 0) > 0;
+          if (hasCachedCommands && now - loadedAt < COMMANDS_LOAD_CACHE_TTL_MS) {
             return true;
           }
 

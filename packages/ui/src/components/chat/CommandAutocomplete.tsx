@@ -10,7 +10,14 @@ import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
-import { filterAndSortCommandItems, mergeCommandAutocompleteItems } from './commandAutocompleteItems';
+import {
+  createCommandAutocompleteReadiness,
+  filterAndSortCommandItems,
+  isCommandAutocompleteLoading,
+  loadCommandAutocompleteSources,
+  mergeCommandAutocompleteItems,
+} from './commandAutocompleteItems';
+import type { CommandAutocompleteReadiness } from './commandAutocompleteItems';
 import { AutocompleteRowTooltip } from './composer/ui/AutocompleteRowTooltip';
 
 type CommandSource = 'openchamber' | 'opencode' | 'skill';
@@ -154,8 +161,6 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const isMobile = useUIStore((state) => state.isMobile);
   const canUseReviewHandoffFlow = hasSession && !isMobile && !isVSCodeRuntime();
 
-  const [commands, setCommands] = React.useState<CommandInfo[]>([]);
-  const [loading, setLoading] = React.useState(false);
   // Commands and skills belong to the directory the composer sends to — the
   // session's own directory, or the Chats root for a chat draft — not to the
   // project the app was on last.
@@ -164,8 +169,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const loadCommandsForDirectory = useCommandsStore((s) => s.loadCommands);
   const skills = useSkillsStore((s) => selectSkillsForDirectory(s, effectiveDirectory));
   const loadSkillsForDirectory = useSkillsStore((s) => s.loadSkills);
-  const refreshCommands = React.useCallback(() => loadCommandsForDirectory(effectiveDirectory), [effectiveDirectory, loadCommandsForDirectory]);
-  const refreshSkills = React.useCallback(() => loadSkillsForDirectory(effectiveDirectory), [effectiveDirectory, loadSkillsForDirectory]);
+  const [readiness, setReadiness] = React.useState<CommandAutocompleteReadiness>(createCommandAutocompleteReadiness);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
   const keyboardNavigationRef = React.useRef(false);
@@ -194,57 +198,66 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     };
   }, [onClose]);
 
-  React.useEffect(() => {
-    // Force refresh to get latest project context when mounting
-    void refreshCommands();
-    void refreshSkills();
-  }, [refreshCommands, refreshSkills]);
+  const builtInCommands = React.useMemo(
+    () => buildBuiltInCommands({ hasSession, canStartSessionCommand, canUseReviewHandoffFlow, t }),
+    [canStartSessionCommand, canUseReviewHandoffFlow, hasSession, t],
+  );
+
+  const commands = React.useMemo(() => {
+    try {
+      const skillNames = new Set(skills.map((skill) => skill.name));
+      const customCommands: CommandInfo[] = commandsWithMetadata.map((cmd, index) => ({
+        id: `opencode:${cmd.scope ?? 'global'}:${cmd.name}:${cmd.agent ?? ''}:${cmd.model ?? ''}:${index}`,
+        name: cmd.name,
+        source: 'opencode',
+        description: cmd.description,
+        agent: cmd.agent ?? undefined,
+        model: cmd.model ?? undefined,
+        isBuiltIn: cmd.name === 'init' || cmd.name === 'review',
+        isSkill: cmd.source === 'skill' || skillNames.has(cmd.name),
+        scope: cmd.scope,
+      }));
+      const skillCommands: CommandInfo[] = skills.map((skill, index) => ({
+        id: `skill:${skill.scope}:${skill.source ?? 'opencode'}:${skill.name}:${index}`,
+        name: skill.name,
+        source: 'skill',
+        description: skill.description,
+        isSkill: true,
+        scope: skill.scope,
+      }));
+
+      return filterAndSortCommandItems(
+        mergeCommandAutocompleteItems(builtInCommands, customCommands, skillCommands),
+        searchQuery,
+      );
+    } catch (error) {
+      // Showing built-ins alone used to hide every discovered skill and user
+      // command behind one malformed record, with no trace of the failure.
+      console.error('[CommandAutocomplete] Failed to build the command list:', error);
+      return filterAndSortCommandItems(builtInCommands, searchQuery);
+    }
+  }, [builtInCommands, commandsWithMetadata, searchQuery, skills]);
+
+  // The two discovery passes answer independently, so an empty snapshot that
+  // predates them is not evidence of "no commands": the palette shows progress
+  // instead, and only renders the list once it has the whole set.
+  const loading = isCommandAutocompleteLoading(readiness, commands.length);
 
   React.useEffect(() => {
-    const loadCommands = async () => {
-      setLoading(true);
-      try {
-        const skillNames = new Set(skills.map((skill) => skill.name));
-        const customCommands: CommandInfo[] = commandsWithMetadata.map((cmd, index) => ({
-          id: `opencode:${cmd.scope ?? 'global'}:${cmd.name}:${cmd.agent ?? ''}:${cmd.model ?? ''}:${index}`,
-          name: cmd.name,
-          source: 'opencode',
-          description: cmd.description,
-          agent: cmd.agent ?? undefined,
-          model: cmd.model ?? undefined,
-          isBuiltIn: cmd.name === 'init' || cmd.name === 'review',
-          isSkill: cmd.source === 'skill' || skillNames.has(cmd.name),
-          scope: cmd.scope,
-        }));
-        const skillCommands: CommandInfo[] = skills.map((skill, index) => ({
-          id: `skill:${skill.scope}:${skill.source ?? 'opencode'}:${skill.name}:${index}`,
-          name: skill.name,
-          source: 'skill',
-          description: skill.description,
-          isSkill: true,
-          scope: skill.scope,
-        }));
-
-        const builtInCommands = buildBuiltInCommands({ hasSession, canStartSessionCommand, canUseReviewHandoffFlow, t });
-
-        const allCommands = mergeCommandAutocompleteItems(builtInCommands, customCommands, skillCommands);
-
-        setCommands(filterAndSortCommandItems(allCommands, searchQuery));
-      } catch (error) {
-        // Showing built-ins alone used to hide every discovered skill and user
-        // command behind one malformed record, with no trace of the failure.
-        console.error('[CommandAutocomplete] Failed to build the command list:', error);
-        setCommands(filterAndSortCommandItems(
-          buildBuiltInCommands({ hasSession, canStartSessionCommand, canUseReviewHandoffFlow, t }),
-          searchQuery,
-        ));
-      } finally {
-        setLoading(false);
+    let cancelled = false;
+    setReadiness(createCommandAutocompleteReadiness());
+    void loadCommandAutocompleteSources({
+      loadCommands: () => loadCommandsForDirectory(effectiveDirectory),
+      loadSkills: () => loadSkillsForDirectory(effectiveDirectory),
+    }).then((next) => {
+      if (!cancelled) {
+        setReadiness(next);
       }
+    });
+    return () => {
+      cancelled = true;
     };
-
-    loadCommands();
-  }, [searchQuery, hasSession, canStartSessionCommand, canUseReviewHandoffFlow, commandsWithMetadata, skills, t]);
+  }, [effectiveDirectory, loadCommandsForDirectory, loadSkillsForDirectory]);
 
   React.useEffect(() => {
     setSelectedIndex(0);

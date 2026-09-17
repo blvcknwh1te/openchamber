@@ -214,6 +214,40 @@ describe('useSkillsStore directory resolution', () => {
     expect(headers.get('x-opencode-directory')).toBe(activeProjectPath);
   });
 
+  test('only a non-empty skill answer is cached', async () => {
+    runtimeFetchImpl = async () => new Response(JSON.stringify({ skills: [] }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(1);
+
+    // An empty answer is not evidence that the project has no skills, so it
+    // must not answer the next load.
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(2);
+
+    runtimeFetchImpl = async () => new Response(JSON.stringify({
+      skills: [{
+        name: 'repo-local-skill',
+        path: `${activeProjectPath}/.agents/skills/repo-local-skill/SKILL.md`,
+        scope: 'project',
+        source: 'agents',
+        sources: { md: { description: 'Repository local' } },
+      }],
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(useSkillsStore.getState().skills.map((skill) => skill.name)).toEqual(['repo-local-skill']);
+    expect(runtimeFetchCalls.length).toBe(3);
+
+    // A non-empty answer stays cached for the TTL.
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(3);
+  });
+
   test('invalidateSkillsLoadCache() with no argument clears the active-project cache key used by loadSkills', async () => {
     expect(await useSkillsStore.getState().loadSkills()).toBe(true);
     expect(runtimeFetchCalls.length).toBe(1);

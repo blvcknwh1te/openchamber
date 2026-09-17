@@ -179,14 +179,22 @@ describe('useCommandsStore', () => {
     expect(selectCommandsForDirectory(useCommandsStore.getState(), '/workspace/project').map(c => c.name)).toEqual(['first']);
   });
 
-  test('successful empty discovery clears only that project and is cached', async () => {
+  test('a successful empty answer clears the project list and is not cached', async () => {
     const commands = [{ name: 'old' }];
     useCommandsStore.setState({ commands, commandsByDirectory: { [activeProjectPath]: commands } });
+    listCommandsWithDetailsImpl = async () => [];
+
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
     expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath)).toEqual([]);
     expect(useCommandsStore.getState().commands).toEqual([]);
-    await useCommandsStore.getState().loadCommands();
     expect(listCommandsWithDetailsCalls).toBe(1);
+
+    // The empty answer must not answer the next load: the palette has to reach
+    // the source again instead of showing the cached emptiness for the TTL.
+    listCommandsWithDetailsImpl = async () => [{ name: 'appeared' }];
+    expect(await useCommandsStore.getState().loadCommands()).toBe(true);
+    expect(listCommandsWithDetailsCalls).toBe(2);
+    expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath).map((command) => command.name)).toEqual(['appeared']);
   });
 
 

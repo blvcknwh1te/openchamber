@@ -114,8 +114,65 @@ const buildSessionsByDirectory = (sessions: Session[]): Map<string, Session[]> =
   return next;
 };
 
+type SessionTokenTotals = NonNullable<Session['tokens']>;
+
+const readKnownTotal = (value: number | undefined): number | undefined => (
+  value !== undefined && Number.isFinite(value) ? value : undefined
+);
+
+const toSignatureTotal = (value: number | undefined): number => readKnownTotal(value) ?? 0;
+
+const pickKnownTotal = (incoming: number | undefined, existing: number | undefined): number => (
+  readKnownTotal(incoming) ?? readKnownTotal(existing) ?? 0
+);
+
+const carryKnownTokenTotals = (
+  incoming: SessionTokenTotals,
+  existing: SessionTokenTotals,
+): SessionTokenTotals => {
+  const input = pickKnownTotal(incoming.input, existing.input);
+  const output = pickKnownTotal(incoming.output, existing.output);
+  const reasoning = pickKnownTotal(incoming.reasoning, existing.reasoning);
+  const cacheRead = pickKnownTotal(incoming.cache?.read, existing.cache?.read);
+  const cacheWrite = pickKnownTotal(incoming.cache?.write, existing.cache?.write);
+  if (
+    input === incoming.input
+    && output === incoming.output
+    && reasoning === incoming.reasoning
+    && cacheRead === incoming.cache?.read
+    && cacheWrite === incoming.cache?.write
+  ) {
+    return incoming;
+  }
+  return { input, output, reasoning, cache: { read: cacheRead, write: cacheWrite } };
+};
+
+/**
+ * A lighter session payload may omit its totals, or carry only some buckets.
+ * An omitted total means "unknown", not zero, so the cached value is carried
+ * over before it is compared or stored; otherwise a partial payload would erase
+ * spend the sidebar row tooltip already shows (see `sessionUsageTotals`).
+ */
+const carryKnownTotals = (incoming: Session, existing?: Session | null): Session => {
+  if (!existing) return incoming;
+  const incomingTokens = incoming.tokens;
+  const cost = readKnownTotal(incoming.cost) ?? readKnownTotal(existing.cost);
+  const tokens = incomingTokens && existing.tokens
+    ? carryKnownTokenTotals(incomingTokens, existing.tokens)
+    : incomingTokens ?? existing.tokens;
+  if (cost === incoming.cost && tokens === incomingTokens) return incoming;
+  const next: Session = { ...incoming };
+  if (cost !== undefined) next.cost = cost;
+  if (tokens !== undefined) next.tokens = tokens;
+  return next;
+};
+
+// Totals are part of the signature. The sidebar row and its tooltip project
+// spend out of this cache, so a payload that moves only cost or a token bucket
+// must publish, while an identical payload must keep the previous reference.
 const getSessionSignature = (session: Session): string => {
   const record = session as Session & { parentID?: string | null; slug?: string | null };
+  const tokens = session.tokens;
   return [
     session.id,
     session.title ?? '',
@@ -127,6 +184,12 @@ const getSessionSignature = (session: Session): string => {
     session.share?.url ?? '',
     JSON.stringify((session as Session & { metadata?: unknown }).metadata ?? null),
     resolveGlobalSessionDirectory(session) ?? '',
+    toSignatureTotal(session.cost),
+    toSignatureTotal(tokens?.input),
+    toSignatureTotal(tokens?.output),
+    toSignatureTotal(tokens?.reasoning),
+    toSignatureTotal(tokens?.cache?.read),
+    toSignatureTotal(tokens?.cache?.write),
   ].join(':');
 };
 
@@ -159,7 +222,8 @@ const sameSessionList = (prev: Session[], next: Session[]): boolean => {
     return false;
   }
   for (let index = 0; index < prev.length; index += 1) {
-    if (getSessionSignature(prev[index]) !== getSessionSignature(next[index])) {
+    const carried = carryKnownTotals(next[index], prev[index]);
+    if (getSessionSignature(prev[index]) !== getSessionSignature(carried)) {
       return false;
     }
   }
@@ -206,7 +270,8 @@ const replaceSessionsForDirectories = (
 
   for (const session of incoming) {
     if (!session?.id) continue;
-    incomingById.set(session.id, mergeSessionDirectoryMetadata(session, existingById.get(session.id)));
+    const known = existingById.get(session.id) ?? null;
+    incomingById.set(session.id, carryKnownTotals(mergeSessionDirectoryMetadata(session, known), known));
   }
 
   const kept = existing.filter((session) => {
@@ -274,8 +339,9 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
   if (index === -1) {
     return [session, ...sessions];
   }
-  const mergedSession = mergeSessionDirectoryMetadata(session, sessions[index]);
-  if (getSessionSignature(sessions[index]) === getSessionSignature(mergedSession)) {
+  const known = sessions[index];
+  const mergedSession = carryKnownTotals(mergeSessionDirectoryMetadata(session, known), known);
+  if (getSessionSignature(known) === getSessionSignature(mergedSession)) {
     return sessions;
   }
   const next = [...sessions];
@@ -294,7 +360,8 @@ const mergeSessionLists = (existing: Session[], incoming?: Session[]): Session[]
 
   const byId = new Map(existing.map((session) => [session.id, session]));
   incoming.forEach((session) => {
-    byId.set(session.id, mergeSessionDirectoryMetadata(session, byId.get(session.id)));
+    const known = byId.get(session.id) ?? null;
+    byId.set(session.id, carryKnownTotals(mergeSessionDirectoryMetadata(session, known), known));
   });
 
   const ordered: Session[] = [];
@@ -524,7 +591,10 @@ const applySessionMutations = (
       continue;
     }
 
-    const sessionWithMetadata = mergeSessionDirectoryMetadata(mutation.session, existingSession);
+    const sessionWithMetadata = carryKnownTotals(
+      mergeSessionDirectoryMetadata(mutation.session, existingSession),
+      existingSession,
+    );
     if (existingSession && getSessionSignature(existingSession) === getSessionSignature(sessionWithMetadata)) continue;
     nextEntityById ??= new Map(state.entityById);
     nextEntityById.set(sessionId, sessionWithMetadata);

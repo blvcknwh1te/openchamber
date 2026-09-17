@@ -11,6 +11,7 @@ import {
     resolvePromptTickWindow,
     resolveVisibleTickCount,
     resolveWindowStartContaining,
+    selectPromptRailTurnIds,
 } from '../lib/promptNavigatorRail';
 
 type PromptEntry = {
@@ -131,10 +132,10 @@ export function PromptNavigatorRail({
         return () => observer.disconnect();
     }, []);
 
-    const prompts = React.useMemo(
-        () => buildPromptEntries(turnIds, previewsByTurnId, t),
-        [previewsByTurnId, t, turnIds],
-    );
+    const prompts = React.useMemo(() => {
+        const promptTurnIds = selectPromptRailTurnIds(turnIds, previewsByTurnId);
+        return buildPromptEntries(promptTurnIds, previewsByTurnId, t);
+    }, [previewsByTurnId, t, turnIds]);
 
     const {
         visibleCount,

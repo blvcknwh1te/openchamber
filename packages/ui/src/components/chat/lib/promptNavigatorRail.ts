@@ -3,6 +3,9 @@
  * surface rules and the window arithmetic are unit-testable.
  */
 
+import type { Part } from '@opencode-ai/sdk/v2';
+import { hasServiceCompaction } from './messageDisplayNormalization';
+
 /** Below this many prompts the rail has nothing to navigate and stays hidden. */
 export const PROMPT_NAVIGATOR_MIN_TURNS = 2;
 
@@ -29,6 +32,20 @@ export const shouldShowPromptNavigator = ({
     && !isDesktopExpandedInput
     && enabled
     && turnCount >= PROMPT_NAVIGATOR_MIN_TURNS;
+
+/**
+ * Ticks stand for prompts the user actually sent. Compaction is a service
+ * action: it carries no prompt text, so its turn never earns a tick even though
+ * turn projection still gives it a turn anchor. Which parts mark a service
+ * compaction is owned by `messageDisplayNormalization`.
+ */
+export const selectPromptRailTurnIds = (
+    turnIds: readonly string[],
+    previewsByTurnId: ReadonlyMap<string, readonly Part[]>,
+): string[] => turnIds.filter((turnId) => {
+    const parts = previewsByTurnId.get(turnId);
+    return parts !== undefined && !hasServiceCompaction(parts);
+});
 
 /** The rail shows at most a window of ticks; hovering the gutter edges carousels the window through the rest of the prompts. */
 export const PROMPT_RAIL_MAX_VISIBLE_TICKS = 30;

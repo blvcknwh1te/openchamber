@@ -350,7 +350,10 @@ project in Settings cannot change what chat sees. Components select through
 
 Command discovery compares responses only with the requested directory's cache.
 A first successful response always creates that entry, even when empty or
-identical to another project's commands. Cached and unchanged loads restore the
+identical to another project's commands, but only a non-empty list counts as
+cache: an empty answer is stored for list correctness and asked again on the
+next load, so a scan that started before OpenCode was ready cannot hide the list
+for the whole TTL. Cached and unchanged loads restore the
 active-project mirror; asynchronous completions check the active directory at
 commit time. Failed loads leave the current cache untouched. Discovery passes
 its directory directly to the SDK wrapper without changing the client's shared

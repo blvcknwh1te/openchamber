@@ -229,6 +229,104 @@ describe('useGlobalSessionsStore', () => {
     expect(state.activeSessions.map((session) => session.id)).toEqual(['ses_final']);
     expect(state.structure.activeRootIds).toEqual(['ses_final']);
   });
+
+  test('publishes when only the session cost changes', () => {
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', { cost: 1 }));
+    const before = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', { cost: 2 }));
+
+    const after = useGlobalSessionsStore.getState().activeSessions;
+    expect(after).not.toBe(before);
+    expect(after[0]?.cost).toBe(2);
+  });
+
+  test('publishes when any token bucket changes', () => {
+    const session = buildSession('https://share.example/a', {
+      tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+    });
+    useGlobalSessionsStore.getState().upsertSession(session);
+
+    const buckets: NonNullable<Session['tokens']>[] = [
+      { input: 10, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+      { input: 10, output: 20, reasoning: 3, cache: { read: 4, write: 5 } },
+      { input: 10, output: 20, reasoning: 30, cache: { read: 4, write: 5 } },
+      { input: 10, output: 20, reasoning: 30, cache: { read: 40, write: 5 } },
+      { input: 10, output: 20, reasoning: 30, cache: { read: 40, write: 50 } },
+    ];
+
+    for (const tokens of buckets) {
+      const before = useGlobalSessionsStore.getState().activeSessions;
+      useGlobalSessionsStore.getState().upsertSession({ ...session, tokens });
+      expect(useGlobalSessionsStore.getState().activeSessions).not.toBe(before);
+    }
+
+    expect(useGlobalSessionsStore.getState().activeSessions[0]?.tokens).toEqual(buckets[buckets.length - 1]);
+  });
+
+  test('keeps the previous reference when the totals are identical', () => {
+    const session = buildSession('https://share.example/a', {
+      cost: 7,
+      tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+    });
+    useGlobalSessionsStore.getState().upsertSession(session);
+    const before = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().upsertSession({ ...session });
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toBe(before);
+  });
+
+  test('publishes when only the totals change without a new timestamp', () => {
+    const session = buildSession('https://share.example/a', {
+      cost: 1,
+      tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+    });
+    useGlobalSessionsStore.getState().upsertSession(session);
+    const before = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...session,
+      cost: 2,
+      tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 6 } },
+    });
+
+    expect(useGlobalSessionsStore.getState().activeSessions).not.toBe(before);
+  });
+
+  test('keeps known totals when a lighter payload omits them', () => {
+    const totals = { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } };
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', {
+      cost: 7,
+      tokens: totals,
+    }));
+
+    useGlobalSessionsStore.getState().upsertSession(buildSession('https://share.example/a', {
+      title: 'Renamed',
+      time: { created: 1, updated: 3 },
+    }));
+
+    const session = useGlobalSessionsStore.getState().activeSessions[0];
+    expect(session?.title).toBe('Renamed');
+    expect(session?.cost).toBe(7);
+    expect(session?.tokens).toEqual(totals);
+  });
+
+  test('keeps known totals and the list reference when a snapshot omits them', () => {
+    const totals = { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } };
+    useGlobalSessionsStore.getState().applySnapshot([buildSession('https://share.example/a', {
+      cost: 7,
+      tokens: totals,
+    })], []);
+    const before = useGlobalSessionsStore.getState().activeSessions;
+
+    useGlobalSessionsStore.getState().applySnapshot([buildSession('https://share.example/a')], []);
+
+    const state = useGlobalSessionsStore.getState();
+    expect(state.activeSessions).toBe(before);
+    expect(state.activeSessions[0]?.cost).toBe(7);
+    expect(state.activeSessions[0]?.tokens).toEqual(totals);
+  });
 });
 
 describe('mergeLiveSessionWithGlobalSession', () => {

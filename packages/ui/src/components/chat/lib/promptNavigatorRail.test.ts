@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { Part } from '@opencode-ai/sdk/v2';
 
 import {
     PROMPT_NAVIGATOR_MIN_TURNS,
@@ -7,8 +8,17 @@ import {
     resolvePromptTickWindow,
     resolveVisibleTickCount,
     resolveWindowStartContaining,
+    selectPromptRailTurnIds,
     shouldShowPromptNavigator,
 } from './promptNavigatorRail';
+
+const textPart = (messageID: string, text: string): Part => ({
+    id: `${messageID}-text`, messageID, sessionID: 'session', type: 'text', text,
+});
+
+const compactionPart = (messageID: string): Part => ({
+    id: `${messageID}-compaction`, messageID, sessionID: 'session', type: 'compaction', auto: false,
+});
 
 describe('shouldShowPromptNavigator', () => {
     // The VS Code webview is deliberately absent from this list: the rail is an
@@ -44,6 +54,31 @@ describe('shouldShowPromptNavigator', () => {
         expect(shouldShowPromptNavigator({ ...visible, isMobile: true })).toBe(false);
         expect(shouldShowPromptNavigator({ ...visible, isDesktopExpandedInput: true })).toBe(false);
         expect(shouldShowPromptNavigator({ ...visible, enabled: false })).toBe(false);
+    });
+});
+
+describe('selectPromptRailTurnIds', () => {
+    test('gives one tick per user prompt and none for the compaction turn', () => {
+        const previewsByTurnId = new Map<string, Part[]>([
+            ['msg-1', [textPart('msg-1', 'first prompt')]],
+            ['msg-2', [compactionPart('msg-2')]],
+            ['msg-3', [textPart('msg-3', 'second prompt')]],
+        ]);
+
+        expect(selectPromptRailTurnIds(['msg-1', 'msg-2', 'msg-3'], previewsByTurnId))
+            .toEqual(['msg-1', 'msg-3']);
+    });
+
+    test('keeps prompts whose preview is empty for other reasons', () => {
+        const previewsByTurnId = new Map<string, Part[]>([
+            ['msg-1', []],
+        ]);
+
+        expect(selectPromptRailTurnIds(['msg-1'], previewsByTurnId)).toEqual(['msg-1']);
+    });
+
+    test('drops turns that have no preview at all', () => {
+        expect(selectPromptRailTurnIds(['msg-1'], new Map<string, Part[]>())).toEqual([]);
     });
 });
 

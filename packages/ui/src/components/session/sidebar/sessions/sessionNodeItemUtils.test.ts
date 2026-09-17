@@ -12,7 +12,6 @@ import {
   selectFolderRootNodes,
   selectQuestionBadgeSessionScopes,
   selectRowBadgeVisibilityClass,
-  sessionTotalTokens,
 } from './sessionNodeItemUtils';
 import type { SessionNode } from '../types';
 
@@ -233,29 +232,6 @@ describe('getSessionWorktreeMenuDisabled', () => {
       isStreaming: false,
       isMovingToWorktree: true,
     })).toBe(true);
-  });
-});
-
-describe('sessionTotalTokens', () => {
-  const withTokens = (tokens: Session['tokens']): Session => ({ ...session('s1', 'S'), tokens });
-
-  test('sums every token bucket the session reports', () => {
-    expect(sessionTotalTokens(withTokens({
-      input: 10,
-      output: 5,
-      reasoning: 2,
-      cache: { read: 100, write: 3 },
-    }))).toBe(120);
-  });
-
-  test('reports no usage when the session has none', () => {
-    expect(sessionTotalTokens(session('s1', 'S'))).toBe(null);
-    expect(sessionTotalTokens(withTokens({
-      input: 0,
-      output: 0,
-      reasoning: 0,
-      cache: { read: 0, write: 0 },
-    }))).toBe(null);
   });
 });
 

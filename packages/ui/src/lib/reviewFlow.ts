@@ -1,4 +1,5 @@
 import type { Message, Session } from '@opencode-ai/sdk/v2/client';
+import { hasServiceCompaction } from '@/components/chat/lib/messageDisplayNormalization';
 import { opencodeClient } from '@/lib/opencode/client';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
@@ -73,16 +74,8 @@ const getMessageParentID = (message: Message): string | null => {
   return typeof parentID === 'string' && parentID.trim().length > 0 ? parentID : null;
 };
 
-const isCompactionCommandMessage = (message: Message, directory: string): boolean => {
-  const parts = getSyncParts(message.id, directory);
-  return parts.some((part) => {
-    const type = (part as { type?: unknown }).type;
-    if (type === 'compaction') return true;
-    if (type !== 'text') return false;
-    const text = (part as { text?: unknown }).text;
-    return typeof text === 'string' && text.trim() === '/compact';
-  });
-};
+const isCompactionCommandMessage = (message: Message, directory: string): boolean =>
+  hasServiceCompaction(getSyncParts(message.id, directory));
 
 const getLatestAssistantTextMessage = (
   sessionID: string,

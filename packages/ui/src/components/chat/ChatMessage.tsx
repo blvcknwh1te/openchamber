@@ -833,7 +833,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 data-message-id={message.info.id}
                 ref={messageContainerRef}
             >
-                <CompactionNotice />
+                <div className="chat-message-column">
+                    <CompactionNotice />
+                </div>
             </div>
         );
     }

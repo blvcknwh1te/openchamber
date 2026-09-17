@@ -13,7 +13,7 @@ import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
 import { selectTranscriptMessages } from './lib/turns/transcriptMessages';
-import { getNormalizedMessageForDisplay, hasCompactionPart } from './lib/messageDisplayNormalization';
+import { getNormalizedMessageForDisplay, hasServiceCompaction } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { isHiddenUserMessage } from './message/hiddenUserMessage';
@@ -82,18 +82,6 @@ const resolveMessageRole = (message: ChatMessageEntry): string | null => {
     return (typeof info.clientRole === 'string' ? info.clientRole : null)
         ?? (typeof info.role === 'string' ? info.role : null)
         ?? null;
-};
-
-const getPartText = (part: Part): string => {
-    const text = (part as { text?: unknown }).text;
-    if (typeof text === 'string') {
-        return text;
-    }
-    const content = (part as { content?: unknown }).content;
-    if (typeof content === 'string') {
-        return content;
-    }
-    return '';
 };
 
 const normalizeCompactionSummaryMessage = (
@@ -1261,7 +1249,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         for (let index = 0; index < dedupedMessages.length; index += 1) {
             const current = dedupedMessages[index];
             const currentWithRole = normalizeCompactionSummaryMessage(current, compactionCommandIds);
-            if (hasCompactionPart(current) || current.parts.some((part) => part.type === 'text' && getPartText(part).trim() === '/compact')) {
+            if (hasServiceCompaction(current.parts)) {
                 compactionCommandIds.add(current.info.id);
             }
             const previous = output.length > 0 ? output[output.length - 1] : undefined;

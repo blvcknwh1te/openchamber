@@ -31,7 +31,8 @@ import { usePrefetchSessionMessages, useSessionMessageRecordsForExport } from '@
 import { getSyncSessionMaterializationStatus } from '@/sync/sync-refs';
 import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from '../folders/sessionFolderDnd';
-import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass, sessionTotalTokens } from './sessionNodeItemUtils';
+import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass } from './sessionNodeItemUtils';
+import { useSessionNodeUsageTotals } from './sessionUsageTotals';
 import type { SessionNode } from '../types';
 import { formatProjectLabel, formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText } from '../utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -511,8 +512,13 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
       <span className="max-w-[7em] truncate">{lastModelLabel}</span>
     </span>
   ) : null;
-  const sessionCost = resolvedSession.cost ?? 0;
-  const sessionTokensUsed = sessionTotalTokens(resolvedSession);
+  // The row's own session record is stale by design: it is captured by a tree
+  // rebuild, while the totals move without one. The subtree sum therefore reads
+  // the session-keyed index first and only falls back to the node for sessions
+  // the global cache does not carry yet.
+  const sessionUsage = useSessionNodeUsageTotals(node);
+  const sessionCost = sessionUsage.cost;
+  const sessionTokensUsed = sessionUsage.tokens > 0 ? sessionUsage.tokens : null;
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
   const hasChildren = node.children.length > 0;
   const isPinnedSession = isSessionPinned(pinnedSessionIds, sessionDirectory, session.id);
