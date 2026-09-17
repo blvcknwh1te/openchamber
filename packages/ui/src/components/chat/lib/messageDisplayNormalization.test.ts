@@ -6,6 +6,7 @@ import {
     getNormalizedMessageForDisplay,
     hasCompactionPart,
     hasServiceCompaction,
+    isUserPromptMessage,
 } from './messageDisplayNormalization';
 import type { ChatMessageEntry } from './turns/types';
 
@@ -15,6 +16,11 @@ const compactionPart = (messageID: string): Part => ({
 
 const textPart = (messageID: string, text: string): Part => ({
     id: `${messageID}-text`, messageID, sessionID: 'session', type: 'text', text,
+});
+
+const syntheticNudgePart = (messageID: string): Part => ({
+    id: `${messageID}-synthetic`, messageID, sessionID: 'session', type: 'text',
+    text: '<system-reminder>a subagent finished</system-reminder>', synthetic: true,
 });
 
 const userMessage = (parts: Part[]): ChatMessageEntry => ({
@@ -56,5 +62,30 @@ describe('hasServiceCompaction', () => {
     test('keeps other slash commands as message content', () => {
         expect(hasServiceCompaction([textPart('msg-1', '/summary auth')])).toBe(false);
         expect(hasServiceCompaction([textPart('msg-1', 'no /compact here')])).toBe(false);
+    });
+});
+
+describe('isUserPromptMessage', () => {
+    const noPlanMode = { planModeEnabled: false };
+
+    test('a service compaction notice is not a prompt even though it opens a turn', () => {
+        expect(isUserPromptMessage(userMessage([compactionPart('msg-1')]), noPlanMode)).toBe(false);
+    });
+
+    test('the local echo of a compaction command is not a prompt either', () => {
+        for (const commandText of COMPACTION_COMMAND_TEXTS) {
+            expect(isUserPromptMessage(userMessage([textPart('msg-1', commandText)]), noPlanMode)).toBe(false);
+            expect(isUserPromptMessage(userMessage([textPart('msg-1', commandText), syntheticNudgePart('msg-1')]), noPlanMode)).toBe(false);
+        }
+    });
+
+    test('a user message with nothing visible left after normalization is not a prompt', () => {
+        expect(isUserPromptMessage(userMessage([syntheticNudgePart('msg-1')]), noPlanMode)).toBe(false);
+    });
+
+    test('a user message with content stays a prompt', () => {
+        expect(isUserPromptMessage(userMessage([textPart('msg-1', 'Fix the sticky header')]), noPlanMode)).toBe(true);
+        expect(isUserPromptMessage(userMessage([textPart('msg-1', '/summary auth')]), noPlanMode)).toBe(true);
+        expect(isUserPromptMessage(userMessage([textPart('msg-1', 'look here'), syntheticNudgePart('msg-1')]), noPlanMode)).toBe(true);
     });
 });

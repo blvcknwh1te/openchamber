@@ -1,5 +1,6 @@
 import type { Part } from '@opencode-ai/sdk/v2';
 import { filterSyntheticParts } from '@/lib/messages/synthetic';
+import { isHiddenUserMessage } from '../message/hiddenUserMessage';
 import { normalizeParts } from '../message/partUtils';
 import type { ChatMessageEntry } from './turns/types';
 
@@ -32,6 +33,21 @@ export const hasCompactionPart = (message: ChatMessageEntry): boolean => {
  */
 export const hasServiceCompaction = (parts: readonly Part[]): boolean => {
     return parts.some((part) => isCompactionPart(part) || isCompactionCommandPart(part));
+};
+
+/**
+ * Whether a turn's opening message is a prompt the user sent, as opposed to a
+ * row that opens a turn without carrying one. Two shapes are such rows: a
+ * service compaction, which is kept in place so its summary stays parented, and
+ * a user message whose parts survive no display normalization. The sticky
+ * transcript header pins the prompt of a turn, so it asks this instead of
+ * comparing content itself.
+ */
+export const isUserPromptMessage = (
+    message: ChatMessageEntry,
+    options: { planModeEnabled: boolean },
+): boolean => {
+    return !hasServiceCompaction(message.parts) && !isHiddenUserMessage(message, options);
 };
 
 // A compaction part is a service action, not message content: it is kept in

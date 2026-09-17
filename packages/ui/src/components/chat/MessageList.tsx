@@ -13,10 +13,9 @@ import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
 import { selectTranscriptMessages } from './lib/turns/transcriptMessages';
-import { getNormalizedMessageForDisplay, hasServiceCompaction } from './lib/messageDisplayNormalization';
+import { getNormalizedMessageForDisplay, hasServiceCompaction, isUserPromptMessage } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
-import { isHiddenUserMessage } from './message/hiddenUserMessage';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
 import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/lib/userSendAnimation';
 import { streamPerfCount, streamPerfMark, streamPerfMeasure } from '@/stores/utils/streamDebug';
@@ -442,8 +441,12 @@ const TurnBlock = React.memo(({
 
     const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
-    const userMessageHidden = React.useMemo(
-        () => isHiddenUserMessage(turn.userMessage, { planModeEnabled }),
+    // The sticky header pins the prompt a turn belongs to. A turn opened by a
+    // service compaction notice, or by a user message with nothing visible left
+    // after display normalization, carries no prompt: its row stays in the
+    // transcript flow instead of taking the user's place in the header.
+    const turnPinsUserPrompt = React.useMemo(
+        () => isUserPromptMessage(turn.userMessage, { planModeEnabled }),
         [planModeEnabled, turn.userMessage]
     );
     const turnUiState = turnUiStates.get(turn.turnId) ?? { isExpanded: defaultActivityExpanded };
@@ -727,7 +730,7 @@ const TurnBlock = React.memo(({
     return (
         <TurnItem
             turn={renderableTurn}
-            stickyUserHeader={stickyUserHeader && !userMessageHidden}
+            stickyUserHeader={stickyUserHeader && turnPinsUserPrompt}
             renderMessage={renderMessage}
             assistantContent={chatRenderMode === 'live' && !defaultActivityExpanded && hasLiveActivity(turn, showReasoningTraces) ? (
                 <LiveTurnActivity
