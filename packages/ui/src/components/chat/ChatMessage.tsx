@@ -22,12 +22,13 @@ import { filterVisibleParts, normalizeParts } from './message/partUtils';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { isHiddenUserMessage } from './message/hiddenUserMessage';
 import { CompactionNotice } from './message/CompactionNotice';
-import { hasCompactionPart } from './lib/messageDisplayNormalization';
+import { getCompactionPart } from './lib/messageDisplayNormalization';
 import { flattenAssistantTextParts, flattenUserTextParts } from '@/lib/messages/messageText';
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/lib/messages/providerAuthError';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
+import type { CompactionContextTokens } from './lib/turns/compactionContextTokens';
 import { copyMarkdownToClipboard, copyTextToClipboard } from '@/lib/clipboard';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
@@ -141,6 +142,7 @@ interface ChatMessageProps {
     animateUserOnMount?: boolean;
     onUserAnimationConsumed?: (messageId: string) => void;
     reviewTransferDirection?: ReviewTransferDirection | null;
+    compactionContextTokens?: CompactionContextTokens;
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({
@@ -154,6 +156,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     animateUserOnMount = false,
     onUserAnimationConsumed,
     reviewTransferDirection = null,
+    compactionContextTokens,
 }) => {
     const { t } = useI18n();
     const { isMobile, isTablet, hasTouchInput } = useDeviceInfo();
@@ -824,17 +827,27 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const allowAnimation = shouldAnimateMessage && !isAnimationSettled && !isStreamingPhase && !hasEverStreamedRef.current;
 
     // The compaction command is a service action: the transcript shows a notice
-    // instead of a bubble carrying the command text.
-    if (hasCompactionPart(message)) {
+    // instead of a bubble carrying the command text. The hairlines above and
+    // below it mark the seam between the history the model kept and the answers
+    // written after the compaction; the paddings keep the notice off its
+    // neighbours and off both lines.
+    const compactionPart = getCompactionPart(message);
+    if (compactionPart) {
         return (
             <div
-                className="group w-full pt-4"
+                className="group w-full pt-4 pb-4"
                 id={`message-${message.info.id}`}
                 data-message-id={message.info.id}
                 ref={messageContainerRef}
             >
                 <div className="chat-message-column">
-                    <CompactionNotice />
+                    <div className="border-y border-[var(--surface-subtle)] py-4">
+                        <CompactionNotice
+                            part={compactionPart}
+                            createdAt={message.info.time.created}
+                            contextTokens={compactionContextTokens}
+                        />
+                    </div>
                 </div>
             </div>
         );

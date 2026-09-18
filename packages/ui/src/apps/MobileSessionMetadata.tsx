@@ -6,6 +6,7 @@ import { preloadProviderLogos } from '@/hooks/useProviderLogo';
 import { useTabletLayout } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { clampPercent, resolveUsageTone } from '@/lib/quota';
+import { formatCompactTokens } from '@/lib/tokenFormat';
 import { UsageProviderCards } from '@/components/usage/UsageProviderCards';
 import { useUsageProviderGroups, type UsageProviderGroup } from '@/components/usage/usageGroups';
 import { cn } from '@/lib/utils';
@@ -26,12 +27,6 @@ const getNumericLimit = (limit: unknown, key: 'context' | 'output'): number | un
 const getTokenCount = (value: unknown): number => (
   typeof value === 'number' && Number.isFinite(value) ? value : 0
 );
-
-const formatTokens = (value: number): string => {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  return String(value);
-};
 
 type ContextDisplay = {
   percentage: number;
@@ -425,7 +420,7 @@ export const MobileSessionMetadataButton = React.memo(function MobileSessionMeta
       ? Math.min((totalTokens / contextLimit) * 100, 999)
       : null;
   const contextTokens = contextPercentage !== null
-    ? `${formatTokens(totalTokens)}/${formatTokens(contextLimit)}`
+    ? `${formatCompactTokens(totalTokens)}/${formatCompactTokens(contextLimit)}`
     : null;
   const contextColorClass =
     contextPercentage === null

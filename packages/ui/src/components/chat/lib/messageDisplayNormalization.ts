@@ -18,12 +18,25 @@ const isCompactionPart = (part: Part): boolean => part.type === 'compaction';
 const isCompactionCommandPart = (part: Part): boolean =>
     part.type === 'text' && COMPACTION_COMMAND_TEXTS.includes(part.text.trim());
 
+/** Server-written compaction part, the shape the transcript notice keys off. */
+export type CompactionPart = Extract<Part, { type: 'compaction' }>;
+
+/**
+ * The compaction part of a row, when it has one. The notice reads the service
+ * metadata off this part - `auto` for who triggered the compaction and
+ * `overflow` for a context window that filled up - so callers never re-scan
+ * parts to describe the same event.
+ */
+export const getCompactionPart = (message: ChatMessageEntry): CompactionPart | undefined => {
+    return message.parts.find((part): part is CompactionPart => part.type === 'compaction');
+};
+
 /**
  * Server-written compaction part only. The transcript notice keys off this
  * marker, which the command-text shape never has.
  */
 export const hasCompactionPart = (message: ChatMessageEntry): boolean => {
-    return message.parts.some(isCompactionPart);
+    return getCompactionPart(message) !== undefined;
 };
 
 /**
