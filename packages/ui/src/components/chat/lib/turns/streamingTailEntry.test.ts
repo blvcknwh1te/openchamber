@@ -46,6 +46,7 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             userMessage: user,
             headerMessageId: assistant.info.id,
             messages: [],
+            noticeMessages: [],
             assistantMessageIds: [assistant.info.id],
             assistantMessages: [assistant],
             activityParts: [],

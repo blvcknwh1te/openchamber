@@ -199,6 +199,41 @@ describe('projectTurnRecords', () => {
         expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1', 'a2', 'a3']);
     });
 
+    test('joins a service compaction into the previous turn instead of opening one', () => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        user.parts = [{ id: 'p1', type: 'text', text: 'prompt' } as Part];
+        const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2 });
+        const compaction = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3 });
+        compaction.parts = [{ id: 'cp1', type: 'compaction', auto: true } as Part];
+        const summary = createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 4 });
+
+        const projection = projectTurnRecords([user, assistant, compaction, summary]);
+
+        expect(projection.turns).toHaveLength(1);
+        expect(projection.turns[0]?.userMessageId).toBe('u1');
+        expect(projection.turns[0]?.noticeMessages.map((message) => message.info.id)).toEqual(['u2']);
+        expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1', 'a2']);
+        expect(projection.ungroupedMessageIds.size).toBe(0);
+    });
+
+    test('keeps answers that arrive after a compaction under the turn it joined', () => {
+        // Compaction can land before the reply: the prompt row, then the
+        // compaction, then the answers parented to the compaction.
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        user.parts = [{ id: 'p1', type: 'text', text: 'prompt' } as Part];
+        const compaction = createMessageEntry({ id: 'u2', role: 'user', createdAt: 2 });
+        compaction.parts = [{ id: 'cp1', type: 'compaction', auto: true } as Part];
+        const summary = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u2', createdAt: 3 });
+        const answer = createMessageEntry({ id: 'a2', role: 'assistant', parentID: 'u2', createdAt: 4 });
+
+        const projection = projectTurnRecords([user, compaction, summary, answer]);
+
+        expect(projection.turns).toHaveLength(1);
+        expect(projection.turns[0]?.userMessageId).toBe('u1');
+        expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1', 'a2']);
+        expect(projection.turns[0]?.messages.map((record) => record.messageId)).toEqual(['u1', 'u2', 'a1', 'a2']);
+    });
+
     test('treats compaction summary text as justification activity in sorted mode', () => {
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         user.parts = [{ id: 'p1', type: 'text', text: 'prompt' } as Part];

@@ -1,3 +1,4 @@
+import { hasServiceCompaction } from '../messageDisplayNormalization';
 import type { ChatMessageEntry } from './types';
 
 const resolveMessageRole = (message: ChatMessageEntry): string => {
@@ -92,7 +93,14 @@ export const updateTurnWindowModelIncremental = (
     const messageId = nextMessage.info.id;
     const nextModel = cloneTurnWindowModel(previousModel);
 
-    if (role === 'user') {
+    // A service compaction continues the turn it arrived in instead of opening
+    // its own (projectTurnRecords owns that rule): the answers after it can be
+    // parented to it, so the row has to resolve to the current turn.
+    const continuesPreviousTurn = role === 'user'
+        && nextModel.turnIds.length > 0
+        && hasServiceCompaction(nextMessage.parts);
+
+    if (role === 'user' && !continuesPreviousTurn) {
         const nextTurnIndex = nextModel.turnIds.length;
         nextModel.turnIds.push(messageId);
         nextModel.turnMessageStartIndexes.push(nextMessages.length - 1);
@@ -151,12 +159,23 @@ export const buildTurnWindowModel = (messages: ChatMessageEntry[]): TurnWindowMo
         const messageId = message.info.id;
 
         if (role === 'user') {
-            currentTurnIndex = turnIds.length;
-            turnIds.push(messageId);
-            turnMessageStartIndexes.push(index);
-            turnIndexById.set(messageId, currentTurnIndex);
+            // A service compaction continues the turn it arrived in instead of
+            // opening its own (projectTurnRecords owns that rule): the answers
+            // after it can be parented to it, so the row has to resolve to the
+            // current turn.
+            const continuesPreviousTurn = currentTurnIndex >= 0 && hasServiceCompaction(message.parts);
+            if (!continuesPreviousTurn) {
+                currentTurnIndex = turnIds.length;
+                turnIds.push(messageId);
+                turnMessageStartIndexes.push(index);
+                turnIndexById.set(messageId, currentTurnIndex);
+            }
+            const turnId = turnIds[currentTurnIndex];
+            if (!turnId) {
+                return;
+            }
             userMessageToTurnIndex.set(messageId, currentTurnIndex);
-            messageToTurnId.set(messageId, messageId);
+            messageToTurnId.set(messageId, turnId);
             messageToTurnIndex.set(messageId, currentTurnIndex);
             return;
         }

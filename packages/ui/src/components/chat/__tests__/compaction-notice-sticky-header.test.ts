@@ -1,12 +1,12 @@
 /**
  * Regression: the "Context compacted" notice used to be pinned in the sticky
- * transcript header. A compaction opens a turn so the assistant summary stays
- * parented to it, and the header takes a turn's opening message as the prompt
- * the user wrote - so while reading history the header showed the service
- * notice in place of the prompt the turn belongs to.
+ * transcript header. A compaction opens a turn only when it starts the
+ * transcript (otherwise it joins the turn before it), and the header takes a
+ * turn's opening message as the prompt the user wrote - so while reading
+ * history the header showed the service notice in place of the prompt the turn
+ * belongs to.
  *
- * The notice is a transcript row. It keeps opening the turn, and it is never the
- * prompt the header pins.
+ * The notice is never the prompt the header pins.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -46,7 +46,7 @@ const projectTurn = (message: ChatMessageEntry) => {
 };
 
 describe('sticky transcript header', () => {
-    test('a compaction notice opens a turn that carries no prompt', () => {
+    test('a compaction notice that starts the transcript opens a turn that carries no prompt', () => {
         const notice = projectTurn(userMessage('msg-compact', [compactionPart('msg-compact')]));
 
         expect(notice.turnId).toBe('msg-compact');

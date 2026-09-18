@@ -70,6 +70,12 @@ export interface TurnRecord {
     userMessage: ChatMessageEntry;
     headerMessageId?: string;
     messages: TurnMessageRecord[];
+    /**
+     * Service rows that belong to the turn's flow without carrying a prompt of
+     * their own. A compaction notice continues the turn it was written into, so
+     * that turn's sticky header keeps showing the prompt the user wrote.
+     */
+    noticeMessages: ChatMessageEntry[];
     assistantMessageIds: string[];
     assistantMessages: ChatMessageEntry[];
     activityParts: TurnActivityRecord[];
@@ -111,7 +117,7 @@ export interface TurnProjectionResult {
     ungroupedMessageIds: Set<string>;
 }
 
-export type Turn = Pick<TurnRecord, 'turnId' | 'userMessage' | 'assistantMessages'>;
+export type Turn = Pick<TurnRecord, 'turnId' | 'userMessage' | 'messages' | 'assistantMessages' | 'noticeMessages'>;
 
 export interface TurnGroupingContext {
     turnId: string;

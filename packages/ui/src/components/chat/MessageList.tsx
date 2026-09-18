@@ -442,9 +442,10 @@ const TurnBlock = React.memo(({
     const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
     const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
     // The sticky header pins the prompt a turn belongs to. A turn opened by a
-    // service compaction notice, or by a user message with nothing visible left
-    // after display normalization, carries no prompt: its row stays in the
-    // transcript flow instead of taking the user's place in the header.
+    // user message with nothing visible left after display normalization, or by
+    // a service compaction that starts the transcript, carries no prompt: its
+    // row stays in the transcript flow instead of taking the user's place in
+    // the header.
     const turnPinsUserPrompt = React.useMemo(
         () => isUserPromptMessage(turn.userMessage, { planModeEnabled }),
         [planModeEnabled, turn.userMessage]

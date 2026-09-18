@@ -1,3 +1,4 @@
+import { hasServiceCompaction } from '../messageDisplayNormalization';
 import { isHiddenUserMessage } from '../../message/hiddenUserMessage';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
@@ -120,7 +121,8 @@ const areSameMessageRefs = (left: ChatMessageEntry[], right: ChatMessageEntry[])
 const canReusePreviousTurn = (previous: TurnRecord, next: TurnRecord): boolean => {
     return previous.userMessage === next.userMessage
         && previous.headerMessageId === next.headerMessageId
-        && areSameMessageRefs(previous.assistantMessages, next.assistantMessages);
+        && areSameMessageRefs(previous.assistantMessages, next.assistantMessages)
+        && areSameMessageRefs(previous.noticeMessages, next.noticeMessages);
 };
 
 const hydrateTurnRecord = (
@@ -223,6 +225,18 @@ export const projectTurnRecords = (
             return;
         }
 
+        // A service compaction is a transcript row, not a prompt: keeping it in
+        // the turn it belongs to is what lets that turn's sticky header keep
+        // showing the prompt, and it keeps the compaction's summary parented
+        // there too. Only a compaction with no turn behind it starts one.
+        if (previousTurn && hasServiceCompaction(message.parts)) {
+            turnByUserId.set(message.info.id, previousTurn);
+            previousTurn.messages.push(createTurnMessageRecord(message, index));
+            previousTurn.noticeMessages.push(message);
+            groupedMessageIds.add(message.info.id);
+            return;
+        }
+
         const turnId = message.info.id;
         const turn: TurnRecord = {
             turnId,
@@ -230,6 +244,7 @@ export const projectTurnRecords = (
             userMessage: message,
             headerMessageId: undefined,
             messages: [createTurnMessageRecord(message, index)],
+            noticeMessages: [],
             assistantMessageIds: [],
             assistantMessages: [],
             activityParts: [],
