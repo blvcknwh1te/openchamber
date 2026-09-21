@@ -4,12 +4,13 @@
  * the first one after. The summary message OpenCode writes for the compaction is
  * itself an assistant turn, but it is the compaction's own output, so counting
  * it as "after" would report the compaction's input, not the context the next
- * request re-read.
+ * request re-read. The same message carries the summary text the notice shows on
+ * click, so the two lookups share one neighbour walk.
  */
 import { describe, expect, test } from 'bun:test';
 import type { AssistantMessage, Part, UserMessage } from '@opencode-ai/sdk/v2';
 
-import { findCompactionContextTokens } from './compactionContextTokens';
+import { findCompactionContext, findCompactionContextTokens, findCompactionSummary } from './compactionContext';
 import type { ChatMessageEntry } from './types';
 
 const compactionPart = (messageID: string): Part => ({
@@ -36,9 +37,13 @@ const summaryInfo = (id: string, total: number): AssistantMessage => ({
     summary: true,
 });
 
-const assistantMessage = (id: string, total: number, summary = false): ChatMessageEntry => ({
+const textPart = (messageID: string, text: string): Part => ({
+    id: `${messageID}-text`, messageID, sessionID: 'session', type: 'text', text,
+});
+
+const assistantMessage = (id: string, total: number, summary = false, parts: Part[] = []): ChatMessageEntry => ({
     info: summary ? summaryInfo(id, total) : assistantInfo(id, total),
-    parts: [],
+    parts,
 });
 
 const promptMessage = (id: string): ChatMessageEntry => ({
@@ -100,5 +105,67 @@ describe('findCompactionContextTokens', () => {
         ];
 
         expect(findCompactionContextTokens(messages, 'compact')).toBeNull();
+    });
+});
+
+describe('findCompactionSummary', () => {
+    test('reads the summary text of the flagged assistant message', () => {
+        const messages = [
+            compactionMessage('compact'),
+            assistantMessage('summary', 38099, true, [textPart('summary', 'Earlier work, condensed.')]),
+        ];
+
+        expect(findCompactionSummary(messages, 'compact')).toBe('Earlier work, condensed.');
+    });
+
+    test('joins several text parts and skips non-text parts', () => {
+        const messages = [
+            compactionMessage('compact'),
+            assistantMessage('summary', 38099, true, [
+                textPart('summary', 'First half.'),
+                compactionPart('summary'),
+                textPart('summary', 'Second half.'),
+            ]),
+        ];
+
+        expect(findCompactionSummary(messages, 'compact')).toBe('First half.\n\nSecond half.');
+    });
+
+    test('returns null when the summary message is missing or empty', () => {
+        expect(findCompactionSummary([compactionMessage('compact')], 'compact')).toBeNull();
+        expect(findCompactionSummary([
+            compactionMessage('compact'),
+            assistantMessage('summary', 38099, true, []),
+        ], 'compact')).toBeNull();
+    });
+});
+
+describe('findCompactionContext', () => {
+    test('combines the token window with the summary text', () => {
+        const messages = [
+            assistantMessage('before', 188939),
+            compactionMessage('compact'),
+            assistantMessage('summary', 38099, true, [textPart('summary', 'Condensed.')]),
+            assistantMessage('after', 107496),
+        ];
+
+        expect(findCompactionContext(messages, 'compact')).toEqual({
+            before: 188939,
+            after: 107496,
+            summary: 'Condensed.',
+        });
+    });
+
+    test('keeps a notice that has a summary but no measurable neighbours', () => {
+        const messages = [
+            compactionMessage('compact'),
+            assistantMessage('summary', 38099, true, [textPart('summary', 'Condensed.')]),
+        ];
+
+        expect(findCompactionContext(messages, 'compact')).toEqual({ before: 0, after: 0, summary: 'Condensed.' });
+    });
+
+    test('returns null without tokens or a summary', () => {
+        expect(findCompactionContext([compactionMessage('compact'), promptMessage('after')], 'compact')).toBeNull();
     });
 });

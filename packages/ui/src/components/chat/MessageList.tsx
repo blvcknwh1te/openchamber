@@ -13,7 +13,7 @@ import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
 import { selectTranscriptMessages } from './lib/turns/transcriptMessages';
-import { findCompactionContextTokens, type CompactionContextTokens } from './lib/turns/compactionContextTokens';
+import { findCompactionContext, type CompactionContext } from './lib/turns/compactionContext';
 import { getCompactionPart, getNormalizedMessageForDisplay, hasServiceCompaction, isUserPromptMessage } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
@@ -353,7 +353,7 @@ interface MessageRowProps {
     onUserAnimationConsumed?: (messageId: string) => void;
     scrollToBottom?: () => void;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    compactionContextTokens?: CompactionContextTokens;
+    compactionContext?: CompactionContext;
 }
 
 const MessageRow = React.memo<MessageRowProps>(({ 
@@ -368,7 +368,7 @@ const MessageRow = React.memo<MessageRowProps>(({
     onUserAnimationConsumed,
     scrollToBottom,
     reviewTransferDirection,
-    compactionContextTokens,
+    compactionContext,
 }) => {
     return (
         <ChatMessage
@@ -383,7 +383,7 @@ const MessageRow = React.memo<MessageRowProps>(({
             isInActiveTurn={isInActiveTurn}
             activeStreamingPhase={activeStreamingPhase}
             reviewTransferDirection={reviewTransferDirection}
-            compactionContextTokens={compactionContextTokens}
+            compactionContext={compactionContext}
         />
     );
 }, (prev, next) => {
@@ -401,7 +401,7 @@ const MessageRow = React.memo<MessageRowProps>(({
         && prev.isInActiveTurn === next.isInActiveTurn
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.reviewTransferDirection === next.reviewTransferDirection
-        && prev.compactionContextTokens === next.compactionContextTokens;
+        && prev.compactionContext === next.compactionContext;
 });
 
 MessageRow.displayName = 'MessageRow';
@@ -423,7 +423,7 @@ interface TurnBlockProps {
     activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    compactionContextTokensById: ReadonlyMap<string, CompactionContextTokens>;
+    compactionContextById: ReadonlyMap<string, CompactionContext>;
 }
 
 const TurnBlock = React.memo(({
@@ -443,7 +443,7 @@ const TurnBlock = React.memo(({
     activeStreamingMessageId,
     activeStreamingPhase,
     reviewTransferDirection,
-    compactionContextTokensById,
+    compactionContextById,
 }: TurnBlockProps) => {
 
     const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
@@ -694,7 +694,7 @@ const TurnBlock = React.memo(({
                     animateUserOnMount={shouldAnimateUserMessage(message)}
                     onUserAnimationConsumed={onUserAnimationConsumed}
                     scrollToBottom={scrollToBottom}
-                    compactionContextTokens={compactionContextTokensById.get(message.info.id)}
+                    compactionContext={compactionContextById.get(message.info.id)}
                 />
             );
         },
@@ -706,7 +706,7 @@ const TurnBlock = React.memo(({
             scrollToBottom,
             sessionIsWorking,
             chatRenderMode,
-            compactionContextTokensById,
+            compactionContextById,
             turn.headerMessageId,
             turn.hasReasoning,
             turn.hasTools,
@@ -767,7 +767,7 @@ interface UngroupedMessageRowProps {
     activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    compactionContextTokens?: CompactionContextTokens;
+    compactionContext?: CompactionContext;
 }
 
 const UngroupedMessageRow = React.memo(({
@@ -780,7 +780,7 @@ const UngroupedMessageRow = React.memo(({
     activeStreamingMessageId,
     activeStreamingPhase,
     reviewTransferDirection,
-    compactionContextTokens,
+    compactionContext,
 }: UngroupedMessageRowProps) => {
     return (
         <MessageRow
@@ -793,7 +793,7 @@ const UngroupedMessageRow = React.memo(({
             isInActiveTurn={Boolean(activeStreamingMessageId) && message.info.id === activeStreamingMessageId}
             activeStreamingPhase={message.info.id === activeStreamingMessageId ? activeStreamingPhase : null}
             reviewTransferDirection={reviewTransferDirection}
-            compactionContextTokens={compactionContextTokens}
+            compactionContext={compactionContext}
         />
     );
 });
@@ -814,7 +814,7 @@ interface MessageListEntryProps {
     activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    compactionContextTokensById: ReadonlyMap<string, CompactionContextTokens>;
+    compactionContextById: ReadonlyMap<string, CompactionContext>;
 }
 
 const turnContainsMessageId = (turn: TurnRecord, messageId: string | null | undefined): boolean => {
@@ -843,7 +843,7 @@ const MessageListEntry = React.memo(({
     activeStreamingMessageId,
     activeStreamingPhase,
     reviewTransferDirection,
-    compactionContextTokensById,
+    compactionContextById,
 }: MessageListEntryProps) => {
     streamPerfCount('ui.message_list_entry.render');
     if (entry.kind === 'ungrouped') {
@@ -858,7 +858,7 @@ const MessageListEntry = React.memo(({
                 activeStreamingMessageId={activeStreamingMessageId}
                 activeStreamingPhase={activeStreamingPhase}
                 reviewTransferDirection={reviewTransferDirection}
-                compactionContextTokens={compactionContextTokensById.get(entry.message.info.id)}
+                compactionContext={compactionContextById.get(entry.message.info.id)}
             />
         );
     }
@@ -881,7 +881,7 @@ const MessageListEntry = React.memo(({
             reviewTransferDirection={reviewTransferDirection}
             scrollToBottom={scrollToBottom}
             stickyUserHeader={stickyUserHeader}
-            compactionContextTokensById={compactionContextTokensById}
+            compactionContextById={compactionContextById}
         />
     );
 });
@@ -909,7 +909,7 @@ type TimelineRowContextValue = {
     sessionIsWorking: boolean;
     activeStreamingMessageId: string | null;
     activeStreamingPhase: StreamPhase | null;
-    compactionContextTokensById: ReadonlyMap<string, CompactionContextTokens>;
+    compactionContextById: ReadonlyMap<string, CompactionContext>;
 };
 
 const TimelineRowContext = React.createContext<TimelineRowContextValue | null>(null);
@@ -936,7 +936,7 @@ const TimelineRow = React.memo(({ entry }: { entry: RenderEntry }) => {
                 activeStreamingMessageId={context.activeStreamingMessageId}
                 activeStreamingPhase={context.activeStreamingPhase}
                 reviewTransferDirection={context.reviewTransferDirection}
-                compactionContextTokensById={context.compactionContextTokensById}
+                compactionContextById={context.compactionContextById}
             />
         );
     }
@@ -956,7 +956,7 @@ const TimelineRow = React.memo(({ entry }: { entry: RenderEntry }) => {
             activeStreamingMessageId={null}
             activeStreamingPhase={null}
             reviewTransferDirection={context.reviewTransferDirection}
-            compactionContextTokensById={context.compactionContextTokensById}
+            compactionContextById={context.compactionContextById}
         />
     );
 });
@@ -1132,7 +1132,7 @@ const StreamingTailContent: React.FC<{
     activeStreamingMessageId?: string | null;
     activeStreamingPhase?: StreamPhase | null;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    compactionContextTokensById: ReadonlyMap<string, CompactionContextTokens>;
+    compactionContextById: ReadonlyMap<string, CompactionContext>;
 }> = ({
     entry,
     directory,
@@ -1149,7 +1149,7 @@ const StreamingTailContent: React.FC<{
     activeStreamingMessageId,
     activeStreamingPhase,
     reviewTransferDirection,
-    compactionContextTokensById,
+    compactionContextById,
 }) => {
     // Overlay live parts on every message of the tail, not only the one
     // currently streaming: a finished step message's base record can lag the
@@ -1183,7 +1183,7 @@ const StreamingTailContent: React.FC<{
             activeStreamingMessageId={activeStreamingMessageId}
             activeStreamingPhase={activeStreamingPhase}
             reviewTransferDirection={reviewTransferDirection}
-            compactionContextTokensById={compactionContextTokensById}
+            compactionContextById={compactionContextById}
         />
     );
 };
@@ -1828,21 +1828,21 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     // Token windows around each compaction notice, read once for the whole
     // transcript: a notice can only show what its neighbours measured, and both
     // sides live in this list, not in the notice itself.
-    const compactionContextTokensById = React.useMemo(() => {
-        const tokensByMessageId = new Map<string, CompactionContextTokens>();
+    const compactionContextById = React.useMemo(() => {
+        const contextByMessageId = new Map<string, CompactionContext>();
 
         for (const message of messages) {
             if (!getCompactionPart(message)) {
                 continue;
             }
 
-            const tokens = findCompactionContextTokens(messages, message.info.id);
-            if (tokens) {
-                tokensByMessageId.set(message.info.id, tokens);
+            const context = findCompactionContext(messages, message.info.id);
+            if (context) {
+                contextByMessageId.set(message.info.id, context);
             }
         }
 
-        return tokensByMessageId;
+        return contextByMessageId;
     }, [messages]);
 
     const rowContext = React.useMemo(() => ({
@@ -1861,12 +1861,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         sessionIsWorking,
         activeStreamingMessageId,
         activeStreamingPhase,
-        compactionContextTokensById,
+        compactionContextById,
     }), [
         activeStreamingMessageId,
         activeStreamingPhase,
         chatRenderMode,
-        compactionContextTokensById,
+        compactionContextById,
         defaultActivityExpanded,
         directory,
         onUserAnimationConsumed,

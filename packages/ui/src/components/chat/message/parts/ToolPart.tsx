@@ -66,6 +66,7 @@ import {
     type DiffPatchEntry,
 } from './toolDiffUtils';
 import { isEmbeddedSessionChat } from '@/components/layout/contextPanelEmbeddedChat';
+import { SubtaskSessionDialog } from './SubtaskSessionDialog';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { getStreamingOutputAppend, getToolOutput } from './toolOutput';
 import { toAbsoluteFilePath } from '@/lib/path-utils';
@@ -1009,6 +1010,7 @@ const TaskToolSummary: React.FC<{
     const trimmedOutput = prepareTaskToolOutput(output);
     const hasOutput = trimmedOutput.length > 0;
     const [isOutputExpanded, setIsOutputExpanded] = React.useState(false);
+    const [isSubtaskDialogOpen, setIsSubtaskDialogOpen] = React.useState(false);
 
     const handleOpenSession = (event: React.MouseEvent) => {
         event.stopPropagation();
@@ -1024,7 +1026,7 @@ const TaskToolSummary: React.FC<{
             openContextPanelTab(currentDirectory, {
                 mode: 'chat',
                 dedupeKey: `session:${sessionId}`,
-                label: agentType.charAt(0).toUpperCase() + agentType.slice(1),
+                label: agentTypeLabel,
                 readOnly: true,
             });
         }
@@ -1033,6 +1035,7 @@ const TaskToolSummary: React.FC<{
     const agentType = typeof input?.subagent_type === 'string'
         ? input.subagent_type
         : 'subagent';
+    const agentTypeLabel = agentType.charAt(0).toUpperCase() + agentType.slice(1);
 
     if (entries.length === 0 && !hasOutput && !sessionId) {
         return (
@@ -1063,16 +1066,43 @@ const TaskToolSummary: React.FC<{
             ) : null}
 
             {sessionId && (
-                <button
-                    type="button"
-                    className="flex items-center gap-2 typography-meta text-primary hover:text-primary/80 w-full"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={handleOpenSession}
-                >
-                    <Icon name="external-link" className="h-3.5 w-3.5 flex-shrink-0" />
-                    <span className="typography-meta text-primary font-medium">{t('chat.toolPart.openSubtask', { type: agentType.charAt(0).toUpperCase() + agentType.slice(1) })}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        className="flex items-center gap-2 typography-meta text-primary hover:text-primary/80 min-w-0 flex-1"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={handleOpenSession}
+                    >
+                        <Icon name="external-link" className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="typography-meta text-primary font-medium truncate">{t('chat.toolPart.openSubtask', { type: agentTypeLabel })}</span>
+                    </button>
+                    {currentDirectory ? (
+                        <button
+                            type="button"
+                            aria-label={t('chat.toolPart.openSubtaskDialog')}
+                            title={t('chat.toolPart.openSubtaskDialog')}
+                            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-interactive-hover hover:text-foreground"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setIsSubtaskDialogOpen(true);
+                            }}
+                        >
+                            <Icon name="fullscreen" className="h-3.5 w-3.5" />
+                        </button>
+                    ) : null}
+                </div>
             )}
+
+            {sessionId && currentDirectory ? (
+                <SubtaskSessionDialog
+                    open={isSubtaskDialogOpen}
+                    onOpenChange={setIsSubtaskDialogOpen}
+                    sessionId={sessionId}
+                    title={agentTypeLabel}
+                    directory={currentDirectory}
+                />
+            ) : null}
 
             {hasOutput ? (
                 <div className={cn('space-y-1', (entries.length > 0 || sessionId) && 'pt-1')}

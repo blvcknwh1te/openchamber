@@ -1,4 +1,5 @@
 import { isAppLinkUrl, isExternalHttpUrl } from '@/lib/url';
+import { FILE_LINK_ATTR } from './fileReferenceLink';
 
 type AppLinkInteractionOptions = {
   allowExternalHttp: boolean;
@@ -16,7 +17,7 @@ const findLink = (event: MouseEvent | DragEvent): HTMLAnchorElement | null => {
   if (!(target instanceof Element)) return null;
   const anchor = target.closest('a[href]');
   if (!(anchor instanceof HTMLAnchorElement)) return null;
-  if (anchor.getAttribute('data-openchamber-file-link') === 'true') return null;
+  if (anchor.getAttribute(FILE_LINK_ATTR) === 'true') return null;
   return anchor;
 };
 

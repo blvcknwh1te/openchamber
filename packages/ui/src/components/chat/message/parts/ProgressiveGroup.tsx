@@ -15,6 +15,7 @@ import { FadeInOnReveal } from '../FadeInOnReveal';
 import { getToolIcon } from './toolPresentation';
 import { getToolMetadata } from '@/lib/toolHelpers';
 import { isExpandableTool, isStandaloneTool, isStaticTool } from './toolRenderUtils';
+import { formatToolReadRange, getToolReadRange } from './toolReadRange';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -219,38 +220,38 @@ const getTodoSummaryFromActivity = (activity: TurnActivityPart): string | null =
     return null;
 };
 
-const getToolReadOffset = (activity: TurnActivityPart): number | undefined => {
+const getToolReadState = (activity: TurnActivityPart) => {
     const part = activity.part as ToolPartType;
-    const state = part.state as { input?: Record<string, unknown>; metadata?: Record<string, unknown> } | undefined;
-    const input = state?.input;
-    const metadata = state?.metadata;
-
-    const rawOffset =
-        (typeof input?.offset === 'number' && Number.isFinite(input.offset) ? input.offset : undefined)
-        ?? (typeof input?.line === 'number' && Number.isFinite(input.line) ? input.line : undefined)
-        ?? (typeof metadata?.offset === 'number' && Number.isFinite(metadata.offset) ? metadata.offset : undefined)
-        ?? (typeof metadata?.line === 'number' && Number.isFinite(metadata.line) ? metadata.line : undefined);
-
-    if (typeof rawOffset !== 'number' || rawOffset <= 0) {
-        return undefined;
-    }
-
-    return Math.floor(rawOffset);
+    return part.state as { input?: Record<string, unknown>; metadata?: Record<string, unknown> } | undefined;
 };
 
-const renderReadFilePath = (displayPath: string, animate = true) => {
+const ReadRangeSuffix: React.FC<{ rangeLabel: string | null }> = ({ rangeLabel }) => {
+    if (!rangeLabel) {
+        return null;
+    }
+
+    // Muted teal, deliberately lighter than the file name so the range reads as
+    // metadata. Colour: `--tools-range` (see lib/theme/cssGenerator.ts).
+    return (
+        <span className="flex-shrink-0" style={{ color: 'var(--tools-range)', whiteSpace: 'pre' }}>{` ${rangeLabel}`}</span>
+    );
+};
+
+const renderReadFilePath = (displayPath: string, animate = true, rangeLabel: string | null = null) => {
     const lastSlash = displayPath.lastIndexOf('/');
 
     if (lastSlash === -1) {
         return (
-            <Text
-                variant={animate ? 'generate-effect' : 'static'}
-                className={cn('min-w-0 flex-1 truncate whitespace-nowrap', TOOL_ROW_DESCRIPTION_CLASS)}
-                style={{ color: 'var(--tools-title)' }}
-                title={displayPath}
-            >
-                {displayPath}
-            </Text>
+            <span className={cn('min-w-0 inline-flex max-w-full flex-1 items-baseline overflow-hidden', TOOL_ROW_DESCRIPTION_CLASS)} title={displayPath}>
+                <Text
+                    variant={animate ? 'generate-effect' : 'static'}
+                    className="min-w-0 shrink truncate whitespace-nowrap"
+                    style={{ color: 'var(--tools-title)' }}
+                >
+                    {displayPath}
+                </Text>
+                <ReadRangeSuffix rangeLabel={rangeLabel} />
+            </span>
         );
     }
 
@@ -281,6 +282,7 @@ const renderReadFilePath = (displayPath: string, animate = true) => {
             >
                 {name}
             </Text>
+            <ReadRangeSuffix rangeLabel={rangeLabel} />
         </span>
     );
 };
@@ -596,19 +598,37 @@ const StaticToolRowInner: React.FC<{
     }, [activities, skillByName, toolName]);
 
     const readFileEntries = React.useMemo(() => {
-        if (!isReadGroup) return [] as Array<{ path: string; displayPath: string; offset?: number }>;
+        if (!isReadGroup) return [] as Array<{ path: string; displayPath: string; offset?: number; rangeLabel: string | null }>;
 
-        const entries: Array<{ path: string; displayPath: string; offset?: number }> = [];
+        // A file read more than once keeps one row; every range it was read with
+        // is collected so the row never hides a later, narrower read.
+        const entries: Array<{ path: string; displayPath: string; offset?: number; rangeLabel: string | null }> = [];
+        const rangesByPath = new Map<string, string[]>();
         for (const activity of activities) {
             const filePath = getToolFilePath(activity);
-            const offset = getToolReadOffset(activity);
             if (!filePath) continue;
-            if (entries.some((entry) => entry.path === filePath)) continue;
+            const range = getToolReadRange(getToolReadState(activity));
+            const rangeLabel = formatToolReadRange(range);
+            const knownRanges = rangesByPath.get(filePath);
+            if (knownRanges) {
+                if (rangeLabel && !knownRanges.includes(rangeLabel)) {
+                    knownRanges.push(rangeLabel);
+                }
+                continue;
+            }
+
             const displayPath = getRelativeFilePath(filePath, currentDirectory);
             if (!displayPath) continue;
-            entries.push({ path: filePath, displayPath, offset });
+            rangesByPath.set(filePath, rangeLabel ? [rangeLabel] : []);
+            entries.push({ path: filePath, displayPath, offset: range.offset, rangeLabel });
         }
-        return entries;
+
+        return entries.map((entry) => {
+            const knownRanges = rangesByPath.get(entry.path) ?? [];
+            return knownRanges.length > 0
+                ? { ...entry, rangeLabel: knownRanges.join(' ') }
+                : entry;
+        });
     }, [activities, currentDirectory, isReadGroup]);
 
     const handleFileClick = React.useCallback((filePath: string, offset?: number) => {
@@ -701,10 +721,10 @@ const StaticToolRowInner: React.FC<{
                         }}
                         className={cn('inline-flex !min-h-0 items-center justify-start gap-1 min-w-0 flex-1 text-left hover:opacity-90', TOOL_ROW_DESCRIPTION_CLASS)}
                         style={{ color: 'var(--tools-description)' }}
-                        title={entry.offset ? `${entry.displayPath}:${entry.offset}` : entry.displayPath}
+                        title={entry.rangeLabel ? `${entry.displayPath} ${entry.rangeLabel}` : entry.displayPath}
                     >
                         {showToolFileIcons ? <FileTypeIcon filePath={entry.path} className="h-3.5 w-3.5" /> : null}
-                        {renderReadFilePath(entry.displayPath, animateTailText)}
+                        {renderReadFilePath(entry.displayPath, animateTailText, entry.rangeLabel)}
                     </button>
                 ))
                 : null}

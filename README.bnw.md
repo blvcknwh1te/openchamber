@@ -44,7 +44,10 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - A directory link opens the directory itself instead of revealing it inside its parent window. The same fix applies to "Open in File Explorer" in the files view and sidebar.
 - Paths outside the workspace stay clickable: existence probes are allowed outside the workspace root, while content reads remain restricted to it. This makes links such as the OpenCode log under the home directory work.
 - Link checks recover: a rejected or unreachable probe is no longer remembered as "file missing", and a "missing" answer is re-checked, so a link appears once the file exists even if the first check ran before it was written.
+- The per-message link budget counts links, not candidates. A message holds far more path-shaped tokens than real references, and spending the budget on those left every later path unlinked. A link also stays granted while its text is unchanged, so a repeated annotation pass no longer drops or re-probes it.
+- A reference resolves when the opened folder sits inside the repository or the repository inside the opened folder, and a path without an extension is searched as a directory as well, so `packages/ui/...` and folder references link in both cases.
 - The automatic compaction summary is no longer rendered as an assistant answer. Compaction itself is unchanged, and the summary stays in the session.
+- Older history stays reachable in the VS Code webview. A session whose messages were already materialized (realtime events, a send confirmation) no longer marks itself as fully loaded while OpenCode coverage is still unknown, so the initial page is fetched, the real cursor is registered, and scrolling up loads older messages again.
 
 ### Permission descriptions
 

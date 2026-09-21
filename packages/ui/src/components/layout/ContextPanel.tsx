@@ -35,20 +35,20 @@ import { ContextPanelContent } from './ContextSidebarTab';
 import { BrowserPane } from '@/components/browser/BrowserPane';
 import { browserUrlLabel } from '@/lib/browser/url';
 import { registerBrowserOpener } from '@/lib/browser/controlClient';
-import { getRuntimeBearerTokenSync, getRuntimeExtraHeadersSync } from '@/lib/runtime-auth';
-import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
-import { getActiveRelayDescriptor } from '@/lib/relay/runtime-tunnel';
 import { Icon } from "@/components/icon/Icon";
 import {
-  EMBEDDED_RUNTIME_BOOTSTRAP_REQUEST,
-  EMBEDDED_RUNTIME_BOOTSTRAP_RESPONSE,
-  EMBEDDED_VISIBILITY_REQUEST,
-  EMBEDDED_VISIBILITY_UPDATE,
   getActiveEmbeddedSessionChatTab,
   getOrCreateEmbeddedSessionChatURL,
   type EmbeddedSessionChatURLCacheEntry,
-  type EmbeddedSessionRuntimeBootstrap,
 } from './contextPanelEmbeddedChat';
+import {
+  buildEmbeddedChatSettingsSyncMessage,
+  buildEmbeddedThemeSyncMessage,
+  buildEmbeddedVisibilityMessage,
+  getNextEmbeddedChatThemeMode,
+  handleEmbeddedChatFrameMessage,
+  postToEmbeddedChatFrames,
+} from './embeddedChatBridge';
 import { getContextSurfaceWidthFraction } from '@/lib/surfaces/registry';
 import { isTerminalEventTarget } from '@/lib/terminalFocus';
 
@@ -792,39 +792,21 @@ export const ContextPanel: React.FC = () => {
       return;
     }
 
-    const payload = {
-      themeMode,
+    postToEmbeddedChatFrames(chatFrameRefs.current, buildEmbeddedThemeSyncMessage({
+      mode: themeMode,
       lightThemeId,
       darkThemeId,
       currentTheme,
-    };
-
-    for (const frame of chatFrameRefs.current.values()) {
-      const frameWindow = frame.contentWindow;
-      if (!frameWindow) {
-        continue;
-      }
-
-      frameWindow.postMessage(
-        {
-          type: 'openchamber:theme-sync',
-          payload,
-        },
-        window.location.origin,
-      );
-    }
+    }));
   }, [currentTheme, darkThemeId, lightThemeId, themeMode]);
 
   const postChatSettingsSyncToEmbeddedChat = React.useCallback(() => {
     if (typeof window === 'undefined') return;
 
-    const payload = { allowPromptingSubagentSessions };
-    for (const frame of chatFrameRefs.current.values()) {
-      const frameWindow = frame.contentWindow;
-      if (!frameWindow) continue;
-
-      frameWindow.postMessage({ type: 'openchamber:chat-settings-sync', payload }, window.location.origin);
-    }
+    postToEmbeddedChatFrames(
+      chatFrameRefs.current,
+      buildEmbeddedChatSettingsSyncMessage({ allowPromptingSubagentSessions }),
+    );
   }, [allowPromptingSubagentSessions]);
 
   const postEmbeddedVisibilityToChat = React.useCallback((
@@ -832,16 +814,9 @@ export const ContextPanel: React.FC = () => {
     frame: HTMLIFrameElement,
     targetOrigin: string,
   ) => {
-    const frameWindow = frame.contentWindow;
-    if (!frameWindow) {
-      return;
-    }
-
-    frameWindow.postMessage(
-      {
-        type: EMBEDDED_VISIBILITY_UPDATE,
-        payload: { visible: activeChatTabID === tabID },
-      },
+    postToEmbeddedChatFrames(
+      new Map([[tabID, frame]]),
+      buildEmbeddedVisibilityMessage(activeChatTabID === tabID),
       targetOrigin,
     );
   }, [activeChatTabID]);
@@ -866,59 +841,26 @@ export const ContextPanel: React.FC = () => {
         return;
       }
 
-      const sourceChatFrame = Array.from(chatFrameRefs.current.entries())
-        .find(([, frame]) => frame.contentWindow === event.source);
-      if (!sourceChatFrame) {
-        return;
-      }
-
-      const data = event.data as { type?: unknown; requestId?: unknown };
-      if (data?.type === EMBEDDED_VISIBILITY_REQUEST) {
-        const [tabID, frame] = sourceChatFrame;
-        postEmbeddedVisibilityToChat(tabID, frame, event.origin);
-        return;
-      }
-      if (data?.type === EMBEDDED_RUNTIME_BOOTSTRAP_REQUEST) {
-        if (typeof data.requestId !== 'string' || !data.requestId) return;
-        const runtimeKey = getRuntimeKey();
-        const payload: EmbeddedSessionRuntimeBootstrap = {
-          apiBaseUrl: getRuntimeApiBaseUrl(),
-          clientToken: getRuntimeBearerTokenSync(),
-          localOrigin: typeof window.__OPENCHAMBER_LOCAL_ORIGIN__ === 'string'
-            ? window.__OPENCHAMBER_LOCAL_ORIGIN__
-            : '',
-          runtimeHeaders: getRuntimeExtraHeadersSync(),
-          relayHostId: runtimeKey.startsWith('host:') ? runtimeKey.slice('host:'.length) : '',
-          relay: getActiveRelayDescriptor() ?? undefined,
-        };
-        (event.source as WindowProxy | null)?.postMessage({
-          type: EMBEDDED_RUNTIME_BOOTSTRAP_RESPONSE,
-          requestId: data.requestId,
-          payload,
-        }, event.origin);
-        return;
-      }
-      if (data?.type === 'openchamber:theme-sync-request') {
-        postThemeSyncToEmbeddedChat();
-        return;
-      }
-      if (data?.type === 'openchamber:chat-settings-request') {
-        postChatSettingsSyncToEmbeddedChat();
-        return;
-      }
-      if (data?.type !== 'openchamber:cycle-theme-request') {
-        return;
-      }
-
-      const modes: Array<'light' | 'dark' | 'system'> = ['light', 'dark', 'system'];
-      const currentIndex = modes.indexOf(themeMode);
-      const nextIndex = (currentIndex + 1) % modes.length;
-      setThemeMode(modes[nextIndex]);
+      handleEmbeddedChatFrameMessage({
+        data: event.data,
+        sourceWindow: event.source as WindowProxy | null,
+        origin: event.origin,
+        frames: chatFrameRefs.current,
+        visibleFrameKey: activeChatTabID,
+        theme: {
+          mode: themeMode,
+          lightThemeId,
+          darkThemeId,
+          currentTheme,
+        },
+        settings: { allowPromptingSubagentSessions },
+        onCycleTheme: () => setThemeMode(getNextEmbeddedChatThemeMode(themeMode)),
+      });
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [postChatSettingsSyncToEmbeddedChat, postEmbeddedVisibilityToChat, postThemeSyncToEmbeddedChat, setThemeMode, themeMode]);
+  }, [activeChatTabID, allowPromptingSubagentSessions, currentTheme, darkThemeId, lightThemeId, setThemeMode, themeMode]);
 
   React.useLayoutEffect(() => {
     const hasAnyChatTab = tabs.some((tab) => tab.mode === 'chat');

@@ -78,6 +78,17 @@ const getInitialExpansionLimits = () => isConstrainedRuntime()
   ? CONSTRAINED_INITIAL_PAGE_EXPANSION_LIMITS
   : INITIAL_PAGE_EXPANSION_LIMITS
 
+/**
+ * A loader knows a session's history coverage only once it either walked the
+ * full history (`complete`) or received the cursor of an older page. Without
+ * that knowledge the transcript cannot be proven fully loaded, so callers must
+ * keep the session eligible for further history reads.
+ */
+export const isSessionHistoryCoverageKnown = (snapshot: {
+  cursor: string | undefined
+  complete: boolean
+}): boolean => snapshot.complete || snapshot.cursor !== undefined
+
 const isUserMessage = (message: Message): boolean => {
   const candidate = message as Message & { clientRole?: unknown; role?: unknown }
   const role = typeof candidate.clientRole === "string" ? candidate.clientRole : candidate.role
@@ -209,15 +220,12 @@ export class SessionMessageLoader {
     const entry = this.getEntry(normalized)
     const store = this.childStores.ensureChild(normalized.directory, { bootstrap: false })
     const materialization = getSessionMaterializationStatus(store.getState(), normalized.sessionID)
-    if (!options?.force && materialization.renderable) {
-      if (!entry.snapshot.resolved) {
-        this.patchEntry(entry, {
-          status: "ready",
-          error: null,
-          resolved: true,
-          limit: Math.max(entry.snapshot.limit, store.getState().message[normalized.sessionID]?.length ?? 0),
-        })
-      }
+    // Materialized messages prove the store can render, not that this loader
+    // knows the session's history coverage. Skipping the load on such a
+    // snapshot would report an unresolved coverage as "already loaded" and
+    // lock older-history paging out for good, so only a known coverage
+    // (`complete` or a cursor) may short-circuit the authoritative load.
+    if (!options?.force && materialization.renderable && isSessionHistoryCoverageKnown(entry.snapshot)) {
       return entry.inflight ?? Promise.resolve()
     }
     if (entry.inflight) {

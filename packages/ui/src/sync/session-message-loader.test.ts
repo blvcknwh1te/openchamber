@@ -246,6 +246,43 @@ describe("SessionMessageLoader", () => {
     childStores.disposeAll()
   })
 
+  test("fetches coverage when a renderable snapshot carries no loader metadata", async () => {
+    const requested: Array<{ before?: string; limit?: number }> = []
+    const { childStores, loader } = createLoader(async ({ sessionID, limit, before }) => {
+      requested.push({ before, limit })
+      return before
+        ? response([createRecord(sessionID, "msg_older", 2)])
+        : response([createRecord(sessionID, "msg_latest", 3)], "older-cursor")
+    })
+    const target = { directory: "/repo", sessionID: "session-a" }
+    const store = childStores.ensureChild(target.directory, { bootstrap: false })
+    const cached = createRecord(target.sessionID, "cached", 1)
+    store.setState({
+      message: { [target.sessionID]: [cached.info] },
+      part: { cached: cached.parts },
+    })
+
+    await loader.ensure(target)
+
+    expect(requested).toEqual([{ before: undefined, limit: 50 }])
+    expect(loader.getSnapshot(target)).toMatchObject({
+      resolved: true,
+      cursor: "older-cursor",
+      complete: false,
+    })
+    expect(store.getState().message[target.sessionID]?.map((message) => message.id))
+      .toEqual(["cached", "msg_latest"])
+
+    await loader.loadOlder(target)
+
+    expect(requested).toHaveLength(2)
+    expect(requested[1]?.before).toBe("older-cursor")
+    expect(store.getState().message[target.sessionID]?.map((message) => message.id))
+      .toEqual(["cached", "msg_older", "msg_latest"])
+    loader.dispose()
+    childStores.disposeAll()
+  })
+
   test("rejects repeated pagination cursors instead of looping forever", async () => {
     let calls = 0
     const { childStores, loader } = createLoader(async ({ sessionID, before }) => {

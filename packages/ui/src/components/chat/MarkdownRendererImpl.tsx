@@ -2,7 +2,7 @@ import React from 'react';
 import morphdom from 'morphdom';
 import { renderMermaidASCII, renderMermaidSVG } from 'beautiful-mermaid';
 import type { Part } from '@opencode-ai/sdk/v2';
-import { cn } from '@/lib/utils';
+import { cn, getRevealLabelKey } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { openExternalUrl } from '@/lib/url';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
@@ -11,12 +11,13 @@ import type { Theme } from '@/types/theme';
 import { openAppLinkWithConfirmation } from './appLinkConfirmation';
 import { attachAppLinkInteractions } from './appLinkInteractions';
 import type { ToolPopupContent } from './message/types';
+import { MARKDOWN_POPUP_TOOL } from './message/types';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { useUIStore } from '@/stores/useUIStore';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { useEffectiveDirectory, useHomeDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import { isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, revealDesktopPath } from '@/lib/desktop';
+import { isBrowserClientRuntime, isDesktopLocalOriginActive, isDesktopShell, isVSCodeRuntime, revealDesktopPath } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { ensureOutsideFileGrantForDesktop } from '@/lib/outsideFileGrants';
 import { getDirectoryForFilePath, isFilePathWithinDirectory } from '@/lib/path-utils';
@@ -40,6 +41,7 @@ import {
   type MermaidRender,
 } from './markdown/decorate';
 import { findTextPosition } from './markdown/textPosition';
+import { createMenuItem, createMenuSurface } from './markdown/menuSurface';
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import {
   BLOCK_PATH_TOKEN_RE,
@@ -52,6 +54,14 @@ import {
 } from './fileReferenceParser';
 import { lookupWorkspaceFileReference } from './fileReferenceLookup';
 import { fileReferenceStat } from './fileReferenceStat';
+import {
+  FILE_LINK_ATTR,
+  FILE_LINK_DIR_ATTR,
+  FILE_LINK_PATH_ATTR,
+  FILE_LINK_REF_ATTR,
+  FILE_LINK_SELECTOR,
+  hasFileLinkBudget,
+} from './fileReferenceLink';
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 import { detachedMarkdownDomCache, type DetachedMarkdownDomKey } from './markdown/detachedMarkdownDomCache';
 import { TimelineRevealGateContext } from './timelineRevealGate';
@@ -124,7 +134,7 @@ interface MarkdownRendererProps {
   enableFileReferences?: boolean;
 }
 
-const FILE_LINK_SELECTOR = '[data-openchamber-file-link="true"]';
+const FILE_LINK_MENU_ATTR = 'data-openchamber-file-link-menu';
 const BLOCK_PATH_TOKEN_ATTR = 'data-openchamber-block-path-token';
 const BLOCK_PATH_TOKEN_SELECTOR = `[${BLOCK_PATH_TOKEN_ATTR}]`;
 const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-block-paths-scanned';
@@ -132,6 +142,9 @@ const CODE_BLOCK_PATH_SCANNED_ATTR = 'data-openchamber-block-paths-scanned';
 // output. The regex is defined in `./fileReferenceParser`; the inline-code
 // pipeline reads full text content rather than using this regex.
 const MAX_BLOCK_CODE_SCAN_LENGTH = 200_000;
+// Budget for the links one rendered message receives. It is spent on links that
+// were actually granted, never on the path-shaped tokens a message holds: log
+// fragments and dotted identifiers outnumber real references by far.
 const FILE_REFERENCE_LINK_LIMIT = 80;
 const VSCODE_FILE_REFERENCE_LINK_LIMIT = 40;
 const FILE_REFERENCE_ANNOTATION_DELAY_MS = 160;
@@ -383,10 +396,10 @@ const useFileReferenceInteractions = ({
     const fileReferencesEnabled = enabled && !isMobileSurfaceRuntime();
 
     const clearFileLinkAttributes = (candidate: HTMLElement) => {
-      candidate.removeAttribute('data-openchamber-file-link');
-      candidate.removeAttribute('data-openchamber-file-ref');
-      candidate.removeAttribute('data-openchamber-file-path');
-      candidate.removeAttribute('data-openchamber-file-dir');
+      candidate.removeAttribute(FILE_LINK_ATTR);
+      candidate.removeAttribute(FILE_LINK_REF_ATTR);
+      candidate.removeAttribute(FILE_LINK_PATH_ATTR);
+      candidate.removeAttribute(FILE_LINK_DIR_ATTR);
       const title = candidate.getAttribute('title');
       if (title === 'Open file' || title === 'Open folder') {
         candidate.removeAttribute('title');
@@ -456,22 +469,23 @@ const useFileReferenceInteractions = ({
       const candidates = container.querySelectorAll<HTMLElement>(
         `[data-markdown="inline-code"], a, ${BLOCK_PATH_TOKEN_SELECTOR}`,
       );
-      let linkedCount = 0;
 
       for (const candidate of Array.from(candidates)) {
         const rawCandidate = extractPathCandidateFromElement(candidate);
+        // A link whose text did not change stays granted: re-probing it on
+        // every pass kept the stat queue and the file search busy, and a link
+        // dropped by a pass that ran out of budget did not always come back.
+        if (candidate.getAttribute(FILE_LINK_ATTR) === 'true'
+          && candidate.getAttribute(FILE_LINK_REF_ATTR) === rawCandidate) {
+          continue;
+        }
+
         const resolved = getResolvedReference(rawCandidate, effectiveDirectory, homeDirectory);
-        clearFileLinkAttributes(candidate);
 
         if (!resolved) {
+          clearFileLinkAttributes(candidate);
           continue;
         }
-
-        if (linkedCount >= fileReferenceLinkLimit) {
-          continue;
-        }
-
-        linkedCount += 1;
 
         const canGrantOutsideFile = isDesktopShell()
           && isDesktopLocalOriginActive()
@@ -492,7 +506,13 @@ const useFileReferenceInteractions = ({
           let targetIsDirectory = isDirectory;
           if (!exists) {
             const located = await lookupWorkspaceFileReference(resolved.resolvedPath, effectiveDirectory, searchFiles);
-            if (cancelled || !container.contains(candidate) || !located) {
+            if (cancelled || !container.contains(candidate)) {
+              return;
+            }
+            if (!located) {
+              // The reference names nothing this workspace can reach; a link
+              // granted for an earlier text of this element no longer holds.
+              clearFileLinkAttributes(candidate);
               return;
             }
             targetPath = located;
@@ -502,14 +522,23 @@ const useFileReferenceInteractions = ({
           const latestRawCandidate = extractPathCandidateFromElement(candidate);
           const latestResolved = getResolvedReference(latestRawCandidate, effectiveDirectory, homeDirectory);
           if (!latestResolved || latestResolved.resolvedPath !== resolved.resolvedPath) {
+            clearFileLinkAttributes(candidate);
             return;
           }
 
-          candidate.setAttribute('data-openchamber-file-link', 'true');
-          candidate.setAttribute('data-openchamber-file-ref', latestRawCandidate);
-          candidate.setAttribute('data-openchamber-file-path', targetPath);
+          // The budget is spent here, on a link that exists, so tokens that
+          // only look like paths cannot use it up before the real references.
+          // Links granted earlier keep their attributes either way.
+          if (candidate.getAttribute(FILE_LINK_ATTR) !== 'true'
+            && !hasFileLinkBudget(container, fileReferenceLinkLimit)) {
+            return;
+          }
+
+          candidate.setAttribute(FILE_LINK_ATTR, 'true');
+          candidate.setAttribute(FILE_LINK_REF_ATTR, latestRawCandidate);
+          candidate.setAttribute(FILE_LINK_PATH_ATTR, targetPath);
           if (targetIsDirectory) {
-            candidate.setAttribute('data-openchamber-file-dir', 'true');
+            candidate.setAttribute(FILE_LINK_DIR_ATTR, 'true');
             candidate.setAttribute('title', 'Open folder');
           } else {
             candidate.setAttribute('title', 'Open file');
@@ -528,7 +557,7 @@ const useFileReferenceInteractions = ({
       for (const element of Array.from(container.querySelectorAll<HTMLElement>('[data-markdown="inline-code"]'))) {
         const value = (element.textContent ?? '').trim();
         const isUrlOnly = /^https?:\/\/\S+$/.test(value)
-          && element.getAttribute('data-openchamber-file-link') !== 'true';
+          && element.getAttribute(FILE_LINK_ATTR) !== 'true';
         if (isUrlOnly) {
           element.setAttribute('data-openchamber-external-link', value);
           element.setAttribute('title', value);
@@ -543,14 +572,14 @@ const useFileReferenceInteractions = ({
     };
 
     const openFileReference = async (sourceElement: HTMLElement) => {
-      const raw = sourceElement.getAttribute('data-openchamber-file-ref') || extractPathCandidateFromElement(sourceElement);
-      const storedPath = sourceElement.getAttribute('data-openchamber-file-path');
+      const raw = sourceElement.getAttribute(FILE_LINK_REF_ATTR) || extractPathCandidateFromElement(sourceElement);
+      const storedPath = sourceElement.getAttribute(FILE_LINK_PATH_ATTR);
       const resolved = getResolvedReference(raw, effectiveDirectory, homeDirectory, storedPath);
       if (!resolved) {
         return;
       }
 
-      if (sourceElement.getAttribute('data-openchamber-file-dir') === 'true') {
+      if (sourceElement.getAttribute(FILE_LINK_DIR_ATTR) === 'true') {
         const revealPath = runtimeApis.files?.revealPath;
         if (revealPath) {
           const result = await revealPath(resolved.resolvedPath).catch(() => null);
@@ -619,7 +648,7 @@ const useFileReferenceInteractions = ({
       }
 
       const target = event.target;
-      if (!(target instanceof HTMLElement) || target.getAttribute('data-openchamber-file-link') !== 'true') {
+      if (!(target instanceof HTMLElement) || target.getAttribute(FILE_LINK_ATTR) !== 'true') {
         return;
       }
 
@@ -658,6 +687,130 @@ const useFileReferenceInteractions = ({
       container.removeEventListener('keydown', handleKeyDown);
     };
   }, [containerRef, runtimeApis, searchFiles, effectiveDirectory, homeDirectory, enabled]);
+};
+
+/**
+ * Right-click menu for file links in the transcript: the same "open in the OS
+ * file manager" action the files tree exposes, without leaving the chat. The
+ * menu lives in the document body so it is never clipped by the scroll box the
+ * transcript renders the link inside.
+ */
+const useFileLinkContextMenu = ({
+  containerRef,
+  revealLabel,
+  getRevealAction,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  revealLabel: string;
+  /**
+   * Resolves the reveal action on demand. Reading it during render would touch
+   * runtime APIs that hosts without a filesystem do not provide, so the caller
+   * only hands over a resolver and the menu asks when it actually opens.
+   */
+  getRevealAction?: (path: string) => (() => void) | null;
+}) => {
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !getRevealAction) {
+      return;
+    }
+
+    const doc = container.ownerDocument;
+    let menu: HTMLDivElement | null = null;
+    let detachMenuListeners: (() => void) | null = null;
+
+    const closeMenu = () => {
+      detachMenuListeners?.();
+      detachMenuListeners = null;
+      menu?.remove();
+      menu = null;
+    };
+
+    const openMenu = (x: number, y: number, path: string, reveal: () => void) => {
+      closeMenu();
+      const surface = createMenuSurface();
+      surface.setAttribute(FILE_LINK_MENU_ATTR, 'true');
+      surface.classList.remove('hidden');
+      surface.style.position = 'fixed';
+      surface.style.left = `${x}px`;
+      surface.style.top = `${y}px`;
+      // Above the context panel and the transcript's sticky headers.
+      surface.style.zIndex = '60';
+
+      const item = createMenuItem(revealLabel, null);
+      item.addEventListener('click', () => {
+        closeMenu();
+        reveal();
+      });
+      surface.appendChild(item);
+      doc.body.appendChild(surface);
+      menu = surface;
+
+      // The sidebar and the VS Code webview are narrow: keep the menu inside
+      // the viewport instead of letting it overflow off the right/bottom edge.
+      const rect = surface.getBoundingClientRect();
+      const maxLeft = Math.max(0, doc.documentElement.clientWidth - rect.width);
+      const maxTop = Math.max(0, doc.documentElement.clientHeight - rect.height);
+      surface.style.left = `${Math.min(x, maxLeft)}px`;
+      surface.style.top = `${Math.min(y, maxTop)}px`;
+
+      const handlePointerDown = (event: MouseEvent) => {
+        if (event.target instanceof Node && menu?.contains(event.target)) {
+          return;
+        }
+        closeMenu();
+      };
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          closeMenu();
+        }
+      };
+      const handleViewportChange = () => closeMenu();
+
+      doc.addEventListener('mousedown', handlePointerDown, true);
+      doc.addEventListener('keydown', handleKeyDown, true);
+      doc.defaultView?.addEventListener('scroll', handleViewportChange, true);
+      doc.defaultView?.addEventListener('resize', handleViewportChange, true);
+      detachMenuListeners = () => {
+        doc.removeEventListener('mousedown', handlePointerDown, true);
+        doc.removeEventListener('keydown', handleKeyDown, true);
+        doc.defaultView?.removeEventListener('scroll', handleViewportChange, true);
+        doc.defaultView?.removeEventListener('resize', handleViewportChange, true);
+      };
+    };
+
+    const handleContextMenu = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const link = target.closest(FILE_LINK_SELECTOR);
+      if (!(link instanceof HTMLElement)) {
+        closeMenu();
+        return;
+      }
+
+      const path = link.getAttribute(FILE_LINK_PATH_ATTR);
+      if (!path) {
+        return;
+      }
+
+      const reveal = getRevealAction(path);
+      if (!reveal) {
+        return;
+      }
+
+      event.preventDefault();
+      openMenu(event.clientX, event.clientY, path, reveal);
+    };
+
+    container.addEventListener('contextmenu', handleContextMenu);
+    return () => {
+      container.removeEventListener('contextmenu', handleContextMenu);
+      closeMenu();
+    };
+  }, [containerRef, getRevealAction, revealLabel]);
 };
 
 const useMermaidInlineInteractions = ({
@@ -840,6 +993,7 @@ const useDecorateContext = (
   deferCodeLineNumberSync: boolean,
   onPreviewLoopback?: (url: string) => void,
   mermaidControls: MermaidControlOptions = DEFAULT_MERMAID_CONTROLS,
+  onExpandTable?: (markdown: string) => void,
 ): DecorateContext => {
   const { t } = useI18n();
   const labels: DecorateLabels = React.useMemo(() => ({
@@ -849,6 +1003,7 @@ const useDecorateContext = (
     disableCodeWrap: t('markdownRenderer.code.actions.disableWrapTitle'),
     copyTable: t('markdownRenderer.table.actions.copyTitle'),
     downloadTable: t('markdownRenderer.table.actions.downloadTitle'),
+    expandTable: t('markdownRenderer.table.actions.expandTitle'),
     copyDiagram: t('markdownRenderer.mermaid.actions.copySourceTitle'),
     downloadDiagram: t('markdownRenderer.mermaid.actions.downloadSvgTitle'),
     zoomInDiagram: t('markdownRenderer.mermaid.actions.zoomInTitle'),
@@ -877,8 +1032,8 @@ const useDecorateContext = (
           return {};
         }
       });
-    return { labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, onToggleCodeBlockLineWrap: toggleCodeBlockLineWrap, renderMermaid, onPreviewLoopback };
-  }, [currentTheme, labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, toggleCodeBlockLineWrap, onPreviewLoopback]);
+    return { labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, onToggleCodeBlockLineWrap: toggleCodeBlockLineWrap, renderMermaid, onPreviewLoopback, onExpandTable };
+  }, [currentTheme, labels, mermaidControls, codeBlockLineWrap, deferCodeLineNumberSync, toggleCodeBlockLineWrap, onPreviewLoopback, onExpandTable]);
 };
 
 // Runs the async render pipeline into the container and keeps a stable
@@ -1263,6 +1418,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const homeDirectory = useHomeDirectory();
+  const runtimeApis = useRuntimeAPIs();
   const openContextPreview = useUIStore((state) => state.openContextPreview);
 
   const handlePreviewLoopback = React.useCallback((url: string) => {
@@ -1270,7 +1426,36 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     openContextPreview(effectiveDirectory, url);
   }, [effectiveDirectory, openContextPreview]);
 
+  const { t, locale } = useI18n();
+  const handleExpandTable = React.useCallback((markdown: string) => {
+    onShowPopup?.({
+      open: true,
+      title: t('markdownRenderer.table.actions.expandTitle'),
+      content: markdown,
+      metadata: { tool: MARKDOWN_POPUP_TOOL },
+    });
+  }, [onShowPopup, t]);
+
   const live = isStreaming && !disableStreamAnimation;
+
+  // Reveal needs a runtime that owns a filesystem: the browser client has no
+  // shell to open, so the menu item would be dead there. The check runs when the
+  // menu opens, never during render.
+  const getRevealFileLinkAction = React.useCallback((path: string) => {
+    const revealPath = runtimeApis.files?.revealPath;
+    if (!revealPath || isBrowserClientRuntime(runtimeApis.runtime.platform)) {
+      return null;
+    }
+
+    return () => {
+      void (async () => {
+        if (effectiveDirectory && !isFilePathWithinDirectory(path, effectiveDirectory)) {
+          await ensureOutsideFileGrantForDesktop(path, effectiveDirectory);
+        }
+        await revealPath(path).catch(() => undefined);
+      })();
+    };
+  }, [effectiveDirectory, runtimeApis]);
 
   useMermaidInlineInteractions({
     containerRef,
@@ -1285,10 +1470,20 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     enabled: enableFileReferences && !isStreaming,
   });
   useLinkInteractions({ containerRef });
+  useFileLinkContextMenu({
+    containerRef,
+    revealLabel: t(getRevealLabelKey()),
+    getRevealAction: enableFileReferences && !isStreaming ? getRevealFileLinkAction : undefined,
+  });
 
   const syntaxVars = React.useMemo(() => getMarkdownSyntaxVars(currentTheme), [currentTheme]);
-  const ctx = useDecorateContext(currentTheme, live, effectiveDirectory ? handlePreviewLoopback : undefined, DEFAULT_MERMAID_CONTROLS);
-  const { locale } = useI18n();
+  const ctx = useDecorateContext(
+    currentTheme,
+    live,
+    effectiveDirectory ? handlePreviewLoopback : undefined,
+    DEFAULT_MERMAID_CONTROLS,
+    onShowPopup ? handleExpandTable : undefined,
+  );
   const imageMode: MarkdownImageMode = variant === 'assistant' ? 'label' : 'inline';
   const settledPart = part
     && (part.type === 'text' || part.type === 'reasoning')

@@ -455,6 +455,10 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push(`  --tools-icon: ${tools?.icon || theme.colors.surface.mutedForeground};`);
     vars.push(`  --tools-title: ${tools?.title || theme.colors.surface.foreground};`);
     vars.push(`  --tools-description: ${tools?.description || this.opacity(theme.colors.surface.mutedForeground, 0.6)};`);
+    // Line range next to a read file name. Tune it here for every theme at once,
+    // or per theme with `colors.tools.range` in packages/ui/src/lib/theme/themes/*.json.
+    const readRangeFallback = theme.metadata.variant === 'dark' ? '#6fc9be' : '#1d7f78';
+    vars.push(`  --tools-range: ${tools?.range || readRangeFallback};`);
 
     if (tools?.edit) {
       vars.push(`  --tools-edit-added: ${tools.edit.added || theme.colors.status.success};`);

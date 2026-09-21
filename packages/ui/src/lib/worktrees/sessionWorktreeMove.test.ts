@@ -597,7 +597,9 @@ describe('moveSessionTreeToExistingWorktree', () => {
     ]);
     expect(runGit(source, ['status', '--short'])).toBe('M  file.txt\n');
     expect(fs.readFileSync(path.join(destination, 'file.txt'), 'utf8')).toBe('base\n');
-  });
+    // Builds two real repositories; on Windows `git init` alone can take seconds
+    // when an antivirus watches %TEMP%, which overruns the 5s default timeout.
+  }, 30_000);
 
   test('rolls back an earlier child and never moves a later descendant that becomes busy', async () => {
     const root = makeSession('root');

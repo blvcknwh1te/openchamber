@@ -188,7 +188,7 @@ export const parseFileReference = (value: string): ParsedFileReference | null =>
 
 const RELATIVE_PATH_ANCHOR_RE = /^(?:\.{1,2}[\\/]|~[\\/])/;
 
-const hasFileExtension = (path: string): boolean => {
+export const hasFileExtension = (path: string): boolean => {
     const base = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
     if (!base || base.endsWith('.')) {
         return false;

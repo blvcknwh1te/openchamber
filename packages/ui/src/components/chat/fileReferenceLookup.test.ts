@@ -12,12 +12,12 @@ const hit = (relativePath: string): ProjectFileSearchHit => ({
   relativePath,
 });
 
-type SearchCall = { directory: string; query: string; limit: number };
+type SearchCall = { directory: string; query: string; limit: number; type?: 'file' | 'directory' };
 
 const createSearcher = (hits: ProjectFileSearchHit[]) => {
   const calls: SearchCall[] = [];
-  const searchFiles: FileReferenceSearcher = async (directory, query, limit) => {
-    calls.push({ directory, query, limit });
+  const searchFiles: FileReferenceSearcher = async (directory, query, limit, options) => {
+    calls.push({ directory, query, limit, type: options?.type });
     return hits;
   };
   return { searchFiles, calls };
@@ -84,7 +84,48 @@ describe('lookupWorkspaceFileReference', () => {
 
     await lookupWorkspaceFileReference(`${WORKSPACE}\\packages\\ui\\src\\app.tsx`, `  ${WORKSPACE}  `, searchFiles);
 
-    expect(calls).toEqual([{ directory: WORKSPACE, query: 'app.tsx', limit: FILE_REFERENCE_LOOKUP_LIMIT }]);
+    expect(calls).toEqual([
+      { directory: WORKSPACE, query: 'app.tsx', limit: FILE_REFERENCE_LOOKUP_LIMIT, type: 'file' },
+    ]);
+  });
+
+  test('finds a reference written from the repository root of an opened subfolder', async () => {
+    const subfolder = `${WORKSPACE}\\packages\\ui`;
+    const { searchFiles, calls } = createSearcher([hit('src/app.tsx')]);
+
+    const resolved = await lookupWorkspaceFileReference(`${subfolder}\\src\\app.tsx`, subfolder, searchFiles);
+
+    expect(resolved).toBe(`${WORKSPACE}\\src\\app.tsx`);
+    expect(calls).toEqual([
+      { directory: subfolder, query: 'app.tsx', limit: FILE_REFERENCE_LOOKUP_LIMIT, type: 'file' },
+    ]);
+  });
+
+  test('does not accept a hit that keeps only the file name of a longer reference', async () => {
+    const { searchFiles } = createSearcher([hit('app.tsx')]);
+
+    const resolved = await lookupWorkspaceFileReference(
+      `${WORKSPACE}\\packages\\ui\\src\\app.tsx`,
+      WORKSPACE,
+      searchFiles,
+    );
+
+    expect(resolved).toBeNull();
+  });
+
+  test('asks for directories when the reference has no extension', async () => {
+    const { searchFiles, calls } = createSearcher([hit('packages/ui/src/lib/i18n/messages\\')]);
+
+    const resolved = await lookupWorkspaceFileReference(
+      `${WORKSPACE}\\packages\\ui\\src\\lib\\i18n\\messages`,
+      WORKSPACE,
+      searchFiles,
+    );
+
+    expect(resolved).toBe(`${WORKSPACE}\\packages\\ui\\src\\lib\\i18n\\messages\\`);
+    expect(calls).toEqual([
+      { directory: WORKSPACE, query: 'messages', limit: FILE_REFERENCE_LOOKUP_LIMIT, type: 'directory' },
+    ]);
   });
 
   test('reports unknown when the search fails', async () => {

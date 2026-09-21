@@ -21,6 +21,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(join(__dirname, '..', '..', '..', 'App.tsx'), 'utf-8');
 const contextPanelSource = readFileSync(join(__dirname, '..', 'ContextPanel.tsx'), 'utf-8');
+const bridgeSource = readFileSync(join(__dirname, '..', 'embeddedChatBridge.ts'), 'utf-8');
 
 type FixtureTab = {
   id: string;
@@ -132,9 +133,10 @@ describe('issue #2815 active-only chat iframe source guard', () => {
   });
 
   test('answers the mounted iframe visibility handshake from the active tab', () => {
-    expect(contextPanelSource).toContain('data?.type === EMBEDDED_VISIBILITY_REQUEST');
-    expect(contextPanelSource).toContain('frame.contentWindow === event.source');
-    expect(contextPanelSource).toContain('payload: { visible: activeChatTabID === tabID }');
+    expect(bridgeSource).toContain('EMBEDDED_VISIBILITY_REQUEST');
+    expect(bridgeSource).toContain('frame.contentWindow === sourceWindow');
+    expect(bridgeSource).toContain('sourceFrame[0] === visibleFrameKey');
+    expect(contextPanelSource).toContain('visibleFrameKey: activeChatTabID,');
   });
 
   test('requests authoritative visibility after installing the iframe listener', () => {

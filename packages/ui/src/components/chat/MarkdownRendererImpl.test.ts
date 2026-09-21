@@ -230,7 +230,10 @@ mock.module('beautiful-mermaid', () => ({
     renderMermaidASCII: () => '',
     renderMermaidSVG: (_source: string, colors: { bg: string }) => colors.bg,
 }));
-mock.module('@/lib/utils', () => ({ cn: (...values: string[]) => values.filter(Boolean).join(' ') }));
+mock.module('@/lib/utils', () => ({
+    cn: (...values: string[]) => values.filter(Boolean).join(' '),
+    getRevealLabelKey: () => 'common.revealPath.fileExplorer',
+}));
 mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => `${key}:${currentContextVersion}` }) }));
 mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => ({ ok: false }) }));
 mock.module('@/lib/url', () => ({

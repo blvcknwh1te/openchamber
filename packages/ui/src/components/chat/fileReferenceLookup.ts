@@ -1,6 +1,6 @@
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 
-import { normalizeReferencePath } from './fileReferenceParser';
+import { hasFileExtension, normalizeReferencePath } from './fileReferenceParser';
 
 /**
  * Locates a file reference the direct resolution could not reach.
@@ -10,7 +10,7 @@ import { normalizeReferencePath } from './fileReferenceParser';
  * share: the assistant names `packages/ui/src/app.tsx` while the opened folder
  * is the repository's parent, or the other way round. OpenCode's file search is
  * the only lookup every runtime exposes, so the basename is searched there and
- * a hit counts only when its path repeats the whole reference.
+ * a hit counts only when its path and the reference share a tail.
  */
 
 /** Search hits asked for per lookup; the path match decides, not the ranking. */
@@ -50,6 +50,17 @@ const endsWithSegments = (candidate: string[], requested: string[]): boolean => 
   ));
 };
 
+/**
+ * Whether a search hit identifies the reference. The search reports a path
+ * relative to the directory it was run in, so a hit normally repeats the
+ * requested segments; when the opened folder sits inside the repository the hit
+ * keeps only the tail of the reference, which still identifies it as long as it
+ * does not collapse to the bare file name.
+ */
+const identifiesReference = (candidate: string[], requested: string[]): boolean =>
+  endsWithSegments(candidate, requested)
+  || (candidate.length >= 2 && endsWithSegments(requested, candidate));
+
 export const lookupWorkspaceFileReference = async (
   resolvedPath: string,
   directory: string,
@@ -68,14 +79,18 @@ export const lookupWorkspaceFileReference = async (
 
   let hits: ProjectFileSearchHit[];
   try {
-    hits = await searchFiles(searchDirectory, baseName, FILE_REFERENCE_LOOKUP_LIMIT, { type: 'file' });
+    // A name without an extension may stand for a directory, and the file
+    // search reports directories only when asked for them; a name with an
+    // extension is a file, and the narrower search keeps the hit list short.
+    const type = hasFileExtension(baseName) ? 'file' : 'directory';
+    hits = await searchFiles(searchDirectory, baseName, FILE_REFERENCE_LOOKUP_LIMIT, { type });
   } catch {
     // A failed search says nothing about the path, so the caller must treat the
     // answer as unknown rather than as a missing file.
     return null;
   }
 
-  const matches = hits.filter((hit) => endsWithSegments(splitPathSegments(hit.relativePath), requestedSegments));
+  const matches = hits.filter((hit) => identifiesReference(splitPathSegments(hit.relativePath), requestedSegments));
   const [match] = matches;
   // Several files repeating the same segments mean the reference does not
   // identify one file, so it is left alone.

@@ -15,8 +15,8 @@ import { cn } from '@/lib/utils';
 import { useChatSurfaceMode } from './useChatSurfaceMode';
 
 import MessageBody from './message/MessageBody';
-import type { AgentMentionInfo } from './message/types';
-import type { StreamPhase, ToolPopupContent } from './message/types';
+import type { AgentMentionInfo, StreamPhase, ToolPopupContent } from './message/types';
+import { canRenderToolPopup } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
 import { filterVisibleParts, normalizeParts } from './message/partUtils';
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
@@ -28,7 +28,7 @@ import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from '@/li
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
-import type { CompactionContextTokens } from './lib/turns/compactionContextTokens';
+import type { CompactionContext } from './lib/turns/compactionContext';
 import { copyMarkdownToClipboard, copyTextToClipboard } from '@/lib/clipboard';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
@@ -142,7 +142,7 @@ interface ChatMessageProps {
     animateUserOnMount?: boolean;
     onUserAnimationConsumed?: (messageId: string) => void;
     reviewTransferDirection?: ReviewTransferDirection | null;
-    compactionContextTokens?: CompactionContextTokens;
+    compactionContext?: CompactionContext;
 }
 
 const ChatMessage: React.FC<ChatMessageProps> = ({
@@ -156,7 +156,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     animateUserOnMount = false,
     onUserAnimationConsumed,
     reviewTransferDirection = null,
-    compactionContextTokens,
+    compactionContext,
 }) => {
     const { t } = useI18n();
     const { isMobile, isTablet, hasTouchInput } = useDeviceInfo();
@@ -805,8 +805,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const setImagePreviewOpen = useUIStore((state) => state.setImagePreviewOpen);
 
     const handleShowPopup = React.useCallback((content: ToolPopupContent) => {
-
-        if (content.image || content.mermaid) {
+        if (canRenderToolPopup(content)) {
             setPopupContent(content);
             setImagePreviewOpen(true);
         }
@@ -845,7 +844,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                         <CompactionNotice
                             part={compactionPart}
                             createdAt={message.info.time.created}
-                            contextTokens={compactionContextTokens}
+                            context={compactionContext}
                         />
                     </div>
                 </div>

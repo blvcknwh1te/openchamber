@@ -128,6 +128,7 @@ export interface Theme {
       icon?: string;
       title?: string;
       description?: string;
+      range?: string;
       edit?: Record<string, string>;
       bash?: Record<string, string>;
       lsp?: Record<string, string>;

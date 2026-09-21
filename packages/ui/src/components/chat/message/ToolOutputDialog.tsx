@@ -22,6 +22,7 @@ import {
     tryParseJsonOutput,
 } from './toolRenderers';
 import type { ToolPopupContent, DiffViewMode } from './types';
+import { MARKDOWN_POPUP_TOOL } from './types';
 import { DiffViewToggle } from './DiffViewToggle';
 import { VirtualizedCodeBlock, type CodeLine } from './parts/VirtualizedCodeBlock';
 import { JsonTreeView } from '@/components/ui/JsonTreeView';
@@ -1161,6 +1162,10 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
                                             <SimpleMarkdownRenderer content={popup.content} variant="tool" />
                                         </div>
                                     );
+                                }
+
+                                if (tool === MARKDOWN_POPUP_TOOL) {
+                                    return <SimpleMarkdownRenderer content={popup.content} variant="tool" />;
                                 }
 
                                 if (tool === 'web-search' || tool === 'websearch' || tool === 'search_web') {

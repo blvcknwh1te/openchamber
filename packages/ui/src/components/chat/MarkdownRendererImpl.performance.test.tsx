@@ -285,7 +285,10 @@ const initializePerformanceDom = async (): Promise<void> => {
   };
   type UIStateSelection = typeof fakeState[keyof typeof fakeState];
   const { mock } = await import('bun:test');
-  mock.module('@/lib/utils', () => ({ cn: (...values: string[]) => values.filter(Boolean).join(' ') }));
+  mock.module('@/lib/utils', () => ({
+    cn: (...values: string[]) => values.filter(Boolean).join(' '),
+    getRevealLabelKey: () => 'common.revealPath.fileExplorer',
+  }));
   mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
   mock.module('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => null }));
   mock.module('@/stores/useUIStore', () => ({ useUIStore: Object.assign((selector: (state: typeof fakeState) => UIStateSelection) => selector(fakeState), { getState: () => fakeState }) }));

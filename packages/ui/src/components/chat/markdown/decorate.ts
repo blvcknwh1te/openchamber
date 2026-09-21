@@ -1,8 +1,9 @@
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { getExternalFaviconUrl, isExternalHttpUrl, isLoopbackHttpUrl } from '@/lib/url';
-import { dropdownMenuItemClass, dropdownMenuPopupClass } from '@/components/ui/dropdown-menu.styles';
+import { createMenuItem, createMenuSurface } from './menuSurface';
 import type { IconName } from '@/components/icon/icons';
 import { getMermaidViewerController } from './mermaidViewer';
+import { FILE_LINK_ATTR } from '../fileReferenceLink';
 
 // ---------------------------------------------------------------------------
 // Shared decoration context
@@ -17,6 +18,7 @@ export type DecorateLabels = {
   disableCodeWrap: string;
   copyTable: string;
   downloadTable: string;
+  expandTable: string;
   copyDiagram: string;
   downloadDiagram: string;
   zoomInDiagram: string;
@@ -41,12 +43,16 @@ export type DecorateContext = {
   // Renders a mermaid block source to svg/ascii using current theme colors.
   renderMermaid: (source: string) => MermaidRender;
   onPreviewLoopback?: (url: string) => void;
+  // Opens a wide table in a centered dialog; without it the table toolbar keeps
+  // only copy/download, since there is no surface to expand into.
+  onExpandTable?: (markdown: string) => void;
 };
 
 const ICONS = {
   copy: 'file-copy',
   check: 'check',
   download: 'download',
+  expand: 'fullscreen',
   zoomIn: 'add',
   zoomOut: 'subtract',
   fit: 'refresh',
@@ -329,20 +335,14 @@ const tableToMarkdown = ({ headers, rows }: { headers: string[]; rows: string[][
   return `${head}\n${sep}\n${body}`;
 };
 
+// Popup surface and item shared by the in-markdown menus (tables today, file
+// links in the transcript). They match the app's DropdownMenu look.
 const buildTableMenu = (action: string, items: Array<{ key: string; label: string }>): HTMLDivElement => {
-  const menu = document.createElement('div');
-  // Match the app's DropdownMenu look (same class tokens + surface colors).
-  menu.className = `absolute top-full right-0 mt-1 hidden ${dropdownMenuPopupClass}`;
-  menu.style.backgroundColor = 'var(--surface-elevated)';
-  menu.style.color = 'var(--surface-elevated-foreground)';
+  const menu = createMenuSurface();
+  menu.classList.add('absolute', 'top-full', 'right-0', 'mt-1');
   menu.setAttribute('data-md-menu', action);
   for (const item of items) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `w-full text-left ${dropdownMenuItemClass}`;
-    button.setAttribute('data-md-action', `${action}-${item.key}`);
-    button.textContent = item.label;
-    menu.appendChild(button);
+    menu.appendChild(createMenuItem(item.label, `${action}-${item.key}`));
   }
   return menu;
 };
@@ -351,7 +351,8 @@ const TABLE_COLUMN_MIN_WIDTH = 120;
 const TABLE_COLUMN_MAX_WIDTH = 320;
 const TABLE_LAYOUT_ATTR = 'data-md-table-layout';
 
-const decorateTables = (root: HTMLElement, labels: DecorateLabels): void => {
+const decorateTables = (root: HTMLElement, ctx: DecorateContext): void => {
+  const { labels } = ctx;
   const tables = root.querySelectorAll<HTMLTableElement>('table');
   for (const table of Array.from(tables)) {
     const existing = table.closest('[data-markdown="table-wrapper"]');
@@ -363,6 +364,10 @@ const decorateTables = (root: HTMLElement, labels: DecorateLabels): void => {
 
     const toolbar = document.createElement('div');
     toolbar.className = 'flex items-center justify-end gap-1';
+
+    if (ctx.onExpandTable) {
+      toolbar.appendChild(makeIconButton('expand', labels.expandTable, 'table-expand'));
+    }
 
     const copyGroup = document.createElement('div');
     copyGroup.className = 'relative';
@@ -587,7 +592,7 @@ const decorateLinks = (root: HTMLElement, ctx: DecorateContext): void => {
   const anchors = root.querySelectorAll<HTMLAnchorElement>('a[href]');
   for (const anchor of Array.from(anchors)) {
     if (anchor.getAttribute('data-md-link-decorated') === 'true') continue;
-    if (anchor.getAttribute('data-openchamber-file-link') === 'true') continue;
+    if (anchor.getAttribute(FILE_LINK_ATTR) === 'true') continue;
     const href = anchor.getAttribute('href') ?? '';
     if (!isExternalHttpUrl(href)) continue;
     anchor.setAttribute('data-md-link-decorated', 'true');
@@ -630,7 +635,7 @@ export const decorateMarkdown = (root: HTMLElement, ctx: DecorateContext): void 
   decorateInlineCode(root);
   decorateMermaid(root, ctx);
   decorateCodeBlocks(root, ctx);
-  decorateTables(root, ctx.labels);
+  decorateTables(root, ctx);
   decorateLinks(root, ctx);
 };
 
@@ -764,6 +769,18 @@ export const attachMarkdownInteractions = (
       const willOpen = menu?.classList.contains('hidden') ?? false;
       closeAllMenus(container);
       if (menu && willOpen) menu.classList.remove('hidden');
+      return;
+    }
+
+    // Expanded table: render the same source in a centered dialog, where the
+    // full width is available instead of the chat column scroll box.
+    if (action === 'table-expand') {
+      event.preventDefault();
+      const table = actionEl.closest('[data-markdown="table-wrapper"]')?.querySelector('table');
+      if (table instanceof HTMLTableElement) {
+        ctx.onExpandTable?.(tableToMarkdown(extractTableData(table)));
+      }
+      closeAllMenus(container);
       return;
     }
 

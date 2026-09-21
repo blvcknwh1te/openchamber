@@ -62,6 +62,8 @@ import {
     useParentSession,
     useSession,
 } from '@/sync/sync-context';
+import { isSessionHistoryCoverageKnown } from '@/sync/session-message-loader';
+import { isWorkingSessionStatus } from '@/sync/session-status';
 import { useSync } from '@/sync/use-sync';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
 import { useI18n } from '@/lib/i18n';
@@ -849,8 +851,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             return false;
         }
 
-        const statusType = sessionStatusForCurrent.type ?? 'idle';
-        if (statusType === 'busy' || statusType === 'retry') {
+        if (isWorkingSessionStatus(sessionStatusForCurrent)) {
             return true;
         }
 
@@ -860,7 +861,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
             && lastMessage.role === 'assistant'
             && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== 'number',
         );
-    }, [currentSessionId, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent.type]);
+    }, [currentSessionId, sessionMessages, sessionPermissions.length, sessionQuestions.length, sessionStatusForCurrent]);
     const activeRetryStatus = React.useMemo(() => {
         if (!currentSessionId || sessionStatusForCurrent.type !== 'retry') {
             return null;
@@ -908,10 +909,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         if (!currentSessionId) return null;
         return {
             limit: sessionMessages.length,
-            complete: sessionMessageLoadState.complete || !sessionMessageLoadState.cursor,
+            complete: isSessionHistoryCoverageKnown(sessionMessageLoadState),
             loading: sessionMessageLoadState.status === 'loading',
         };
-    }, [currentSessionId, sessionMessageLoadState.complete, sessionMessageLoadState.cursor, sessionMessageLoadState.status, sessionMessages.length]);
+    }, [currentSessionId, sessionMessageLoadState, sessionMessages.length]);
 
     const { isMobile } = useDeviceInfo();
     const isVSCode = isVSCodeRuntime();
