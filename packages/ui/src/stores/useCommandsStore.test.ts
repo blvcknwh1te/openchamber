@@ -125,7 +125,7 @@ describe('useCommandsStore', () => {
   });
 
   test('first load publishes a directory even when its commands match the previous project', async () => {
-    const commands = [{ name: 'shared', scope: 'project' as const }];
+    const commands = [{ name: 'shared', scope: 'project' as const, mdPath: null }];
     useCommandsStore.setState({
       commands,
       commandsByDirectory: { '/workspace/other': commands },
@@ -136,6 +136,19 @@ describe('useCommandsStore', () => {
     expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath)).toEqual(commands);
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
     expect(listCommandsWithDetailsCalls).toBe(1);
+  });
+
+  test('loadCommands keeps the definition file reported for a command', async () => {
+    runtimeFetchImpl = async () => new Response(JSON.stringify({
+      scope: 'project',
+      sources: { md: { exists: true, path: '/repo/.opencode/command/ship.md' } },
+    }), { headers: { 'Content-Type': 'application/json' } });
+    listCommandsWithDetailsImpl = async () => [{ name: 'ship' }];
+
+    expect(await useCommandsStore.getState().loadCommands()).toBe(true);
+    expect(useCommandsStore.getState().commands).toEqual([
+      { name: 'ship', scope: 'project', mdPath: '/repo/.opencode/command/ship.md' },
+    ]);
   });
 
   test('revisiting a cached project restores its mirror without another request', async () => {

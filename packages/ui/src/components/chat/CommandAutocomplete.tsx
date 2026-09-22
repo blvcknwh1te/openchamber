@@ -13,6 +13,7 @@ import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight
 import {
   createCommandAutocompleteReadiness,
   filterAndSortCommandItems,
+  groupCommandAutocompleteItems,
   isCommandAutocompleteLoading,
   loadCommandAutocompleteSources,
   mergeCommandAutocompleteItems,
@@ -145,6 +146,8 @@ interface CommandAutocompleteProps {
   onCommandSelect: (command: CommandInfo) => void;
   onClose: () => void;
   style?: React.CSSProperties;
+  /** Unified `/` picker: the same list, commands first and skills below. */
+  groupByKind?: boolean;
 }
 
 export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, CommandAutocompleteProps>(({
@@ -152,6 +155,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   onCommandSelect,
   onClose,
   style,
+  groupByKind = false,
 }, ref) => {
   const { t } = useI18n();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -238,6 +242,14 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     }
   }, [builtInCommands, commandsWithMetadata, searchQuery, skills]);
 
+  // The unified picker keeps one filtered list but orders commands above
+  // skills, with section headers once the query matched both kinds.
+  const [paletteItems, showSectionHeaders] = React.useMemo((): [CommandInfo[], boolean] => {
+    if (!groupByKind) return [commands, false];
+    const grouped = groupCommandAutocompleteItems(commands);
+    return [grouped.items, grouped.sections];
+  }, [commands, groupByKind]);
+
   // The two discovery passes answer independently, so an empty snapshot that
   // predates them is not evidence of "no commands": the palette shows progress
   // instead, and only renders the list once it has the whole set.
@@ -275,7 +287,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
 
   React.useImperativeHandle(ref, () => ({
     handleKeyDown: (key: string) => {
-      const total = commands.length;
+      const total = paletteItems.length;
       if (key === 'Escape') {
         onClose();
         return;
@@ -299,13 +311,13 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
 
       if (key === 'Enter' || key === 'Tab') {
         const safeIndex = ((selectedIndexRef.current % total) + total) % total;
-        const command = commands[safeIndex];
+        const command = paletteItems[safeIndex];
         if (command) {
           onCommandSelect(command);
         }
       }
     }
-  }), [commands, onClose, onCommandSelect]);
+  }), [paletteItems, onClose, onCommandSelect]);
 
   const getCommandIcon = (command: CommandInfo) => {
 
@@ -347,13 +359,23 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           </div>
         ) : (
           <div>
-            {commands.map((command, index) => {
+            {paletteItems.map((command, index) => {
               const isSystem = command.isBuiltIn;
               const isOpenChamberBadge = command.isOpenChamber;
+              const previousItem = paletteItems[index - 1];
+              const startsSection = showSectionHeaders
+                && (index === 0 || Boolean(previousItem?.isSkill) !== Boolean(command.isSkill));
               return (
+                <React.Fragment key={command.id}>
+                {startsSection && (
+                  <div className="px-3 pt-2 pb-1 typography-ui-label uppercase tracking-tight text-muted-foreground">
+                    {command.isSkill
+                      ? t('chat.commandAutocomplete.section.skills')
+                      : t('chat.commandAutocomplete.section.commands')}
+                  </div>
+                )}
                 <AutocompleteRowTooltip description={command.description} active={!isMobile && index === selectedIndex}>
                 <div
-                  key={command.id}
                   ref={(el) => { itemRefs.current[index] = el; }}
                   className={cn(
                     "flex gap-2 px-3 py-2 cursor-pointer rounded-lg",
@@ -450,9 +472,10 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                   </div>
                 </div>
                 </AutocompleteRowTooltip>
+                </React.Fragment>
               );
             })}
-            {commands.length === 0 && (
+            {paletteItems.length === 0 && (
               <div className="px-3 py-2 typography-ui-label text-muted-foreground">
                 {t('chat.commandAutocomplete.empty')}
               </div>

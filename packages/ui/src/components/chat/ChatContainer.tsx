@@ -35,7 +35,7 @@ import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { useAuthSessionStore } from '@/lib/runtime-auth-expiry';
 import { useScrollShadow } from '@/components/ui/useScrollShadow';
 import { useChatTimelineScroll, type TimelineListHandle } from '@/hooks/useChatTimelineScroll';
-import { useChatTimelineController } from './hooks/useChatTimelineController';
+import { buildSessionHistoryMeta, useChatTimelineController } from './hooks/useChatTimelineController';
 import { TimelineDialog } from './TimelineDialog';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { shouldShowPromptNavigator, PROMPT_NAVIGATOR_MIN_TURNS } from './lib/promptNavigatorRail';
@@ -62,7 +62,6 @@ import {
     useParentSession,
     useSession,
 } from '@/sync/sync-context';
-import { isSessionHistoryCoverageKnown } from '@/sync/session-message-loader';
 import { isWorkingSessionStatus } from '@/sync/session-status';
 import { useSync } from '@/sync/use-sync';
 import { usePlanDetection } from '@/hooks/usePlanDetection';
@@ -907,11 +906,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
     // History metadata — use sync's hasMore/isLoading
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
-        return {
-            limit: sessionMessages.length,
-            complete: isSessionHistoryCoverageKnown(sessionMessageLoadState),
-            loading: sessionMessageLoadState.status === 'loading',
-        };
+        return buildSessionHistoryMeta(sessionMessageLoadState, sessionMessages.length);
     }, [currentSessionId, sessionMessageLoadState, sessionMessages.length]);
 
     const { isMobile } = useDeviceInfo();

@@ -117,6 +117,9 @@ import {
 } from './composer/language/mentions';
 import { collectKnownTokenNames } from './composer/language/prefixTokens';
 import { resolveAutocompleteTrigger, type AutocompleteKind } from './composer/language/triggers';
+import { buildSlashMentionsContext } from './composer/slash/slashContext';
+import { buildSlashEntities } from './composer/slash/slashEntities';
+import { collectSlashMentions } from './composer/slash/slashMentions';
 import { type ComposerLanguageContext } from './composer/language/tokenize';
 import {
     ComposerEditor,
@@ -406,6 +409,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const canAcceptDropRef = React.useRef(false);
     const mentionRef = React.useRef<FileMentionHandle>(null);
     const commandRef = React.useRef<CommandAutocompleteHandle>(null);
+    const slashRef = React.useRef<CommandAutocompleteHandle>(null);
     const skillRef = React.useRef<SkillAutocompleteHandle>(null);
     const snippetRef = React.useRef<SnippetAutocompleteHandle>(null);
     // Ref to track current message value without triggering re-renders in effects
@@ -565,6 +569,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     const inputBarOffset = useUIStore((state) => state.inputBarOffset);
     const persistChatDraft = useUIStore((state) => state.persistChatDraft);
     const inputSpellcheckEnabled = useUIStore((state) => state.inputSpellcheckEnabled);
+    const unifiedSlashEntities = useUIStore((state) => state.unifiedSlashEntities);
     const largeTextPasteBehavior = useUIStore((state) => state.largeTextPasteBehavior);
     const persistedExpandedInput = useUIStore((state) => state.isExpandedInput);
     const isExpandedInput = !isBtwActive && persistedExpandedInput;
@@ -764,6 +769,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     }, [availableCommands, availableSkills, isMobile]);
 
     const availableSnippets = useSnippetsStore((s) => s.snippets);
+
+    /**
+     * Instructions naming the slash entities a message references. The unified
+     * path resolves both `/command` and `/skill` to their definition file; the
+     * legacy path keeps the previous skills-only instruction.
+     */
+    const buildSlashContext = React.useCallback((text: string): string | null => {
+        if (!unifiedSlashEntities) {
+            const skillNames = new Set(availableSkills.map((skill) => skill.name));
+            return buildSkillMentionInstruction(collectInlineSkillMentions(text, skillNames));
+        }
+        const entities = buildSlashEntities({ skills: availableSkills, commands: availableCommands });
+        return buildSlashMentionsContext(collectSlashMentions(text, entities));
+    }, [unifiedSlashEntities, availableSkills, availableCommands]);
+
     const knownSnippetTriggers = React.useMemo(() => {
         const triggers = new Set<string>();
         for (const snippet of availableSnippets) {
@@ -1198,10 +1218,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         }
         const { sanitizedText, mention } = parseAgentMentions(messageToQueue, agents);
         const { attachments: mentionAttachments } = extractInlineFileMentions(sanitizedText, documentMentions.prepared);
-        const availableSkillNames = new Set(
-            selectSkillsForDirectory(useSkillsStore.getState(), currentDirectory).map((skill) => skill.name),
-        );
-        const skillInstruction = buildSkillMentionInstruction(collectInlineSkillMentions(sanitizedText, availableSkillNames));
+        const slashInstruction = buildSlashContext(sanitizedText);
 
         // Everything attached to the composer leaves with the message: the
         // chips are part of what was queued, and come back if it is edited.
@@ -1221,7 +1238,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             linkedLinearIssue: linked.linear
                 ? { identifier: linked.linear.identifier, title: linked.linear.title, url: linked.linear.url, contextText: linked.linear.contextText }
                 : null,
-        }, skillInstruction);
+        }, slashInstruction);
         const attachmentsToQueue = [...composerAttachments, ...mentionAttachments];
 
         // Sending while the agent works must still take the reader to the
@@ -1284,7 +1301,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             return;
         }
         recordLinkedReferences(queueSessionId, queueTarget.directory, linked);
-        }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, inputMode, hasDrafts, attachedFiles, sanitizeAttachmentsForSend, prepareDocumentMentions, extractInlineFileMentions, agents, currentDirectory, consumePendingSyntheticParts, inlineDraftTarget, consumeDrafts, linkedIssue, linkedPr, linkedLinearIssue, scrollToLatest, clearAttachedFiles, isMobile, addToQueue, currentProviderId, currentModelId, currentAgentName, currentVariant, t]);
+        }, [getCurrentInputSnapshot, currentSessionId, messageQueueTarget, inputMode, hasDrafts, attachedFiles, sanitizeAttachmentsForSend, prepareDocumentMentions, extractInlineFileMentions, buildSlashContext, agents, consumePendingSyntheticParts, inlineDraftTarget, consumeDrafts, linkedIssue, linkedPr, linkedLinearIssue, scrollToLatest, clearAttachedFiles, isMobile, addToQueue, currentProviderId, currentModelId, currentAgentName, currentVariant, t]);
 
     /** Put the context a queued message was captured with back on the composer chips. */
     const restoreQueuedContext = React.useCallback((context: readonly QueuedContextPart[]) => {
@@ -1643,10 +1660,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             }
         };
 
-        const availableSkillNames = new Set(
-            selectSkillsForDirectory(useSkillsStore.getState(), currentDirectory).map((skill) => skill.name),
-        );
-
         const outgoing = buildOutgoingMessage({
             queued: queuedMessagesToSend,
             composerText: !queuedOnly && inputSnapshot.hasContent ? inputSnapshot.message : null,
@@ -1677,8 +1690,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                 return { text: sanitizedText, attachments };
             },
             sanitizeAttachments: sanitizeAttachmentsForSend,
-            collectSkillNames: (text) => collectInlineSkillMentions(text, availableSkillNames),
-            buildSkillInstruction: buildSkillMentionInstruction,
+            buildSlashContext,
         });
 
         let primaryText = outgoing.primaryText;
@@ -2038,10 +2050,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         }
 
         const autocomplete = openAutocomplete === 'command' ? commandRef.current
-            : openAutocomplete === 'skill' ? skillRef.current
-                : openAutocomplete === 'snippet' ? snippetRef.current
-                    : openAutocomplete === 'mention' ? mentionRef.current
-                        : null;
+            : openAutocomplete === 'slash' ? slashRef.current
+                : openAutocomplete === 'skill' ? skillRef.current
+                    : openAutocomplete === 'snippet' ? snippetRef.current
+                        : openAutocomplete === 'mention' ? mentionRef.current
+                            : null;
         const autocompleteKey = getDropdownNavigationKey(e) ?? e.key;
         if (autocomplete && (autocompleteKey === 'Enter' || autocompleteKey === 'ArrowUp' || autocompleteKey === 'ArrowDown' || autocompleteKey === 'Escape' || autocompleteKey === 'Tab')) {
             e.preventDefault();
@@ -2223,10 +2236,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             mentionsEnabled: !isBtwActive,
             inputSource,
             insertedText,
+            unifiedSlashEntities,
         });
         setOpenAutocomplete(trigger?.kind ?? null);
         setAutocompleteQuery(trigger?.query ?? '');
-    }, [inputMode, isBtwActive]);
+    }, [inputMode, isBtwActive, unifiedSlashEntities]);
 
     const insertTextAtSelection = React.useCallback((
         text: string,
@@ -2681,6 +2695,22 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         closeAutocomplete();
 
         composerRef.current?.focus();
+    };
+
+    /**
+     * The unified picker returns commands and skills alike. Both are inserted
+     * as their `/name` token, which is what the agent expands into the file
+     * path, and the token replaces only what is being typed — the rest of the
+     * message survives. `btw` keeps its immediate-submit behaviour.
+     */
+    const handleSlashSelect = (item: CommandInfo) => {
+        if (item.name === 'btw' && currentSessionId) {
+            closeAutocomplete();
+            void handleSubmitRef.current({ presetText: '/btw' });
+            return;
+        }
+
+        handleSkillSelect(item.name);
     };
 
     const handleSnippetSelect = (_snippet: unknown, trigger: string) => {
@@ -3419,10 +3449,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
                         query={autocompleteQuery}
                         overlayPosition={isDesktopExpanded ? autocompleteOverlayPosition : null}
                         commandRef={commandRef}
+                        slashRef={slashRef}
                         skillRef={skillRef}
                         snippetRef={snippetRef}
                         mentionRef={mentionRef}
                         onCommandSelect={handleCommandSelect}
+                        onSlashSelect={handleSlashSelect}
                         onSkillSelect={handleSkillSelect}
                         onSnippetSelect={handleSnippetSelect}
                         onFileSelect={handleFileSelect}

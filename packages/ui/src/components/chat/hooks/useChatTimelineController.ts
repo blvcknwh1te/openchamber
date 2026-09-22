@@ -9,6 +9,7 @@ import {
 } from '../lib/turns/windowTurns';
 import type { TurnHistorySignals } from '../lib/turns/historySignals';
 import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/sessionTypes';
+import type { SessionMessageLoadState } from '@/sync/session-message-loader';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 
@@ -107,6 +108,21 @@ const rememberTurnModel = (key: string, value: { messages: ChatMessageEntry[]; m
     }
     turnModelCache.set(key, value)
 }
+
+/**
+ * `complete` gates the "load earlier" affordance, so it must mean "the whole
+ * transcript is in the store". A pending cursor says the opposite: older pages
+ * still exist, and coverage is merely known. Deriving this flag from the
+ * coverage predicate (complete or cursor present) hides those pages forever.
+ */
+export const buildSessionHistoryMeta = (
+    snapshot: Pick<SessionMessageLoadState, 'complete' | 'status'>,
+    messageCount: number,
+): SessionHistoryMeta => ({
+    limit: messageCount,
+    complete: snapshot.complete,
+    loading: snapshot.status === 'loading',
+});
 
 export const shouldAutoLoadEarlierForUnderfilledPinnedViewport = (input: {
     sessionId: string | null;

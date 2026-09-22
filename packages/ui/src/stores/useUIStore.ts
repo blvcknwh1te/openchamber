@@ -844,6 +844,8 @@ interface UIStore {
   sessionGoalDefaultBudget: number;
   collapsibleThinkingBlocks: boolean;
   reasoningExpandedByDefault: boolean;
+  /** Resolve `/command` and `/skill` to their file paths and offer both in one picker. */
+  unifiedSlashEntities: boolean;
   chatRenderMode: ChatRenderMode;
   activityRenderMode: ActivityRenderMode;
   showDeletionDialog: boolean;
@@ -1053,6 +1055,7 @@ interface UIStore {
   setSessionGoalDefaultBudget: (value: number) => void;
   setCollapsibleThinkingBlocks: (value: boolean) => void;
   setReasoningExpandedByDefault: (value: boolean) => void;
+  setUnifiedSlashEntities: (value: boolean) => void;
   setChatRenderMode: (value: ChatRenderMode) => void;
   setActivityRenderMode: (value: ActivityRenderMode) => void;
   setShowDeletionDialog: (value: boolean) => void;
@@ -1237,6 +1240,7 @@ export const useUIStore = create<UIStore>()(
         sessionGoalDefaultBudget: 200_000,
         collapsibleThinkingBlocks: true,
         reasoningExpandedByDefault: false,
+        unifiedSlashEntities: true,
         chatRenderMode: 'live',
         activityRenderMode: 'summary',
         showDeletionDialog: true,
@@ -2024,6 +2028,10 @@ export const useUIStore = create<UIStore>()(
 
         setReasoningExpandedByDefault: (value) => {
           set({ reasoningExpandedByDefault: value });
+        },
+
+        setUnifiedSlashEntities: (value) => {
+          set({ unifiedSlashEntities: value });
         },
 
         setChatRenderMode: (value) => {
@@ -2990,6 +2998,7 @@ export const useUIStore = create<UIStore>()(
           sessionGoalDefaultBudget: state.sessionGoalDefaultBudget,
           collapsibleThinkingBlocks: state.collapsibleThinkingBlocks,
           reasoningExpandedByDefault: state.reasoningExpandedByDefault,
+          unifiedSlashEntities: state.unifiedSlashEntities,
           chatRenderMode: state.chatRenderMode,
           activityRenderMode: state.activityRenderMode,
           showDeletionDialog: state.showDeletionDialog,

@@ -2248,6 +2248,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.exploreDescription': '코드베이스에 대한 방향을 잡습니다: 아키텍처와 주요 부분을 한눈에 살펴봅니다.',
   'chat.commandAutocomplete.badge.skill': '스킬',
   'chat.commandAutocomplete.badge.command': '명령',
+  'chat.commandAutocomplete.section.commands': '명령',
+  'chat.commandAutocomplete.section.skills': '스킬',
   'chat.commandAutocomplete.badge.system': 'system',
   'chat.commandAutocomplete.empty': '명령 없음',
   'chat.agentMentionAutocomplete.badge.system': 'system',

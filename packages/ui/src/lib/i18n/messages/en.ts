@@ -2246,6 +2246,8 @@ export const dict = {
   'chat.commandAutocomplete.command.btwDescription': 'Ask a side question in a temporary child session without derailing this chat.',
   'chat.commandAutocomplete.badge.skill': 'skill',
   'chat.commandAutocomplete.badge.command': 'command',
+  'chat.commandAutocomplete.section.commands': 'Commands',
+  'chat.commandAutocomplete.section.skills': 'Skills',
   'chat.commandAutocomplete.badge.system': 'system',
   'chat.commandAutocomplete.empty': 'No commands found',
   'chat.agentMentionAutocomplete.badge.system': 'system',

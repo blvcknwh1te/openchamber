@@ -896,6 +896,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.exploreDescription': 'Zorientuj się w bazie kodu: ogólny przegląd architektury i głównych części.',
   'chat.commandAutocomplete.badge.skill': 'skill',
   'chat.commandAutocomplete.badge.command': 'polecenie',
+  'chat.commandAutocomplete.section.commands': 'Polecenia',
+  'chat.commandAutocomplete.section.skills': 'Umiejętności',
   'chat.commandAutocomplete.badge.system': 'system',
   'chat.commandAutocomplete.empty': 'Nie znaleziono poleceń',
   'chat.agentMentionAutocomplete.badge.system': 'system',

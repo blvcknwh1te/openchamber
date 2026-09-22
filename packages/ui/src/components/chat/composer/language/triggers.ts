@@ -19,7 +19,7 @@ import {
     type FileMentionAutocompleteInputSource,
 } from '../../fileMentionAutocompleteState';
 
-export type AutocompleteKind = 'command' | 'skill' | 'snippet' | 'mention';
+export type AutocompleteKind = 'command' | 'skill' | 'snippet' | 'mention' | 'slash';
 
 export interface AutocompleteTrigger {
     kind: AutocompleteKind;
@@ -31,6 +31,8 @@ export interface TriggerContext {
     /** Shell mode (`!cmd`) disables every picker. */
     inputMode: 'normal' | 'shell';
     mentionsEnabled?: boolean;
+    /** One `/` picker for commands and skills, open anywhere in the text. */
+    unifiedSlashEntities?: boolean;
     /** Whether the change that moved the caret came from a paste. */
     inputSource?: FileMentionAutocompleteInputSource;
     /** The text that change inserted, when known. */
@@ -95,6 +97,12 @@ export function resolveAutocompleteTrigger(
     context: TriggerContext,
 ): AutocompleteTrigger | null {
     if (context.inputMode === 'shell') return null;
+
+    if (context.unifiedSlashEntities) {
+        return matchInlineToken(value, cursorPosition, '/', 'slash')
+            ?? matchInlineToken(value, cursorPosition, '#', 'snippet')
+            ?? matchMention(value, cursorPosition, context);
+    }
 
     return matchCommandPalette(value, cursorPosition)
         ?? matchInlineToken(value, cursorPosition, '/', 'skill')

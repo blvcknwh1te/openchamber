@@ -2242,6 +2242,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.exploreDescription': 'このコードベースに慣れる: アーキテクチャと主要部分の概要ツアー。',
   'chat.commandAutocomplete.badge.skill': 'スキル',
   'chat.commandAutocomplete.badge.command': 'コマンド',
+  'chat.commandAutocomplete.section.commands': 'コマンド',
+  'chat.commandAutocomplete.section.skills': 'スキル',
   'chat.commandAutocomplete.badge.system': 'システム',
   'chat.commandAutocomplete.empty': 'コマンドが見つかりません',
   'chat.agentMentionAutocomplete.badge.system': 'システム',

@@ -79,10 +79,11 @@ export interface OutgoingMessageDeps {
     extractFileMentions: (text: string) => { text: string; attachments: AttachedFile[] };
     /** Normalize attachments for transport (server paths become file URLs). */
     sanitizeAttachments: (files: readonly AttachedFile[] | undefined) => AttachedFile[];
-    /** Skills named inline with `/name`. */
-    collectSkillNames: (text: string) => string[];
-    /** Instruction telling the model which skills the user named. */
-    buildSkillInstruction: (names: string[]) => string | null;
+    /**
+     * Instructions naming the slash entities (`/command`, `/skill`) a message
+     * references, or null when it references none.
+     */
+    buildSlashContext: (text: string) => string | null;
 }
 
 export function buildOutgoingMessage(
@@ -94,12 +95,7 @@ export function buildOutgoingMessage(
     let agentMentionName: string | undefined;
     const additionalParts: OutgoingPart[] = [];
 
-    const skillNames: string[] = [];
-    const noteSkills = (text: string) => {
-        for (const name of deps.collectSkillNames(text)) {
-            if (!skillNames.includes(name)) skillNames.push(name);
-        }
-    };
+    let slashInstruction: string | null = null;
 
     /** The first agent mention encountered wins; later ones are ignored. */
     const noteAgent = (name?: string) => {
@@ -111,7 +107,7 @@ export function buildOutgoingMessage(
         const agent = deps.parseAgentMention(raw);
         noteAgent(agent.agentName);
         const mentions = deps.extractFileMentions(agent.text);
-        noteSkills(mentions.text);
+        slashInstruction = deps.buildSlashContext(mentions.text);
         return mentions;
     };
 
@@ -150,7 +146,7 @@ export function buildOutgoingMessage(
 
     // Everything the composer had attached follows its text.
     additionalParts.push(...queuedContextToParts(
-        buildComposerContext(input, deps.buildSkillInstruction(skillNames)),
+        buildComposerContext(input, slashInstruction),
     ));
 
     return {
@@ -172,7 +168,7 @@ export function buildOutgoingMessage(
  */
 export function buildComposerContext(
     input: ComposerContextInput,
-    skillInstruction: string | null,
+    slashInstruction: string | null,
 ): QueuedContextPart[] {
     const context: QueuedContextPart[] = [];
     const attach = (part: { text: string; metadata: ContextPartMetadata }, instructions?: string) => {
@@ -206,8 +202,8 @@ export function buildComposerContext(
         attach(createContextPart({ kind: 'linear-issue', identifier, title, url }, contextText));
     }
 
-    if (skillInstruction) {
-        context.push({ kind: 'instruction', text: skillInstruction });
+    if (slashInstruction) {
+        context.push({ kind: 'instruction', text: slashInstruction });
     }
 
     return context;

@@ -1973,6 +1973,8 @@ export const dict = {
   'chat.commandAutocomplete.command.workspaceReviewDescription': 'Examinez les modifications actuelles de l’espace de travail pour les problèmes de signal élevé uniquement.',
   'chat.commandAutocomplete.badge.skill': 'skill',
   'chat.commandAutocomplete.badge.command': 'commande',
+  'chat.commandAutocomplete.section.commands': 'Commandes',
+  'chat.commandAutocomplete.section.skills': 'Compétences',
   'chat.commandAutocomplete.badge.system': 'système',
   'chat.commandAutocomplete.empty': 'Aucune commande trouvée',
   'chat.agentMentionAutocomplete.badge.system': 'système',

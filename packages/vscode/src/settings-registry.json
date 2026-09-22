@@ -236,6 +236,9 @@
     "reasoningExpandedByDefault": {
       "scope": "profile"
     },
+    "unifiedSlashEntities": {
+      "scope": "profile"
+    },
     "showTextJustificationActivity": {
       "scope": "profile"
     },

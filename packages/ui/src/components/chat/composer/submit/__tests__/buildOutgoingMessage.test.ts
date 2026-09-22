@@ -31,8 +31,10 @@ const deps = (overrides: Partial<OutgoingMessageDeps> = {}): OutgoingMessageDeps
         return { text, attachments };
     },
     sanitizeAttachments: (files) => [...(files ?? [])],
-    collectSkillNames: (text) => [...text.matchAll(/\/(\w+)/g)].map((m) => m[1]),
-    buildSkillInstruction: (names) => (names.length ? `use: ${names.join(',')}` : null),
+    buildSlashContext: (text) => {
+        const names = [...new Set([...text.matchAll(/\/(\w+)/g)].map((m) => m[1]))];
+        return names.length ? `use: ${names.join(',')}` : null;
+    },
     ...overrides,
 });
 

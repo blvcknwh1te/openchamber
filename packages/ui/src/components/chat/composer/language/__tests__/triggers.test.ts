@@ -56,6 +56,35 @@ describe('inline skill picker', () => {
     });
 });
 
+describe('unified slash picker', () => {
+    const unified: TriggerContext = { inputMode: 'normal', unifiedSlashEntities: true };
+
+    test('one picker serves commands and skills anywhere in the text', () => {
+        expect(at('/rev|', unified)).toEqual({ kind: 'slash', query: 'rev' });
+        expect(at('please run /explo|', unified)).toEqual({ kind: 'slash', query: 'explo' });
+        expect(at('line\n/pl|', unified)).toEqual({ kind: 'slash', query: 'pl' });
+    });
+
+    test('the legacy split stays in place while the flag is off', () => {
+        expect(at('/rev|')).toEqual({ kind: 'command', query: 'rev' });
+        expect(at('please run /explo|')).toEqual({ kind: 'skill', query: 'explo' });
+    });
+
+    test('snippets and mentions keep their own pickers', () => {
+        expect(at('#sig|', unified)).toEqual({ kind: 'snippet', query: 'sig' });
+        expect(at('see @src/ap|', unified)).toEqual({ kind: 'mention', query: 'src/ap' });
+    });
+
+    test('a path separator or a space after the sigil still closes it', () => {
+        expect(at('src/comp|', unified)).toBeNull();
+        expect(at('run /explore |', unified)).toBeNull();
+    });
+
+    test('shell mode disables the unified picker too', () => {
+        expect(at('/rev|', { inputMode: 'shell', unifiedSlashEntities: true })).toBeNull();
+    });
+});
+
 describe('snippet picker', () => {
     test('a hash after whitespace opens the snippet picker', () => {
         expect(at('use #sig|')).toEqual({ kind: 'snippet', query: 'sig' });

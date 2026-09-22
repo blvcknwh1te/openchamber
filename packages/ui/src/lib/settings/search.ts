@@ -380,6 +380,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['input', 'draft', 'spellcheck', 'paste'],
   },
   {
+    id: 'chat.unified-slash-entities',
+    page: 'chat',
+    titleKey: 'settings.openchamber.visual.field.unifiedSlashEntities',
+    descriptionKey: 'settings.openchamber.visual.field.unifiedSlashEntitiesInfo',
+    keywords: ['slash', 'command', 'skill', 'picker', 'mention', 'path'],
+  },
+  {
     id: 'chat.spellcheck',
     page: 'chat',
     titleKey: 'settings.openchamber.visual.field.enableSpellcheckInTextInputs',

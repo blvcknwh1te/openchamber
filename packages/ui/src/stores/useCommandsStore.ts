@@ -25,6 +25,8 @@ export interface CommandConfig {
   source?: string;
   template?: string;
   scope?: CommandScope;
+  /** Absolute path of the markdown file that defines the command, when it has one. */
+  mdPath?: string | null;
 }
 
 export interface Command extends CommandConfig {
@@ -61,6 +63,7 @@ const buildCommandsSignature = (commands: Command[]): string => {
       command.description ?? '',
       command.agent ?? '',
       command.model ?? '',
+      command.mdPath ?? '',
       String(command.isBuiltIn === true),
     ].join('|'))
     .join('||');
@@ -280,6 +283,7 @@ export const useCommandsStore = create<CommandsStore>()(
 
                       if (response.ok) {
                         const data = await response.json();
+                        const mdPath = data.sources?.md?.path ?? null;
 
                         // Prioritize explicit scope
                         let scope = data.scope;
@@ -294,11 +298,11 @@ export const useCommandsStore = create<CommandsStore>()(
                         }
 
                         if (scope === 'project' || scope === 'user') {
-                          return { ...cmd, scope: scope as CommandScope };
+                          return { ...cmd, scope: scope as CommandScope, mdPath };
                         }
 
                         // Explicitly set null scope if not found
-                        return { ...cmd, scope: undefined };
+                        return { ...cmd, scope: undefined, mdPath };
                       }
                     } catch (err) {
                       console.warn(`[CommandsStore] Failed to fetch config for command ${cmd.name}:`, err);

@@ -4,11 +4,13 @@ import { describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 
 import {
+    buildSessionHistoryMeta,
     isOlderHistoryPrependCommit,
     shouldAutoLoadEarlierForUnderfilledPinnedViewport,
     useChatTimelineController,
     type UseChatTimelineControllerResult,
 } from './useChatTimelineController';
+import { isSessionHistoryCoverageKnown } from '@/sync/session-message-loader';
 import type { MessageListHandle } from '../MessageList';
 
 const baseInput = {
@@ -46,6 +48,28 @@ describe('shouldAutoLoadEarlierForUnderfilledPinnedViewport', () => {
             ...baseInput,
             pendingRevealWork: true,
         })).toBe(false);
+    });
+});
+
+describe('buildSessionHistoryMeta', () => {
+    test('keeps older pages reachable while an older-page cursor is pending', () => {
+        const snapshot = { complete: false, status: 'ready' as const };
+
+        // Coverage is known (a cursor exists) yet the transcript is not loaded,
+        // so `complete` must stay false or "load earlier" disappears for good.
+        expect(isSessionHistoryCoverageKnown({ complete: false, cursor: 'cursor-1' })).toBe(true);
+
+        const meta = buildSessionHistoryMeta(snapshot, 30);
+        expect(meta.complete).toBe(false);
+        expect(meta.limit).toBe(30);
+    });
+
+    test('marks history complete only when the loader snapshot says so', () => {
+        expect(buildSessionHistoryMeta({ complete: true, status: 'ready' }, 12).complete).toBe(true);
+    });
+
+    test('reports loading from the snapshot status', () => {
+        expect(buildSessionHistoryMeta({ complete: false, status: 'loading' }, 0).loading).toBe(true);
     });
 });
 

@@ -2216,6 +2216,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.command.exploreDescription': '快速熟悉這個程式碼庫：對架構和主要部分的概覽。',
   'chat.commandAutocomplete.badge.skill': 'Skills',
   'chat.commandAutocomplete.badge.command': '命令',
+  'chat.commandAutocomplete.section.commands': '命令',
+  'chat.commandAutocomplete.section.skills': '技能',
   'chat.commandAutocomplete.badge.system': '系統',
   'chat.commandAutocomplete.empty': '找不到命令',
   'chat.agentMentionAutocomplete.badge.system': '系統',

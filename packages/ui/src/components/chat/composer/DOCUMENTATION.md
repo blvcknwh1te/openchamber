@@ -54,6 +54,7 @@ resizing or collapsing the frame updates it.
 | `state/` | Composer-local lifecycle state: ArrowUp/ArrowDown browsing, draft stash/restore, mobile shell, popup placement, draft targeting |
 | `submit/` | Turning what the user has into what gets sent |
 | `attachments/` | Files: paths, drop payloads |
+| `slash/` | Which commands and skills a `/token` names, and the instruction that expands each to the file defining it |
 | `ui/` | Presentation |
 | `text.ts` | How inserted text meets the text already there |
 | `largeTextPaste.ts` | Detect large plain-text pastes and build virtual `.txt` files |
@@ -90,7 +91,12 @@ copy.
   generous; **membership in the command, skill or snippet registry is the
   authority**, not the pattern. An unknown `/token` stays plain prose.
 - `triggers.ts` — which picker a caret position asks for. Exactly one can be
-  active, with precedence `command > skill > snippet > mention`.
+  active, with precedence `command > skill > snippet > mention`. The unified
+  slash picker (setting `unifiedSlashEntities`) replaces the command/skill pair
+  with a single `slash` picker that opens on any `/` at a word boundary, so the
+  precedence there reads `slash > snippet > mention`. Both modes share one
+  palette: it lists commands first, skills below, and shows section headers only
+  when the query matched both kinds.
 - `tokenize.ts` — one pass producing every highlight range. Adding a construct
   to the language means adding it here, once.
 
@@ -192,7 +198,7 @@ and the send path reading the same grammar.
   (as `QueuedContextPart`s on the queue item), the server or the VS Code
   auto-send delivers them through `queuedContextToParts`, and editing the
   queued message puts them back. A queued message is placed as captured — its
-  mention, file mentions, and skill instruction were resolved when it was
+  mention, file mentions, and slash instruction were resolved when it was
   queued, never at delivery — and its context follows it before the next
   queued message.
 - Local slash commands are planned by `submit/slashCommands.ts` before any
@@ -233,8 +239,8 @@ and the send path reading the same grammar.
   draft target UI is mounted.
   Keyboard selection returns focus to the current form's composer, including
   when the selected value is unchanged.
-- `ChatInput.tsx` maps Ctrl+N/P to the active command, skill, snippet, or
-  mention picker after its IME guard.
+- `ChatInput.tsx` maps Ctrl+N/P to the active command, slash, skill, snippet,
+  or mention picker after its IME guard.
 
 ## Input recall ownership
 

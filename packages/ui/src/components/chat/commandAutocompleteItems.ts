@@ -23,6 +23,23 @@ function addSearchAliases<T extends CommandAutocompleteSearchItem>(winner: T, du
 }
 
 /**
+ * Order for the unified `/` picker: commands first, skills below. Section
+ * headers are worth showing only when the query matched both kinds; a
+ * single-kind result keeps its own order, where a lone header says nothing.
+ */
+export function groupCommandAutocompleteItems<T extends CommandAutocompleteSearchItem>(
+  items: T[],
+): { items: T[]; sections: boolean } {
+  const commandItems = items.filter((item) => !item.isSkill);
+  const skillItems = items.filter((item) => item.isSkill);
+  if (commandItems.length === 0 || skillItems.length === 0) {
+    return { items, sections: false };
+  }
+
+  return { items: [...commandItems, ...skillItems], sections: true };
+}
+
+/**
  * Precedence is local command, discovered skill, OpenCode skill-command, then
  * custom/plugin command. Identity matches session.command's case-sensitive lookup.
  */

@@ -33,6 +33,7 @@ const CARET_PLACED_WIDTH: Record<AutocompleteKind, number> = {
     command: 450,
     snippet: 450,
     skill: 360,
+    slash: 450,
 };
 
 /**
@@ -62,10 +63,12 @@ export interface ComposerAutocompletePopupsProps {
     /** Caret placement in focus mode; null when the picker anchors itself. */
     overlayPosition: AutocompleteOverlayPosition | null;
     commandRef: React.RefObject<CommandAutocompleteHandle | null>;
+    slashRef: React.RefObject<CommandAutocompleteHandle | null>;
     skillRef: React.RefObject<SkillAutocompleteHandle | null>;
     snippetRef: React.RefObject<SnippetAutocompleteHandle | null>;
     mentionRef: React.RefObject<FileMentionHandle | null>;
     onCommandSelect: (command: CommandInfo) => void;
+    onSlashSelect: (item: CommandInfo) => void;
     onSkillSelect: (skillName: string) => void;
     onSnippetSelect: (snippet: unknown, trigger: string) => void;
     onFileSelect: (file: { name: string; path: string; relativePath?: string }) => void;
@@ -88,6 +91,17 @@ export function ComposerAutocompletePopups(props: ComposerAutocompletePopupsProp
                     onCommandSelect={props.onCommandSelect}
                     onClose={onClose}
                     style={style}
+                />
+            );
+        case 'slash':
+            return (
+                <CommandAutocomplete
+                    ref={props.slashRef}
+                    searchQuery={query}
+                    onCommandSelect={props.onSlashSelect}
+                    onClose={onClose}
+                    style={style}
+                    groupByKind
                 />
             );
         case 'skill':

@@ -415,6 +415,12 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.collapsibleThinkingBlocks === 'boolean') {
       result.collapsibleThinkingBlocks = candidate.collapsibleThinkingBlocks;
     }
+    if (typeof candidate.unifiedSlashEntities === 'boolean') {
+      result.unifiedSlashEntities = candidate.unifiedSlashEntities;
+    }
+    if (typeof candidate.reasoningExpandedByDefault === 'boolean') {
+      result.reasoningExpandedByDefault = candidate.reasoningExpandedByDefault;
+    }
     if (typeof candidate.showTextJustificationActivity === 'boolean') {
       result.showTextJustificationActivity = candidate.showTextJustificationActivity;
     }
@@ -1033,6 +1039,18 @@ export const createSettingsHelpers = (dependencies) => {
           : typeof sanitized.collapsibleThinkingBlocks === 'boolean'
             ? sanitized.collapsibleThinkingBlocks
             : true,
+      unifiedSlashEntities:
+        typeof settings.unifiedSlashEntities === 'boolean'
+          ? settings.unifiedSlashEntities
+          : typeof sanitized.unifiedSlashEntities === 'boolean'
+            ? sanitized.unifiedSlashEntities
+            : true,
+      reasoningExpandedByDefault:
+        typeof settings.reasoningExpandedByDefault === 'boolean'
+          ? settings.reasoningExpandedByDefault
+          : typeof sanitized.reasoningExpandedByDefault === 'boolean'
+            ? sanitized.reasoningExpandedByDefault
+            : false,
     };
   };
 

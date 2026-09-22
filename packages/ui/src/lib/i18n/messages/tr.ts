@@ -2205,6 +2205,8 @@ export const dict = {
   'chat.commandAutocomplete.command.exploreDescription': 'Bu kod tabanında yön bulmanı sağlar: mimarinin ve ana bölümlerin üst düzey bir turu.',
   'chat.commandAutocomplete.badge.skill': 'skill',
   'chat.commandAutocomplete.badge.command': 'komut',
+  'chat.commandAutocomplete.section.commands': 'Komutlar',
+  'chat.commandAutocomplete.section.skills': 'Yetenekler',
   'chat.commandAutocomplete.badge.system': 'sistem',
   'chat.commandAutocomplete.empty': 'Komut bulunamadı',
   'chat.agentMentionAutocomplete.badge.system': 'sistem',

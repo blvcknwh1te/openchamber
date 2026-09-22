@@ -2224,6 +2224,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.commandAutocomplete.command.exploreDescription": "Зорієнтуватись у кодовій базі: високорівневий тур архітектурою й основними частинами.",
   "chat.commandAutocomplete.badge.skill": "навичка",
   "chat.commandAutocomplete.badge.command": "команда",
+  "chat.commandAutocomplete.section.commands": "Команди",
+  "chat.commandAutocomplete.section.skills": "Навички",
   "chat.commandAutocomplete.badge.system": "система",
   "chat.commandAutocomplete.empty": "Команди не знайдено",
   "chat.agentMentionAutocomplete.badge.system": "система",

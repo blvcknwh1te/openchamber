@@ -321,6 +321,7 @@ export const SETTINGS_REGISTRY = {
   streamingAutoFollowEnabled: field({ scope: 'profile', perSurface: true, parse: parseBoolean, ui: uiStore('streamingAutoFollowEnabled', (v) => useUIStore.getState().setStreamingAutoFollowEnabled(v)) }),
   collapsibleThinkingBlocks: field({ scope: 'profile', parse: parseBoolean, ui: uiStore('collapsibleThinkingBlocks', (v) => useUIStore.getState().setCollapsibleThinkingBlocks(v)) }),
   reasoningExpandedByDefault: field({ scope: 'profile', parse: parseBoolean, ui: uiStore('reasoningExpandedByDefault', (v) => useUIStore.getState().setReasoningExpandedByDefault(v)) }),
+  unifiedSlashEntities: field({ scope: 'profile', parse: parseBoolean, ui: uiStore('unifiedSlashEntities', (v) => useUIStore.getState().setUnifiedSlashEntities(v)) }),
   showTextJustificationActivity: field({ scope: 'profile', parse: parseBoolean }),
   chatRenderMode: field({ scope: 'profile', parse: parseOneOf(['sorted', 'live']), ui: uiStore('chatRenderMode', (v) => useUIStore.getState().setChatRenderMode(v)) }),
   activityRenderMode: field({ scope: 'profile', parse: parseOneOf(['collapsed', 'summary']), ui: uiStore('activityRenderMode', (v) => useUIStore.getState().setActivityRenderMode(v)) }),

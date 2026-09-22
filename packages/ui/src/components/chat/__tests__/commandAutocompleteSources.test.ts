@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyCommandAutocompleteSourceResult,
   createCommandAutocompleteReadiness,
+  groupCommandAutocompleteItems,
   isCommandAutocompleteLoading,
   isCommandAutocompleteReady,
   loadCommandAutocompleteSources,
@@ -15,6 +16,28 @@ function deferred<T>() {
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('groupCommandAutocompleteItems', () => {
+  test('puts commands above skills and asks for section headers', () => {
+    const grouped = groupCommandAutocompleteItems([
+      { name: 'ship', isSkill: true },
+      { name: 'review' },
+      { name: 'explore', isSkill: true },
+      { name: 'undo' },
+    ]);
+
+    expect(grouped.sections).toBe(true);
+    expect(grouped.items.map((item) => item.name)).toEqual(['review', 'undo', 'ship', 'explore']);
+  });
+
+  test('keeps the original list when the query matched a single kind', () => {
+    const items = [{ name: 'ship', isSkill: true }, { name: 'explore', isSkill: true }];
+    const grouped = groupCommandAutocompleteItems(items);
+
+    expect(grouped.sections).toBe(false);
+    expect(grouped.items).toBe(items);
+  });
+});
 
 describe('loadCommandAutocompleteSources', () => {
   test('waits for both sources instead of reporting whichever answered first', async () => {

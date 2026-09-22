@@ -2039,6 +2039,8 @@ export const dict = {
   'chat.commandAutocomplete.command.exploreDescription': 'Vertraut machen mit diesem Codebase: Eine Übersicht über die Architektur und Hauptbestandteile.',
   'chat.commandAutocomplete.badge.skill': 'Fähigkeit',
   'chat.commandAutocomplete.badge.command': 'Befehl',
+  'chat.commandAutocomplete.section.commands': 'Befehle',
+  'chat.commandAutocomplete.section.skills': 'Fähigkeiten',
   'chat.commandAutocomplete.badge.system': 'System',
   'chat.commandAutocomplete.empty': 'Keine Befehle gefunden',
   'chat.agentMentionAutocomplete.badge.system': 'System',
