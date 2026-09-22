@@ -10,7 +10,8 @@ mock.module('@/components/chat/MarkdownRenderer', () => ({
   SimpleMarkdownRenderer: ({ content }: { content: string }) => <div data-content={content} />,
 }));
 
-const { TABLE_VIEWER_SCALE, zoomTableAtPointer } = await import('./tableViewerConstants');
+const { TABLE_VIEWER_SCALE, clampScale, snapScaleToPixelGrid, zoomTableAtPointer } =
+  await import('./tableViewerConstants');
 const { TableViewerView } = await import('./TableViewerView');
 
 const WIDE_TABLE = [
@@ -98,7 +99,7 @@ describe('TableViewerView', () => {
   test('fits a wide table down to the panel width', async () => {
     await renderFitted(WIDE_TABLE, 400, { width: 1200, height: 100 });
 
-    expect(getScale()).toBeCloseTo(400 / 1200, 5);
+    expect(getScale()).toBeCloseTo(clampScale(snapScaleToPixelGrid(400 / 1200, 1)), 5);
   });
 
   test('never fits below the configured minimum scale', async () => {
@@ -118,6 +119,14 @@ describe('TableViewerView', () => {
 
     // Both axes would allow 4x, so the configured maximum is what bounds it.
     expect(getScale()).toBeCloseTo(TABLE_VIEWER_SCALE.max, 5);
+  });
+
+  test('snaps the fitted scale to the pixel grid so text is not resampled', async () => {
+    await renderFitted(WIDE_TABLE, 400, { width: 1200, height: 100 });
+
+    // A fractional zoom makes Chromium resample the glyphs, which is what read
+    // as unstable quality across scales; the applied value must sit on the grid.
+    expect(getScale()).toBeCloseTo(0.33, 5);
   });
 
   test('scales layout with zoom so text stays sharp', async () => {

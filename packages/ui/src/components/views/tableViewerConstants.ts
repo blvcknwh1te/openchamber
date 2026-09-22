@@ -17,6 +17,18 @@ export const TABLE_VIEWER_SCALE = {
 export const clampScale = (value: number): number =>
   Math.min(TABLE_VIEWER_SCALE.max, Math.max(TABLE_VIEWER_SCALE.min, value));
 
+/**
+ * Rounds a scale to the physical pixel grid so glyphs land on whole device
+ * pixels. `zoom` at a fractional value resamples the text and looks blurry on
+ * some scales and sharp on others, which reads as unstable quality; snapping to
+ * the grid removes that. The step is one device pixel, so a retina display snaps
+ * to half steps and a standard one to whole steps.
+ */
+export const snapScaleToPixelGrid = (value: number, devicePixelRatio = 1): number => {
+  const step = 1 / (devicePixelRatio > 0 ? devicePixelRatio : 1);
+  return Math.round(value / step) * step;
+};
+
 /** Zoom applied by one wheel notch, expressed as a multiplier around 1. */
 export const TABLE_VIEWER_WHEEL_FACTOR = 1 + TABLE_VIEWER_SCALE.wheelStep;
 

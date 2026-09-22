@@ -1,7 +1,7 @@
 import * as React from 'react';
 
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { TABLE_VIEWER_SCALE, clampScale, zoomTableAtPointer } from './tableViewerConstants';
+import { clampScale, snapScaleToPixelGrid, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
 import { isOnText, shouldStartPan } from './tableViewerPan';
 
 interface TableViewerViewProps {
@@ -38,10 +38,10 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   const [panArmed, setPanArmed] = React.useState(false);
 
   const applyScale = React.useCallback((next: number) => {
-    const clamped = clampScale(next);
-    if (Math.abs(clamped - scaleRef.current) < TABLE_VIEWER_SCALE.epsilon) return;
-    scaleRef.current = clamped;
-    setScale(clamped);
+    const snapped = clampScale(snapScaleToPixelGrid(next, window.devicePixelRatio || 1));
+    if (Math.abs(snapped - scaleRef.current) < TABLE_VIEWER_SCALE.epsilon) return;
+    scaleRef.current = snapped;
+    setScale(snapped);
   }, []);
 
   // Fit to the panel when the markdown changes. The table is rendered by a
@@ -200,11 +200,13 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
           // `zoom` re-runs layout so glyphs are rasterized at the target size and
           // stay sharp, unlike a transform scale over a bitmap. It also scales
           // translate values, so the pan is divided back out to keep the drag
-          // distance matching the pointer.
+          // distance matching the pointer. `will-change: transform` is omitted on
+          // purpose: promoting the node to its own GPU layer makes Chromium
+          // resample that layer at fractional zoom, which is what blurred the
+          // text at the fitted scale.
           zoom: scale,
           transform: `translate(-50%, -50%) translate(${pan.x / scale}px, ${pan.y / scale}px)`,
           transformOrigin: 'center',
-          willChange: 'transform',
         }}
         className={`absolute left-1/2 top-1/2 w-max ${
           panArmed ? 'cursor-grab select-none' : ''
