@@ -2908,6 +2908,7 @@ export const dict = {
   'markdownRenderer.code.actions.disableWrapTitle': 'Désactiver le retour à la ligne',
   'markdownRenderer.table.actions.downloadTitle': 'Télécharger le tableau',
   'markdownRenderer.table.actions.expandTitle': 'Agrandir le tableau',
+  'markdownRenderer.table.viewer.title': 'Tableau',
   'markdownRenderer.table.toast.downloadedAsFormat': 'Table téléchargée sous le nom {format}',
   'markdownRenderer.mermaid.actions.copyTitle': 'Copie',
   'markdownRenderer.mermaid.actions.copySourceTitle': 'Copier la source',

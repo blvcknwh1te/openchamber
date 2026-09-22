@@ -3187,6 +3187,7 @@ export const dict: Record<I18nKey, string> = {
   'markdownRenderer.code.actions.disableWrapTitle': '禁用自动换行',
   'markdownRenderer.table.actions.downloadTitle': '下载表格',
   'markdownRenderer.table.actions.expandTitle': '放大表格',
+  'markdownRenderer.table.viewer.title': '表格',
   'markdownRenderer.table.toast.downloadedAsFormat': '表格已下载为 {format}',
   'markdownRenderer.mermaid.actions.copyTitle': '复制',
   'markdownRenderer.mermaid.actions.copySourceTitle': '复制源码',

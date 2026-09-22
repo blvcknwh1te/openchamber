@@ -66,6 +66,7 @@ import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
 import { detachedMarkdownDomCache, type DetachedMarkdownDomKey } from './markdown/detachedMarkdownDomCache';
 import { TimelineRevealGateContext } from './timelineRevealGate';
 import { getRuntimeKey } from '@/lib/runtime-switch';
+import { VSCODE_COMMANDS } from '@/lib/vscodeCommands';
 
 const useCurrentMermaidTheme = () => {
   const themeSystem = useOptionalThemeSystem();
@@ -1445,7 +1446,7 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
 
     // VS Code owns a real editor area, so the table opens there as a panel; the
     // in-webview popup stays as the fallback when the host rejects the command.
-    void vscodeApi.executeCommand('openchamber.openTableViewer', markdown).catch(showPopup);
+    void vscodeApi.executeCommand(VSCODE_COMMANDS.openTableViewer, markdown).catch(showPopup);
   }, [onShowPopup, runtimeApis.vscode, t]);
 
   const live = isStreaming && !disableStreamAnimation;

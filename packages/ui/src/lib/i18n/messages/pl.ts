@@ -2647,6 +2647,7 @@ export const dict: Record<I18nKey, string> = {
   'markdownRenderer.code.actions.disableWrapTitle': 'Wyłącz zawijanie wierszy',
   'markdownRenderer.table.actions.downloadTitle': 'Pobierz tabelę',
   'markdownRenderer.table.actions.expandTitle': 'Powiększ tabelę',
+  'markdownRenderer.table.viewer.title': 'Tabela',
   'markdownRenderer.table.toast.downloadedAsFormat': 'Tabela została pobrana jako {format}',
   'mcpDropdown.actions.openAria': 'Serwery MCP',
   'mcpDropdown.actions.refreshAria': 'Odśwież',

@@ -3221,6 +3221,7 @@ export const dict = {
   'markdownRenderer.code.actions.disableWrapTitle': 'Disable line wrap',
   'markdownRenderer.table.actions.downloadTitle': 'Download table',
   'markdownRenderer.table.actions.expandTitle': 'Expand table',
+  'markdownRenderer.table.viewer.title': 'Table',
   'markdownRenderer.table.toast.downloadedAsFormat': 'Table downloaded as {format}',
   'markdownRenderer.mermaid.actions.copyTitle': 'Copy',
   'markdownRenderer.mermaid.actions.copySourceTitle': 'Copy source',

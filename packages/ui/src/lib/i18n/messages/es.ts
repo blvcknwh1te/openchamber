@@ -3187,6 +3187,7 @@ export const dict: Record<I18nKey, string> = {
   "markdownRenderer.code.actions.disableWrapTitle": "Desactivar ajuste de línea",
   "markdownRenderer.table.actions.downloadTitle": "Descargar tabla",
   "markdownRenderer.table.actions.expandTitle": "Ampliar tabla",
+  "markdownRenderer.table.viewer.title": "Tabla",
   "markdownRenderer.table.toast.downloadedAsFormat": "Tabla descargada como {format}",
   "markdownRenderer.mermaid.actions.copyTitle": "Copiar",
   "markdownRenderer.mermaid.actions.copySourceTitle": "Copiar fuente",

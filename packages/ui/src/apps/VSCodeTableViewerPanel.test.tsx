@@ -1,5 +1,5 @@
 import React, { act } from 'react';
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { plugin } from 'bun';
 import { pathToFileURL } from 'node:url';
 import { Window } from 'happy-dom';
@@ -18,27 +18,32 @@ plugin({
 });
 
 const { I18nProvider } = await import('@/lib/i18n');
-const { VSCodeTableViewerPanel } = await import('./VSCodeTableViewerPanel');
+
+// The panel and the dialog-free view capture `document`/`window` when their
+// modules load, so they are imported after the happy-dom globals are installed,
+// which is why each test loads them dynamically.
+const loadTablePanel = async () => {
+  const { VSCodeTableViewerPanel } = await import('./VSCodeTableViewerPanel');
+  return { VSCodeTableViewerPanel };
+};
 
 // The panel renders host-supplied markdown only, so it never reads files; the
-// files API still needs to exist because the runtime provider wraps it. That
-// provider spreads the whole api object, so every key has to be a real value
-// instead of a throwing getter.
+// files API still needs to exist because the runtime provider wraps it.
 const runtimeApis = {
   runtime: { platform: 'web', isDesktop: false, isVSCode: true },
-  files: {
-    listDirectory: async () => { throw new Error('the table panel must not list directories'); },
-    search: async () => { throw new Error('the table panel must not search files'); },
-    createDirectory: async () => { throw new Error('the table panel must not create directories'); },
-  },
+  files: {},
   terminal: {},
   git: {},
   settings: {},
   permissions: {},
   notifications: {},
   tools: {},
-  vscode: {},
-} as unknown as Parameters<typeof VSCodeTableViewerPanel>[0]['apis'];
+  vscode: {
+    executeCommand: mock(async () => ({ result: true })),
+    openAgentManager: async () => {},
+    openExternalUrl: async () => {},
+  },
+} as unknown as Parameters<Awaited<ReturnType<typeof loadTablePanel>>['VSCodeTableViewerPanel']>[0]['apis'];
 
 const TABLE = ['| one | two |', '| --- | --- |', '| 1 | 2 |'].join('\n');
 
@@ -60,7 +65,11 @@ describe('VSCodeTableViewerPanel', () => {
     }
     (globalThis as Record<string, unknown>).window = windowInstance;
     (globalThis as Record<string, unknown>).document = windowInstance.document;
+    (globalThis as Record<string, unknown>).__OPENCHAMBER_TABLE_MARKDOWN__ = TABLE;
     (windowInstance as unknown as Record<string, unknown>).__OPENCHAMBER_TABLE_MARKDOWN__ = TABLE;
+    (globalThis as Record<string, unknown>).requestAnimationFrame = windowInstance.requestAnimationFrame.bind(windowInstance);
+    (globalThis as Record<string, unknown>).cancelAnimationFrame = windowInstance.cancelAnimationFrame.bind(windowInstance);
+    const { VSCodeTableViewerPanel } = await loadTablePanel();
 
     const originalConsoleError = console.error;
     const consoleErrors: string[] = [];
@@ -86,9 +95,50 @@ describe('VSCodeTableViewerPanel', () => {
       });
 
       expect(consoleErrors).toEqual([]);
-      expect(container.querySelector('table')).not.toBeNull();
+      expect(document.querySelector('table')).not.toBeNull();
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
     } finally {
       console.error = originalConsoleError;
+      await act(async () => root.unmount());
+      container.remove();
+      for (const name of DOM_GLOBAL_NAMES) {
+        (globalThis as Record<string, unknown>)[name] = savedGlobals[name];
+      }
+      await windowInstance.happyDOM.close();
+    }
+  });
+
+  test('keeps the workbench untouched on render', async () => {
+    const windowInstance = new Window({ url: 'https://localhost/' });
+    const savedGlobals: Record<string, unknown> = {};
+    for (const name of DOM_GLOBAL_NAMES) {
+      savedGlobals[name] = (globalThis as Record<string, unknown>)[name];
+      (globalThis as Record<string, unknown>)[name] =
+        (windowInstance as unknown as Record<string, unknown>)[name] ?? true;
+    }
+    (globalThis as Record<string, unknown>).window = windowInstance;
+    (globalThis as Record<string, unknown>).document = windowInstance.document;
+    (globalThis as Record<string, unknown>).__OPENCHAMBER_TABLE_MARKDOWN__ = TABLE;
+    (windowInstance as unknown as Record<string, unknown>).__OPENCHAMBER_TABLE_MARKDOWN__ = TABLE;
+    (globalThis as Record<string, unknown>).requestAnimationFrame = windowInstance.requestAnimationFrame.bind(windowInstance);
+    (globalThis as Record<string, unknown>).cancelAnimationFrame = windowInstance.cancelAnimationFrame.bind(windowInstance);
+    const { VSCodeTableViewerPanel } = await loadTablePanel();
+
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(
+          <I18nProvider>
+            <VSCodeTableViewerPanel apis={runtimeApis} />
+          </I18nProvider>,
+        );
+      });
+
+      expect(runtimeApis.vscode?.executeCommand).not.toHaveBeenCalled();
+    } finally {
       await act(async () => root.unmount());
       container.remove();
       for (const name of DOM_GLOBAL_NAMES) {
