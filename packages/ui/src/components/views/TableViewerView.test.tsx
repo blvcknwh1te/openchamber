@@ -11,7 +11,7 @@ mock.module('@/components/chat/MarkdownRenderer', () => ({
 }));
 
 const { TABLE_VIEWER_SCALE, zoomTableAtPointer } = await import('./tableViewerConstants');
-const { TableViewerView, isOnText } = await import('./TableViewerView');
+const { TableViewerView } = await import('./TableViewerView');
 
 const WIDE_TABLE = [
   '| one | two | three | four | five | six | seven | eight |',
@@ -135,45 +135,6 @@ describe('TableViewerView', () => {
 
     const transform = getContent().style.transform;
     expect(transform).toContain('translate(-50%, -50%)');
-  });
-});
-
-describe('isOnText', () => {
-  // happy-dom has no caret probe, so the API is injected to exercise the check.
-  const withCaretNode = (node: Node | null, run: () => void) => {
-    const doc = document as Document & { caretRangeFromPoint?: unknown };
-    doc.caretRangeFromPoint = () =>
-      (node ? ({ startContainer: node } as unknown as Range) : null);
-    try {
-      run();
-    } finally {
-      Object.assign(doc, { caretRangeFromPoint: undefined });
-    }
-  };
-
-  test('reports text inside a cell', () => {
-    const cell = document.createElement('td');
-    const text = document.createTextNode('some value');
-    cell.append(text);
-
-    withCaretNode(text, () => expect(isOnText(10, 10)).toBe(true));
-  });
-
-  test('ignores a point outside any cell', () => {
-    const paragraph = document.createElement('p');
-    const text = document.createTextNode('outside');
-    paragraph.append(text);
-
-    withCaretNode(text, () => expect(isOnText(10, 10)).toBe(false));
-  });
-
-  test('ignores blank nodes and empty hits', () => {
-    const cell = document.createElement('td');
-    const blank = document.createTextNode('   ');
-    cell.append(blank);
-
-    withCaretNode(blank, () => expect(isOnText(10, 10)).toBe(false));
-    withCaretNode(null, () => expect(isOnText(10, 10)).toBe(false));
   });
 });
 

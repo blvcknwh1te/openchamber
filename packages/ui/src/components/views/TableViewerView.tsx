@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { TABLE_VIEWER_SCALE, clampScale, zoomTableAtPointer } from './tableViewerConstants';
+import { isOnText, shouldStartPan } from './tableViewerPan';
 
 interface TableViewerViewProps {
   markdown: string | null;
@@ -13,32 +14,6 @@ type PanState = {
   startY: number;
   originX: number;
   originY: number;
-};
-
-/**
- * True when the point lands on rendered text inside a table cell. Markdown
- * renders cells as element nodes, so the caret probe is what distinguishes the
- * glyphs from the padding around them. Chromium exposes caretRangeFromPoint and
- * Firefox exposes caretPositionFromPoint, so both are tried.
- */
-export const isOnText = (clientX: number, clientY: number): boolean => {
-  const node = resolveCaretNode(clientX, clientY);
-  if (!node || node.nodeType !== Node.TEXT_NODE || (node.textContent ?? '').trim() === '') {
-    return false;
-  }
-
-  const parent = node.parentElement;
-  return parent !== null && parent.closest('td, th') !== null;
-};
-
-const resolveCaretNode = (clientX: number, clientY: number): Node | null => {
-  const rangeProbe = document.caretRangeFromPoint?.(clientX, clientY);
-  if (rangeProbe) return rangeProbe.startContainer;
-
-  const positionProbe = (document as Document & {
-    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node } | null;
-  }).caretPositionFromPoint?.(clientX, clientY);
-  return positionProbe?.offsetNode ?? null;
 };
 
 /**
@@ -122,12 +97,16 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   }, []);
 
   const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-
-    // Ctrl pans from anywhere. Without it a press on actual text inside a cell
-    // is left to the browser so the text can be selected and links keep working;
-    // the cell padding and the surround pan instead.
-    if (!(event.ctrlKey || event.metaKey) && isOnText(event.clientX, event.clientY)) return;
+    if (
+      !shouldStartPan({
+        button: event.button,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        overText: isOnText(event.clientX, event.clientY),
+      })
+    ) {
+      return;
+    }
 
     dragRef.current = {
       pointerId: event.pointerId,
@@ -208,6 +187,12 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
       onPointerMove={movePan}
       onPointerUp={endPan}
       onPointerCancel={endPan}
+      // The middle button would otherwise start the browser's autoscroll, which
+      // fights the pan that button now performs.
+      onAuxClick={(event) => event.preventDefault()}
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault();
+      }}
     >
       <div
         ref={contentRef}
