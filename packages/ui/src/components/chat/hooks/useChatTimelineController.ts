@@ -69,7 +69,7 @@ const TURN_MODEL_CACHE_MAX = 30
 // where the post-insert restore is least precise and reads as a small jump.
 const HISTORY_SCROLL_THRESHOLD_MIN_PX = 1200
 const HISTORY_SCROLL_VIEWPORT_FACTOR = 1.5
-const resolveHistoryScrollThreshold = (clientHeight: number): number => Math.max(
+export const resolveHistoryScrollThreshold = (clientHeight: number): number => Math.max(
     HISTORY_SCROLL_THRESHOLD_MIN_PX,
     clientHeight * HISTORY_SCROLL_VIEWPORT_FACTOR,
 )

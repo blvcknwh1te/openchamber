@@ -47,7 +47,7 @@ export const readCustomCssForInjection = (): string => {
   }
 };
 
-type PanelType = 'chat' | 'agentManager';
+type PanelType = 'chat' | 'agentManager' | 'tableViewer';
 
 export interface WebviewHtmlOptions {
   webview: vscode.Webview;
@@ -58,6 +58,8 @@ export interface WebviewHtmlOptions {
   cliAvailable: boolean;
   panelType?: PanelType;
   initialSessionId?: string;
+  /** Markdown source of the single table the `tableViewer` panel renders. */
+  tableMarkdown?: string;
   viewMode?: 'sidebar' | 'editor';
   devServerUrl?: string | null;
   extensionVersion?: string;
@@ -96,11 +98,17 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
     cliAvailable,
     panelType = 'chat',
     initialSessionId,
+    tableMarkdown,
     viewMode = 'sidebar',
     devServerUrl,
     extensionVersion = '',
   } = options;
   const workspaceFoldersJson = JSON.stringify(workspaceFolders).replace(/</g, '\\u003c');
+  // Multi-line markdown cannot use the quote-escape form above: JSON.stringify
+  // keeps the newlines valid and the `<` escape keeps `</script>` inert.
+  const tableMarkdownJson = tableMarkdown === undefined
+    ? 'null'
+    : JSON.stringify(tableMarkdown).replace(/</g, '\\u003c');
 
   const scriptPath = vscode.Uri.joinPath(extensionUri, 'dist', 'webview', 'assets', 'index.js');
   const scriptUri = webview.asWebviewUri(scriptPath);
@@ -246,6 +254,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       panelType: "${panelType}",
       viewMode: "${viewMode}",
       initialSessionId: ${initialSessionId ? `"${initialSessionId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : 'null'},
+      tableMarkdown: ${tableMarkdownJson},
       // [OC-PATCH: custom-themes-vscode]
       customThemes: ${customThemesJson},
     };

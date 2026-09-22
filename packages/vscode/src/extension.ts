@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
+import { TableViewerPanelProvider } from './TableViewerPanelProvider';
 import { CustomAssetsWatcher } from './customAssetsWatcher';
 import { OpenCodeConfigWatcher } from './opencodeConfigWatcher';
 import { ReloadSignalWatcher } from './reloadSignalWatcher';
@@ -27,6 +28,7 @@ function readDraftSnapshot(snapshot: unknown): Array<{ id: string; text: string 
 }
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
 let sessionEditorProvider: SessionEditorPanelProvider | undefined;
+let tableViewerProvider: TableViewerPanelProvider | undefined;
 let openCodeManager: OpenCodeManager | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 
@@ -213,6 +215,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Create Agent Manager panel provider
   agentManagerProvider = new AgentManagerPanelProvider(context, context.extensionUri, openCodeManager);
   sessionEditorProvider = new SessionEditorPanelProvider(context, context.extensionUri, openCodeManager);
+  tableViewerProvider = new TableViewerPanelProvider(context, context.extensionUri);
 
   // [OC-PATCH: custom-assets-live] Push theme/custom.css file edits to every
   // open webview so changes apply on save without a reload.
@@ -220,6 +223,7 @@ export async function activate(context: vscode.ExtensionContext) {
     chatViewProvider?.postCustomAssets(assets);
     sessionEditorProvider?.postCustomAssets(assets);
     agentManagerProvider?.postCustomAssets(assets);
+    tableViewerProvider?.postCustomAssets(assets);
   });
   customAssetsWatcher.start();
   context.subscriptions.push(customAssetsWatcher);
@@ -331,6 +335,15 @@ export async function activate(context: vscode.ExtensionContext) {
       } else {
         sessionEditorProvider?.createOrShowNewSession();
       }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('openchamberBnw.openTableViewer', (markdown: unknown) => {
+      if (typeof markdown !== 'string' || markdown.trim().length === 0) {
+        return;
+      }
+      tableViewerProvider?.open(markdown);
     })
   );
 
@@ -880,6 +893,7 @@ export async function activate(context: vscode.ExtensionContext) {
       chatViewProvider?.updateTheme(theme.kind);
       agentManagerProvider?.updateTheme(theme.kind);
       sessionEditorProvider?.updateTheme(theme.kind);
+      tableViewerProvider?.updateTheme(theme.kind);
     })
   );
 
@@ -896,6 +910,7 @@ export async function activate(context: vscode.ExtensionContext) {
         chatViewProvider?.updateTheme(vscode.window.activeColorTheme.kind);
         agentManagerProvider?.updateTheme(vscode.window.activeColorTheme.kind);
         sessionEditorProvider?.updateTheme(vscode.window.activeColorTheme.kind);
+        tableViewerProvider?.updateTheme(vscode.window.activeColorTheme.kind);
       }
     })
   );

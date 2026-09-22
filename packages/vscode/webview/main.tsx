@@ -21,7 +21,7 @@ import type { PermissionRequest } from '@opencode-ai/sdk/v2/client';
 import { focusChatInput } from '@openchamber/ui/components/chat/composer/editor/dom';
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'disconnected';
-type PanelType = 'chat' | 'agentManager';
+type PanelType = 'chat' | 'agentManager' | 'tableViewer';
 
 declare const __OPENCHAMBER_WEBVIEW_BUILD_TIME__: string;
 
@@ -41,6 +41,7 @@ declare global {
       panelType?: PanelType;
       viewMode?: 'sidebar' | 'editor';
       initialSessionId?: string | null;
+      tableMarkdown?: string | null;
       // [OC-PATCH: custom-themes-vscode] Themes read from disk by the host.
       customThemes?: unknown[];
     };
@@ -49,6 +50,7 @@ declare global {
     __OPENCHAMBER_CONNECTION__?: { status: ConnectionStatus; error?: string; cliAvailable?: boolean };
     __OPENCHAMBER_HOME__?: string;
     __OPENCHAMBER_PANEL_TYPE__?: PanelType;
+    __OPENCHAMBER_TABLE_MARKDOWN__?: string | null;
     __OPENCHAMBER_VSCODE_WINDOW_FOCUSED__?: boolean;
   }
 }
@@ -79,6 +81,7 @@ bootstrapConnectionStatus();
 
 // Expose panel type globally for the VS Code app root to conditionally render.
 window.__OPENCHAMBER_PANEL_TYPE__ = (window.__VSCODE_CONFIG__?.panelType as PanelType) || 'chat';
+window.__OPENCHAMBER_TABLE_MARKDOWN__ = window.__VSCODE_CONFIG__?.tableMarkdown ?? null;
 
 const handleConnectionMessage = (event: MessageEvent) => {
   const msg = event.data;
@@ -152,6 +155,13 @@ const maybeHideLoadingOverlay = () => {
   const connectionStatus = window.__OPENCHAMBER_CONNECTION__?.status ?? 'connecting';
 
   if (!uiMounted) {
+    return;
+  }
+
+  // The table viewer renders host-supplied markdown only and never opens an
+  // OpenCode connection, so its splash must not wait for one.
+  if (window.__OPENCHAMBER_PANEL_TYPE__ === 'tableViewer') {
+    fadeOutLoadingScreen();
     return;
   }
 

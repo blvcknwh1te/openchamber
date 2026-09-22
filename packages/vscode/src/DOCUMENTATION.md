@@ -126,12 +126,13 @@ When adding new bridge route families:
 
 Verified 2026-08-28 against `8f5eb231b`.
 
-Three webview hosts, all rendering `renderVSCodeApp` → `VSCodeApp`
+Four webview hosts, all rendering `renderVSCodeApp` → `VSCodeApp`
 (`packages/ui/src/apps/VSCodeApp.tsx`):
 
 - `ChatViewProvider.ts` — sidebar view, `panelType: 'chat'`, `viewMode: 'sidebar'`.
 - `SessionEditorPanelProvider.ts` — editor tab, `panelType: 'chat'`, `viewMode: 'editor'`.
 - `AgentManagerPanelProvider.ts` — editor tab, `panelType: 'agentManager'` → `AgentManagerView`, no `VSCodeLayout`.
+- `TableViewerPanelProvider.ts` — editor tab, `panelType: 'tableViewer'` → `TableViewerView` rendering the single markdown table the chat handed over via `openchamberBnw.openTableViewer`; no OpenCode connection, no session state, no `VSCodeLayout`.
 
 `VSCodeLayout` has exactly three views: `sessions`, `chat`, `settings`
 (`packages/ui/src/components/layout/VSCodeLayout.tsx:76`). There is no

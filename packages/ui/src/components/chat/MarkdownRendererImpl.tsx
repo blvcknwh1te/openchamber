@@ -1428,13 +1428,25 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
 
   const { t, locale } = useI18n();
   const handleExpandTable = React.useCallback((markdown: string) => {
-    onShowPopup?.({
-      open: true,
-      title: t('markdownRenderer.table.actions.expandTitle'),
-      content: markdown,
-      metadata: { tool: MARKDOWN_POPUP_TOOL },
-    });
-  }, [onShowPopup, t]);
+    const showPopup = () => {
+      onShowPopup?.({
+        open: true,
+        title: t('markdownRenderer.table.actions.expandTitle'),
+        content: markdown,
+        metadata: { tool: MARKDOWN_POPUP_TOOL },
+      });
+    };
+
+    const vscodeApi = runtimeApis.vscode;
+    if (!vscodeApi) {
+      showPopup();
+      return;
+    }
+
+    // VS Code owns a real editor area, so the table opens there as a panel; the
+    // in-webview popup stays as the fallback when the host rejects the command.
+    void vscodeApi.executeCommand('openchamber.openTableViewer', markdown).catch(showPopup);
+  }, [onShowPopup, runtimeApis.vscode, t]);
 
   const live = isStreaming && !disableStreamAnimation;
 
