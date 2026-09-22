@@ -3151,10 +3151,19 @@ export function useParentSession(sessionID: string | null, directory?: string): 
   )
 }
 
-/** Get one session by id for a directory */
+/**
+ * Get one session by id for a directory.
+ *
+ * Surfaces that only read session-derived data (the standalone markdown
+ * renderer inside the VS Code table panel, for example) may mount without a
+ * sync provider: no provider means no synced session, so this resolves to
+ * undefined instead of throwing.
+ */
 export function useSession(sessionID?: string | null, directory?: string) {
-  const { childStores } = useSyncRuntime()
+  const runtime = useContext(SyncRuntimeContext)
+  const childStores = runtime?.childStores
   const getSnapshot = useCallback(() => {
+    if (!childStores) return undefined
     if (directory) {
       const sessions = childStores.getChild(directory)?.getState().session
       return sessions ? getSessionById(sessions, sessionID) : undefined
@@ -3163,6 +3172,7 @@ export function useSession(sessionID?: string | null, directory?: string) {
   }, [childStores, directory, sessionID])
 
   const subscribe = useCallback((notify: () => void) => {
+    if (!childStores) return () => {}
     if (directory) {
       return childStores.ensureChild(directory, { bootstrap: false }).subscribe((state, previous) => {
         if (state.session !== previous.session) notify()

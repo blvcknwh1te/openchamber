@@ -23,11 +23,11 @@ import { isWorkingSessionStatus } from '@/sync/session-status';
 import { useSync } from '@/sync/use-sync';
 
 // The dialog owns its transcript viewport: LegendList renders the scroll
-// container from these props, so the container is positioned inside a relative
-// parent exactly like the chat timeline is, instead of relying on a percentage
-// height inside the flex column.
+// container from these props, so the container is a flex item with an explicit
+// minimum height instead of a percentage height. A bare `h-full` inside the
+// flex column left the list without a bounded box to scroll.
 const SUBTASK_TRANSCRIPT_SCROLL_PROPS = {
-  className: 'absolute inset-0 overflow-x-hidden',
+  className: 'min-h-0 flex-1 overflow-y-auto',
 };
 
 interface SubtaskSessionDialogProps {
@@ -123,7 +123,7 @@ export const SubtaskSessionDialog: React.FC<SubtaskSessionDialogProps> = ({
         )}
       >
         <DialogTitle className="pr-8 truncate">{title}</DialogTitle>
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-background">
           {hasMessages ? (
             <ChatSurfaceProvider mode="peek">
               <MessageList

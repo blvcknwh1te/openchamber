@@ -1,13 +1,9 @@
 import React from 'react';
 import { AgentManagerView } from '@/components/views/agent-manager';
-import { TableViewerView } from '@/components/views/TableViewerView';
 import { FireworksProvider } from '@/contexts/FireworksContext';
-import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
-import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { OpenCodeUpdateToast } from '@/components/update/OpenCodeUpdateToast';
 import { AppLinkConfirmDialog } from '@/components/chat/AppLinkConfirmDialog';
 import { SharedTrustConfirmDialog } from '@/components/projects/SharedTrustConfirmDialog';
@@ -28,6 +24,8 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { SyncProvider } from '@/sync/sync-context';
 import { SyncAppEffects } from './AppEffects';
 import { useAppFontEffects } from './useAppFontEffects';
+import { VSCodePanelShell } from './VSCodePanelShell';
+import { VSCodeTableViewerPanel } from './VSCodeTableViewerPanel';
 
 type VSCodePanelType = 'chat' | 'agentManager' | 'tableViewer';
 
@@ -41,27 +39,6 @@ declare global {
 type VSCodeAppProps = {
   apis: RuntimeAPIs;
 };
-
-/**
- * The table viewer panel renders host-supplied markdown only: it owns no
- * session, so it must not start the chat/agent-manager effects (session
- * polling, connection bootstrap) or wrap itself in a sync provider.
- */
-function VSCodeTableViewerPanel({ apis }: VSCodeAppProps) {
-  const markdown = window.__OPENCHAMBER_TABLE_MARKDOWN__ ?? null;
-
-  return (
-    <ErrorBoundary>
-      <RuntimeAPIProvider apis={apis}>
-        <TooltipProvider delayDuration={300} skipDelayDuration={150}>
-          <div className="h-full text-foreground bg-background">
-            <TableViewerView markdown={markdown} />
-          </div>
-        </TooltipProvider>
-      </RuntimeAPIProvider>
-    </ErrorBoundary>
-  );
-}
 
 export function VSCodeApp({ apis }: VSCodeAppProps) {
   if (window.__OPENCHAMBER_PANEL_TYPE__ === 'tableViewer') {
@@ -138,44 +115,32 @@ function VSCodeSessionPanel({ apis }: VSCodeAppProps) {
 
   if (panelType === 'agentManager') {
     return (
-      <ErrorBoundary>
+      <VSCodePanelShell apis={apis}>
         <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
-          <RuntimeAPIProvider apis={apis}>
-            <TooltipProvider delayDuration={300} skipDelayDuration={150}>
-              <div className="h-full text-foreground bg-background">
-                <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
-                <AgentManagerView />
-                <AppLinkConfirmDialog />
-                <SharedTrustConfirmDialog />
-                <OpenCodeUpdateToast />
-                <Toaster position="top-center" />
-              </div>
-            </TooltipProvider>
-          </RuntimeAPIProvider>
+          <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
+          <AgentManagerView />
+          <AppLinkConfirmDialog />
+          <SharedTrustConfirmDialog />
+          <OpenCodeUpdateToast />
+          <Toaster position="top-center" />
         </SyncProvider>
-      </ErrorBoundary>
+      </VSCodePanelShell>
     );
   }
 
   return (
-    <ErrorBoundary>
+    <VSCodePanelShell apis={apis}>
       <SyncProvider sdk={opencodeClient.getSdkClient()} directory={currentDirectory || ''}>
-        <RuntimeAPIProvider apis={apis}>
-          <FireworksProvider>
-            <TooltipProvider delayDuration={300} skipDelayDuration={150}>
-              <div className="h-full text-foreground bg-background">
-                <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
-                <VSCodeLayout />
-                <AppLinkConfirmDialog />
-                <SharedTrustConfirmDialog />
-                <OpenCodeUpdateToast />
-                <Toaster position="top-center" />
-                <ConfigUpdateOverlay />
-              </div>
-            </TooltipProvider>
-          </FireworksProvider>
-        </RuntimeAPIProvider>
+        <FireworksProvider>
+          <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
+          <VSCodeLayout />
+          <AppLinkConfirmDialog />
+          <SharedTrustConfirmDialog />
+          <OpenCodeUpdateToast />
+          <Toaster position="top-center" />
+          <ConfigUpdateOverlay />
+        </FireworksProvider>
       </SyncProvider>
-    </ErrorBoundary>
+    </VSCodePanelShell>
   );
 }
