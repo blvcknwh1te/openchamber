@@ -882,17 +882,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     return (
       <div className="flex h-full flex-col overflow-hidden">
         <div className="flex items-center gap-1.5 px-4 pt-3">
-          {showDesktopBackButton && (
-            <button
-              type="button"
-              onClick={handleDesktopBack}
-              aria-label={desktopBackButtonLabel}
-              title={desktopBackStack.length > 0 ? desktopBackButtonLabel : closeSettingsTitle}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            >
-              <Icon name="arrow-left-s" className="h-5 w-5" />
-            </button>
-          )}
+          {/* The return control sits in the corner of the whole view (see the
+              desktop branch below). Reserve its footprint here so the search
+              field never slides under it, and do not render a second button. */}
+          {showDesktopBackButton && <div className="h-9 w-9 shrink-0" aria-hidden />}
           <div className="flex h-10 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background/70 px-2 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/40 sm:h-8">
             <Icon name="search" className="h-4 w-4 shrink-0" />
             <input
@@ -1160,12 +1153,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         </div>
       ) : (
         <>
-          {showBackButton && (
+          {showDesktopBackButton && (
             <div className={cn('absolute left-3 z-50', isWindowed ? 'top-2' : 'top-3')}>
               <button
                 type="button"
-                onClick={handleBack}
-                aria-label={t('settings.view.actions.back')}
+                onClick={handleDesktopBack}
+                aria-label={desktopBackButtonLabel}
+                title={desktopBackStack.length > 0 ? desktopBackButtonLabel : closeSettingsTitle}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <Icon name="arrow-left-s" className="h-5 w-5" />
