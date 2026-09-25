@@ -9,10 +9,8 @@ import {
 } from './useChatTimelineScroll';
 import type { TimelineListMeasurementState } from '@/components/chat/lib/scroll/timelineScrollAnchoring';
 
-// The hook owns the timeline's scroll mode machine. This suite pins the new
-// `top-pinned` lifecycle: a freshly started streaming turn holds its top edge
-// at the viewport top, a real gesture releases it, and the pin's own
-// programmatic scroll never counts as that gesture.
+// The hook owns the timeline's scroll mode machine: end following while the
+// reader is at the live edge, free scrolling once a real gesture takes over.
 
 // A gesture the harness dispatches into the scroll node: the fields the hook's
 // intent helpers read off a real wheel/pointer/key event.
@@ -34,7 +32,43 @@ interface ScrollNodeStub {
     addEventListener: (type: string, listener: GestureListener) => void;
     removeEventListener: (type: string, listener: GestureListener) => void;
     dispatch: (type: string, gesture: DispatchedGesture) => void;
-    querySelector: () => null;
+    scrollTo: (options: { readonly top: number; readonly behavior?: string }) => void;
+    getBoundingClientRect: () => { readonly top: number; readonly height: number };
+    // The hook measures two things in the DOM: the sticky user header and the
+    // streaming answer itself (via messageAnchor). The stub answers both from
+    // the fixture it is built with.
+    querySelector: (selector: string) => HTMLElement | null;
+}
+
+// A mounted element the hook measures through. The stub keeps the DOM shape a
+// single `as HTMLElement` needs to be a legal narrowing.
+interface MeasuredElementStub {
+    readonly nodeType: number;
+    readonly tagName: string;
+    readonly nodeName: string;
+    readonly getBoundingClientRect: () => { readonly top: number; readonly height: number };
+}
+
+const asMeasuredElement = (element: MeasuredElementStub): HTMLElement => {
+    // SAFETY: the hook only reads getBoundingClientRect().top/.height off the
+    // elements it measures; the stub carries the node shape the DOM renderer
+    // would report and nothing narrower is promised here.
+    return element as HTMLElement;
+};
+
+const createMeasuredElement = (
+    rect: () => { readonly top: number; readonly height: number },
+): MeasuredElementStub => ({
+    nodeType: 1,
+    tagName: 'DIV',
+    nodeName: 'DIV',
+    getBoundingClientRect: rect,
+});
+
+// The streaming id the harness re-renders with. A box, so the same Harness
+// closure can be rendered again with the next value.
+interface StreamingIdBox {
+    value: string | null;
 }
 
 // The structural DOM surface the harness installs: what React's DOM renderer
@@ -143,8 +177,17 @@ const installMinimalDom = () => {
 };
 
 // A scroll node that records the writes the hook makes and can dispatch the
-// real gestures the release path listens for.
-const createScrollNode = (): ScrollNodeStub => {
+// real gestures the release path listens for. `messageTops` is the fixture DOM:
+// the measured top of each assistant message in the container's content space,
+// exactly what a turn row with a sticky user header above it would report
+// differently (the row top sits at the user message, not at the answer).
+const createScrollNode = ({
+    messageTops = {},
+    stickyHeight = 0,
+}: {
+    readonly messageTops?: Readonly<Record<string, number>>;
+    readonly stickyHeight?: number;
+} = {}): ScrollNodeStub => {
     const listeners = new Map<string, Set<GestureListener>>();
     const node: ScrollNodeStub = {
         scrollTop: 0,
@@ -161,27 +204,30 @@ const createScrollNode = (): ScrollNodeStub => {
         dispatch: (type: string, gesture: DispatchedGesture) => {
             for (const listener of listeners.get(type) ?? []) listener(gesture);
         },
-        querySelector: () => null,
+        // The hook glides its last correction through the native smooth scroll;
+        // the stub lands it immediately instead of animating.
+        scrollTo: ({ top }) => {
+            node.scrollTop = top;
+        },
+        getBoundingClientRect: () => ({ top: 0, height: 700 }),
+        querySelector: (selector: string) => {
+            if (selector === '[data-turn-id] .sticky') {
+                return stickyHeight > 0
+                    ? asMeasuredElement(createMeasuredElement(() => ({ top: 0, height: stickyHeight })))
+                    : null;
+            }
+            const messageId = /^\[data-message-id="(.+)"\]$/.exec(selector)?.[1];
+            const messageTop = messageId === undefined ? undefined : messageTops[messageId];
+            if (messageTop === undefined) return null;
+            // The DOM agreement: getBoundingClientRect reports viewport-relative
+            // coordinates, so the fixture subtracts the scroll already applied.
+            return asMeasuredElement(createMeasuredElement(() => ({
+                top: messageTop - node.scrollTop,
+                height: 100,
+            })));
+        },
     };
     return node;
-};
-
-const createListHandle = (
-    node: ScrollNodeStub,
-    state: TimelineListMeasurementState,
-) => {
-    const scrolls: number[] = [];
-    const handle: TimelineListHandle = {
-        getState: () => ({ ...state, scroll: node.scrollTop }),
-        getScrollableNode: () => asHtmlElement(node),
-        scrollToEnd: () => undefined,
-        scrollToOffset: ({ offset }) => {
-            scrolls.push(offset);
-            node.scrollTop = offset;
-        },
-        scrollToIndex: () => undefined,
-    };
-    return { handle, scrolls };
 };
 
 const flushFrames = async () => {
@@ -190,26 +236,58 @@ const flushFrames = async () => {
     });
 };
 
-describe('useChatTimelineScroll top pin', () => {
-    test('pins a streaming turn to the viewport top and releases on a real gesture', async () => {
+const createListHandle = (
+    node: ScrollNodeStub,
+    state: TimelineListMeasurementState,
+) => {
+    const scrolls: number[] = [];
+    const endCalls: Array<{ readonly animated?: boolean } | undefined> = [];
+    const handle: TimelineListHandle = {
+        getState: () => ({ ...state, scroll: node.scrollTop }),
+        getScrollableNode: () => asHtmlElement(node),
+        scrollToEnd: (options) => {
+            endCalls.push(options);
+        },
+        scrollToOffset: ({ offset }) => {
+            scrolls.push(offset);
+            node.scrollTop = offset;
+        },
+        scrollToIndex: () => undefined,
+    };
+    return { handle, scrolls, endCalls };
+};
+
+// The hook owns the timeline's scroll mode machine. A streaming answer holds
+// its OWN top edge while the reader is following the end; the anchor is the
+// assistant message element, never the turn row that starts with the user's
+// sticky header (anchoring on the row scrolled the viewport up to the user's
+// message). A gesture or a return to the end releases the pin back into
+// ordinary end following.
+describe('useChatTimelineScroll end following', () => {
+    const buildState = (): TimelineListMeasurementState => ({
+        data: [
+            { kind: 'turn', turn: { assistantMessageIds: ['msg_1'] } },
+            { kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } },
+        ],
+        scroll: 0,
+        scrollLength: 700,
+        contentLength: 4000,
+        // The turn row starts at the user's sticky header; the answer that
+        // streams inside it sits 400px lower, which is what the DOM fixture
+        // reports through `messageTops`.
+        positionAtIndex: (index) => (index === 1 ? 1200 : 0),
+        sizeAtIndex: () => 1000,
+    });
+
+    const renderPinHarness = async (
+        node: ScrollNodeStub,
+        streamingId: StreamingIdBox,
+    ) => {
         const dom = installMinimalDom();
         const root: Root = createRoot(dom.container);
-        const node = createScrollNode();
-        const state: TimelineListMeasurementState = {
-            data: [
-                { kind: 'turn', turn: { assistantMessageIds: ['msg_1'] } },
-                { kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } },
-            ],
-            scroll: 0,
-            scrollLength: 700,
-            contentLength: 4000,
-            positionAtIndex: (index) => (index === 1 ? 1200 : 0),
-            sizeAtIndex: () => 1000,
-        };
-        const { handle, scrolls } = createListHandle(node, state);
+        const { handle, scrolls, endCalls } = createListHandle(node, buildState());
 
         let result!: UseChatTimelineScrollResult;
-        let streamingId: string | null = null;
 
         const Harness = () => {
             result = useChatTimelineScroll({
@@ -218,7 +296,7 @@ describe('useChatTimelineScroll top pin', () => {
                 sessionMessageCount: 2,
                 composerOverlayHeight: 0,
                 sessionIsWorking: true,
-                activeStreamingMessageId: streamingId,
+                activeStreamingMessageId: streamingId.value,
             });
             React.useLayoutEffect(() => {
                 result.registerList(handle);
@@ -226,185 +304,217 @@ describe('useChatTimelineScroll top pin', () => {
             return null;
         };
 
+        const rerender = async () => {
+            await act(async () => root.render(React.createElement(Harness)));
+        };
+
+        await rerender();
+
+        return {
+            result: () => result,
+            scrolls,
+            endCalls,
+            rerender,
+            unmount: async () => {
+                await act(async () => root.unmount());
+                dom.restore();
+            },
+        };
+    };
+
+    test("holds the streaming answer's own top edge, never the turn row", async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
         try {
-            await act(async () => root.render(React.createElement(Harness)));
-            expect(result.isTopPinned).toBe(false);
+            expect(harness.result().isTopPinned).toBe(false);
 
-            // The stream starts: the answer's top edge is placed at the top of
-            // the viewport, and the pin holds.
-            streamingId = 'msg_2';
-            await act(async () => root.render(React.createElement(Harness)));
+            streamingId.value = 'msg_2';
+            await harness.rerender();
             await flushFrames();
-            expect(result.isTopPinned).toBe(true);
-            expect(scrolls).toEqual([1200]);
 
-            // Streaming growth issues no further scroll: the pin is a mode, not
-            // a loop.
-            await act(async () => root.render(React.createElement(Harness)));
-            await flushFrames();
-            expect(scrolls).toEqual([1200]);
+            expect(harness.result().isTopPinned).toBe(true);
+            // 1600 is the assistant message top; 1200 is the turn row top the
+            // old pin used, which is where the user's message lives.
+            expect(harness.scrolls).toEqual([1600]);
+            expect(harness.scrolls[0]).toBeGreaterThan(1200);
+            expect(node.scrollTop).toBe(1600);
 
-            // The pin's own write fires a scroll event; a programmatic scroll
-            // is not a gesture and must not release the pin.
+            // Streaming growth moves nothing: the held position is the pin.
             act(() => {
-                node.dispatch('scroll', { target: node });
+                harness.result().onTimelineDataChange();
             });
-            expect(result.isTopPinned).toBe(true);
-
-            // A real upward gesture releases the pin.
-            act(() => {
-                node.dispatch('wheel', { deltaY: -120, target: node });
-            });
-            expect(result.isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([1600]);
+            expect(node.scrollTop).toBe(1600);
         } finally {
-            await act(async () => root.unmount());
-            dom.restore();
+            await harness.unmount();
         }
     });
 
-    test('does not pin a short answer that fits on screen', async () => {
-        const dom = installMinimalDom();
-        const root: Root = createRoot(dom.container);
-        const node = createScrollNode();
-        const state: TimelineListMeasurementState = {
-            data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
-            scroll: 0,
-            scrollLength: 700,
-            contentLength: 900,
-            positionAtIndex: () => 600,
-            sizeAtIndex: () => 300,
-        };
-        const { handle, scrolls } = createListHandle(node, state);
-
-        let result!: UseChatTimelineScrollResult;
-        let streamingId: string | null = null;
-
-        const Harness = () => {
-            result = useChatTimelineScroll({
-                currentSessionId: 'ses_1',
-                currentSessionKey: 'ses_1',
-                sessionMessageCount: 1,
-                composerOverlayHeight: 0,
-                sessionIsWorking: true,
-                activeStreamingMessageId: streamingId,
-            });
-            React.useLayoutEffect(() => {
-                result.registerList(handle);
-            }, []);
-            return null;
-        };
+    test('keeps the answer below the sticky user header without going above it', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 }, stickyHeight: 96 });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
 
         try {
-            await act(async () => root.render(React.createElement(Harness)));
-            streamingId = 'msg_2';
-            await act(async () => root.render(React.createElement(Harness)));
+            streamingId.value = 'msg_2';
+            await harness.rerender();
             await flushFrames();
-            expect(result.isTopPinned).toBe(false);
-            expect(scrolls).toEqual([]);
+
+            expect(harness.scrolls).toEqual([1504]);
+            // The viewport never moves above the answer's own top edge: the
+            // offset only ever accounts for the floating header's height.
+            expect(node.scrollTop).toBeLessThanOrEqual(1600);
         } finally {
-            await act(async () => root.unmount());
-            dom.restore();
+            await harness.unmount();
         }
     });
 
-    test('releases the pin when the viewport reaches the end', async () => {
-        const dom = installMinimalDom();
-        const root: Root = createRoot(dom.container);
-        const node = createScrollNode();
-        const state: TimelineListMeasurementState = {
-            data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
-            scroll: 0,
-            scrollLength: 700,
-            contentLength: 4000,
-            positionAtIndex: () => 1200,
-            sizeAtIndex: () => 1000,
-        };
-        const { handle } = createListHandle(node, state);
-
-        let result!: UseChatTimelineScrollResult;
-        let streamingId: string | null = null;
-
-        const Harness = () => {
-            result = useChatTimelineScroll({
-                currentSessionId: 'ses_1',
-                currentSessionKey: 'ses_1',
-                sessionMessageCount: 1,
-                composerOverlayHeight: 0,
-                sessionIsWorking: true,
-                activeStreamingMessageId: streamingId,
-            });
-            React.useLayoutEffect(() => {
-                result.registerList(handle);
-            }, []);
-            return null;
-        };
+    test("keeps the reader's place after a manual scroll up", async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
 
         try {
-            await act(async () => root.render(React.createElement(Harness)));
-            streamingId = 'msg_2';
-            await act(async () => root.render(React.createElement(Harness)));
+            streamingId.value = 'msg_2';
+            await harness.rerender();
             await flushFrames();
-            expect(result.isTopPinned).toBe(true);
+            expect(harness.result().isTopPinned).toBe(true);
 
-            // The reader wheels down to the live edge: the pin has served its
-            // purpose and bottom following takes over.
-            act(() => {
-                result.onIsAtEndChange(true);
-            });
-            expect(result.isTopPinned).toBe(false);
-            expect(result.isPinned).toBe(true);
-        } finally {
-            await act(async () => root.unmount());
-            dom.restore();
-        }
-    });
-
-    test('does not pin when the reader already took over the scroll', async () => {
-        const dom = installMinimalDom();
-        const root: Root = createRoot(dom.container);
-        const node = createScrollNode();
-        const state: TimelineListMeasurementState = {
-            data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
-            scroll: 0,
-            scrollLength: 700,
-            contentLength: 4000,
-            positionAtIndex: () => 1200,
-            sizeAtIndex: () => 1000,
-        };
-        const { handle, scrolls } = createListHandle(node, state);
-
-        let result!: UseChatTimelineScrollResult;
-        let streamingId: string | null = null;
-
-        const Harness = () => {
-            result = useChatTimelineScroll({
-                currentSessionId: 'ses_1',
-                currentSessionKey: 'ses_1',
-                sessionMessageCount: 1,
-                composerOverlayHeight: 0,
-                sessionIsWorking: true,
-                activeStreamingMessageId: streamingId,
-            });
-            React.useLayoutEffect(() => {
-                result.registerList(handle);
-            }, []);
-            return null;
-        };
-
-        try {
-            await act(async () => root.render(React.createElement(Harness)));
-            // The reader scrolls up before the answer starts.
+            // The reader wheels up into the history: the pin is dropped and the
+            // viewport is left exactly where the gesture put it.
             node.scrollTop = 300;
             act(() => {
                 node.dispatch('wheel', { deltaY: -120, target: node });
             });
-            expect(result.userOwnsScroll).toBe(true);
+            expect(harness.result().userOwnsScroll).toBe(true);
+            expect(harness.result().isTopPinned).toBe(false);
 
-            streamingId = 'msg_2';
-            await act(async () => root.render(React.createElement(Harness)));
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            expect(node.scrollTop).toBe(300);
+            expect(harness.scrolls).toEqual([1600]);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('does not pin at all once the reader already took the scroll', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            node.scrollTop = 300;
+            act(() => {
+                node.dispatch('wheel', { deltaY: -120, target: node });
+            });
+            expect(harness.result().userOwnsScroll).toBe(true);
+
+            streamingId.value = 'msg_2';
+            await harness.rerender();
             await flushFrames();
-            expect(result.isTopPinned).toBe(false);
-            expect(scrolls).toEqual([]);
+
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([]);
+            expect(node.scrollTop).toBe(300);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('returning to the bottom releases the pin back to end following', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            streamingId.value = 'msg_2';
+            await harness.rerender();
+            await flushFrames();
+            expect(harness.result().isTopPinned).toBe(true);
+
+            act(() => {
+                harness.result().onIsAtEndChange(true);
+            });
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.result().isPinned).toBe(true);
+
+            // End following owns the viewport again: the next growth lands on
+            // the live edge.
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+            expect(node.scrollTop).toBe(3300);
+            expect(harness.scrolls).toEqual([1600]);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test("re-pins a new streaming message to its own top, never to the user's message", async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600, msg_3: 2400 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            streamingId.value = 'msg_2';
+            await harness.rerender();
+            await flushFrames();
+
+            streamingId.value = 'msg_3';
+            await harness.rerender();
+            await flushFrames();
+
+            expect(harness.scrolls).toEqual([1600, 2400]);
+            expect(harness.scrolls).not.toContain(1200);
+            expect(harness.result().isTopPinned).toBe(true);
+
+            // The stream ends: releasing the pin scrolls nothing.
+            streamingId.value = null;
+            await harness.rerender();
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([1600, 2400]);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('returns to the live edge when the reader sends a message', async () => {
+        const dom = installMinimalDom();
+        const root: Root = createRoot(dom.container);
+        const node = createScrollNode();
+        const { handle, endCalls } = createListHandle(node, buildState());
+
+        let result!: UseChatTimelineScrollResult;
+
+        const Harness = () => {
+            result = useChatTimelineScroll({
+                currentSessionId: 'ses_1',
+                currentSessionKey: 'ses_1',
+                sessionMessageCount: 2,
+                composerOverlayHeight: 0,
+                sessionIsWorking: true,
+            });
+            React.useLayoutEffect(() => {
+                result.registerList(handle);
+            }, []);
+            return null;
+        };
+
+        try {
+            await act(async () => root.render(React.createElement(Harness)));
+
+            act(() => {
+                result.scrollToBottomOnSend();
+            });
+
+            expect(endCalls.length).toBeGreaterThan(0);
+            expect(result.isPinned).toBe(true);
+            expect(result.userOwnsScroll).toBe(false);
         } finally {
             await act(async () => root.unmount());
             dom.restore();

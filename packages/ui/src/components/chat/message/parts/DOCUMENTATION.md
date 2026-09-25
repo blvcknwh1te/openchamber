@@ -31,6 +31,12 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - A running Task may briefly have no `sessionId`; render it as waiting until the authoritative part update arrives. Never match parallel children by order, title, timestamp, or status.
   - Part-level metadata and output parsing exist only for older persisted records and never override state metadata.
 
+- `sessionTitle.ts`
+  - Owns what a Task is called: the live child-session title when the server has one, the capitalized `subagent_type` while the session still carries the `New session` placeholder.
+  - `ToolPart.tsx` reads the session through `useSession(sessionId, directory)` in `TaskCardSessionTitle` and `TaskToolSummary` (both task-only, so non-task rows never subscribe to the session list), so a rename (plugin `session.updated`) reaches the card without the user opening the subtask.
+  - The resolved title is the single source for the card row, the context-panel tab `label` and the subtask dialog `title`; do not re-derive it in any of the three.
+  - The caller's task text (`input.description`, else `input.prompt`) is not a name: it stays the card row's `title` tooltip, never the row label.
+
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).
   - Used by both `ProgressiveGroup.tsx` and `ToolPart.tsx`.

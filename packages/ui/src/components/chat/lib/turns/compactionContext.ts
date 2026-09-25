@@ -18,8 +18,27 @@ export interface CompactionContext extends CompactionContextTokens {
 
 // A summary message is the compaction's own output, not a request the
 // conversation asked for: it must never stand in as the context after the mark.
+// The ban applies to the token lookup alone; the summary lookup is about the
+// record itself, not about what counts as a request.
 const isCountingRequest = (message: ChatMessageEntry): boolean =>
     message.info.role === 'assistant' && !isCompactionSummaryMessage(message);
+
+/**
+ * True when the message is the compaction's own output written for this notice.
+ * OpenCode parents the summary to the notice message, and both projections keep
+ * that link: the live row is parented in `buildSummaryEntry`, the persisted row
+ * is parented by the server. The link is what tells one compaction's summary
+ * from another's, so the lookup does not have to rely on row order - while the
+ * summary still streams, its row is appended to the turn in flight, and row
+ * order alone would have made the notice unopenable until the turn settled.
+ */
+const isSummaryWrittenFor = (message: ChatMessageEntry, compactionMessageId: string): boolean => {
+    if (!isCompactionSummaryMessage(message)) {
+        return false;
+    }
+
+    return message.info.role === 'assistant' && message.info.parentID === compactionMessageId;
+};
 
 const extractSummaryText = (message: ChatMessageEntry): string => {
     const textParts = message.parts
@@ -75,6 +94,11 @@ export const findCompactionContextTokens = (
  * Summary text OpenCode wrote for a compaction, taken from the assistant
  * message it flags `summary`. The transcript drops that message from the flow,
  * so the notice is the only place the text can be surfaced from.
+ *
+ * The row is matched by the parent link the compaction writes, in whatever
+ * position it currently sits: a live summary is appended while its turn still
+ * streams, and the notice has to be openable then too, not only once the turn
+ * settles. The forward walk stays as the fallback for rows without a parent.
  */
 export const findCompactionSummary = (
     messages: readonly ChatMessageEntry[],
@@ -83,6 +107,17 @@ export const findCompactionSummary = (
     const index = messages.findIndex((message) => message.info.id === compactionMessageId);
     if (index < 0) {
         return null;
+    }
+
+    for (const message of messages) {
+        if (!isSummaryWrittenFor(message, compactionMessageId)) {
+            continue;
+        }
+
+        const summary = extractSummaryText(message);
+        if (summary.length > 0) {
+            return summary;
+        }
     }
 
     for (let cursor = index + 1; cursor < messages.length; cursor += 1) {

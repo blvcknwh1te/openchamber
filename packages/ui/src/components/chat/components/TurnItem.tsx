@@ -1,6 +1,7 @@
 import React from 'react';
 
 import type { ChatMessageEntry, Turn } from '../lib/turns/types';
+import { stickyFadeBackground } from '../lib/stickyFade';
 import TurnAssistantBlock from './TurnAssistantBlock';
 
 interface TurnItemProps {
@@ -18,11 +19,14 @@ interface TurnItemProps {
  * reserves below itself. At rest the strip reveals the identical page background
  * (`--background` is generated from the same `surface.background` token), so it is
  * invisible and can never wash over the assistant content that follows.
+ *
+ * This layer closes the header's edge only while nothing paints over it. A user
+ * message strip that fills its box (`--chat-user-row-bg`) composites above this
+ * gradient, so the strip carries the same fade in its own background - see
+ * `stickyFadeBackground` in `../lib/stickyFade`, which owns the shared length and
+ * explains why the strip and not the header has to fade there.
  */
-const STICKY_HEADER_BACKGROUND: React.CSSProperties = {
-    backgroundImage:
-        'linear-gradient(to bottom, var(--surface-background) calc(100% - 0.75rem), transparent)',
-};
+const STICKY_HEADER_BACKGROUND: React.CSSProperties = stickyFadeBackground('var(--surface-background)');
 
 type TurnContentBlock =
     | { kind: 'notice'; key: string; message: ChatMessageEntry }

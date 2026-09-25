@@ -25,6 +25,7 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionPartsForMessages } from '@/sync/sync-context';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 import { resolveTimelineIsAtEnd } from './lib/scroll/timelineScrollAnchoring';
+import { measureMessageTop, messageElementSelector } from './lib/scroll/messageAnchor';
 import {
     USER_SHELL_MARKER,
     isUserShellMarkerMessage,
@@ -1546,7 +1547,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         if (!container) {
             return null;
         }
-        return container.querySelector(`[data-message-id="${messageId}"]`);
+        return container.querySelector<HTMLElement>(messageElementSelector(messageId));
     }, [resolveScrollContainer]);
 
     // Accepts any index the list renders, the trailing streaming entry
@@ -1623,18 +1624,15 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         if (!container) {
             return false;
         }
-        const messageElement = findMessageElement(messageId);
-        if (!messageElement) {
+        const messageTop = measureMessageTop(container, messageId);
+        if (messageTop === null) {
             return false;
         }
 
-        const containerRect = container.getBoundingClientRect();
-        const messageRect = messageElement.getBoundingClientRect();
         const offset = 50;
-        const top = messageRect.top - containerRect.top + container.scrollTop - offset;
-        container.scrollTo({ top, behavior });
+        container.scrollTo({ top: messageTop - offset, behavior });
         return true;
-    }, [findMessageElement, resolveScrollContainer]);
+    }, [resolveScrollContainer]);
 
     React.useEffect(() => {
         if (!ref) {

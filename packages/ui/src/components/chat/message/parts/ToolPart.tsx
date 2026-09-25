@@ -12,7 +12,7 @@ import { toolDisplayStyles } from '@/lib/typography';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
+import { useSession, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,7 @@ import {
     readTaskSessionIdFromRecord,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
+import { resolveTaskSessionTitle } from './sessionTitle';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { TOOL_ROW_DESCRIPTION_CLASS, TOOL_ROW_TITLE_CLASS } from './toolRowClasses';
 import { useI18n } from '@/lib/i18n';
@@ -989,6 +990,49 @@ const TaskSummaryEntriesList = React.memo(({
 
 TaskSummaryEntriesList.displayName = 'TaskSummaryEntriesList';
 
+/**
+ * Row label of a task card: the child session's live title, never the caller's
+ * task description.
+ *
+ * A plugin renames the session on the server (`QUEBEC: probe H`), and
+ * `useSession` re-reads the session on every session-list notification, so the
+ * label follows the rename without a reload. Until the rename lands — or while
+ * the child session is still unknown — `resolveTaskSessionTitle` falls back to
+ * the capitalized `subagent_type`, the same value the context-panel tab and the
+ * subtask dialog header use.
+ *
+ * The subscription lives in this task-only component on purpose: reading the
+ * session list from `ToolPart`'s body would subscribe every bash/edit row to it
+ * and re-render the whole transcript on unrelated session updates.
+ */
+const TaskCardSessionTitle: React.FC<{
+    sessionId?: string;
+    subagentType?: unknown;
+    directory: string;
+    description: string;
+}> = React.memo(({ sessionId, subagentType, directory, description }) => {
+    const session = useSession(sessionId, directory);
+    const title = resolveTaskSessionTitle({ sessionTitle: session?.title, subagentType });
+
+    // The card row keeps a single name on screen; the caller's task text and the
+    // child session id ride along as the tooltip so a subagent stays identifiable
+    // even after the plugin renames its session.
+    const tooltip = [description, sessionId ? `id: ${sessionId}` : ''].filter(Boolean).join('\n');
+
+    return (
+        <span
+            className={cn('min-w-0 truncate', TOOL_ROW_DESCRIPTION_CLASS)}
+            style={{ color: 'var(--tools-description)' }}
+            title={tooltip || undefined}
+            data-slot="task-card-title"
+        >
+            {title}
+        </span>
+    );
+});
+
+TaskCardSessionTitle.displayName = 'TaskCardSessionTitle';
+
 const TaskToolSummary: React.FC<{
     entries: TaskToolSummaryEntry[];
     isExpanded: boolean;
@@ -1012,6 +1056,18 @@ const TaskToolSummary: React.FC<{
     const [isOutputExpanded, setIsOutputExpanded] = React.useState(false);
     const [isSubtaskDialogOpen, setIsSubtaskDialogOpen] = React.useState(false);
 
+    // The card shows the child session's live title, not the `subagent_type` the
+    // task was created with: a plugin renames the session on the server and
+    // `session.updated` is what carries the new name into this hook, so the card
+    // follows the rename without the user opening the subtask. One resolved
+    // value feeds the card row, the context-panel tab label and the dialog
+    // title, so the three surfaces cannot disagree.
+    const taskSession = useSession(sessionId, currentDirectory);
+    const taskTitle = resolveTaskSessionTitle({
+        sessionTitle: taskSession?.title,
+        subagentType: input?.subagent_type,
+    });
+
     const handleOpenSession = (event: React.MouseEvent) => {
         event.stopPropagation();
         if (sessionId && currentDirectory) {
@@ -1026,16 +1082,11 @@ const TaskToolSummary: React.FC<{
             openContextPanelTab(currentDirectory, {
                 mode: 'chat',
                 dedupeKey: `session:${sessionId}`,
-                label: agentTypeLabel,
+                label: taskTitle,
                 readOnly: true,
             });
         }
     };
-
-    const agentType = typeof input?.subagent_type === 'string'
-        ? input.subagent_type
-        : 'subagent';
-    const agentTypeLabel = agentType.charAt(0).toUpperCase() + agentType.slice(1);
 
     if (entries.length === 0 && !hasOutput && !sessionId) {
         return (
@@ -1074,7 +1125,7 @@ const TaskToolSummary: React.FC<{
                         onClick={handleOpenSession}
                     >
                         <Icon name="external-link" className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="typography-meta text-primary font-medium truncate">{t('chat.toolPart.openSubtask', { type: agentTypeLabel })}</span>
+                        <span className="typography-meta text-primary font-medium truncate">{t('chat.toolPart.openSubtask', { type: taskTitle })}</span>
                     </button>
                     {currentDirectory ? (
                         <button
@@ -1099,7 +1150,7 @@ const TaskToolSummary: React.FC<{
                     open={isSubtaskDialogOpen}
                     onOpenChange={setIsSubtaskDialogOpen}
                     sessionId={sessionId}
-                    title={agentTypeLabel}
+                    title={taskTitle}
                     directory={currentDirectory}
                 />
             ) : null}
@@ -1937,6 +1988,11 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const normalizedPart = normalizedPartTool !== part.tool ? ({ ...part, tool: normalizedPartTool } as ToolPartType) : part;
     const descriptionPath = getToolDescriptionPath(normalizedPart, state, currentDirectory);
     const description = getToolDescription(normalizedPart, state, currentDirectory);
+    // The task text the caller sent is not the subagent's name: it rides along
+    // as the card row's tooltip instead of competing with the session title.
+    const taskCardDescription = isTaskTool
+        ? (coerceToText(input?.description) || coerceToText(input?.prompt))
+        : '';
     const displayName = getToolMetadata(normalizedPartTool || part.tool).displayName;
     
     // Tool title/description — shown inline as context
@@ -1948,6 +2004,11 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             return null;
         }
         if (normalizedPartTool === 'lsp') {
+            return null;
+        }
+        // A task card is named after its child session; the task description
+        // rides along as the row tooltip, not as a second title.
+        if (normalizedPartTool === 'task') {
             return null;
         }
         if (
@@ -2224,7 +2285,15 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                 {!isMultiFileApplyPatch && (
                     <div className={cn('flex items-center gap-1 flex-1 min-w-0', TOOL_ROW_DESCRIPTION_CLASS)} style={{ color: 'var(--tools-description)' }}>
                         <div className="flex items-center gap-1 flex-1 min-w-0">
-                            {justificationText && (
+                            {isTaskTool ? (
+                                <TaskCardSessionTitle
+                                    sessionId={taskSessionId}
+                                    subagentType={input?.subagent_type}
+                                    directory={currentDirectory}
+                                    description={taskCardDescription}
+                                />
+                            ) : null}
+                            {!isTaskTool && justificationText && (
                                 <span
                                     className={cn('min-w-0 truncate', TOOL_ROW_DESCRIPTION_CLASS)}
                                     style={{ color: 'var(--tools-description)', opacity: 0.8 }}
@@ -2233,10 +2302,10 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     {justificationText}
                                 </span>
                             )}
-                            {!justificationText && normalizedPartTool === 'lsp' && descriptionPath ? (
+                            {!isTaskTool && !justificationText && normalizedPartTool === 'lsp' && descriptionPath ? (
                                 renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons)
                             ) : null}
-                            {!justificationText && normalizedPartTool !== 'lsp' && description && (
+                            {!isTaskTool && !justificationText && normalizedPartTool !== 'lsp' && description && (
                                 descriptionPath && description === descriptionPath ? (
                                     renderAnimatedPathWithIcon(descriptionPath, animateTailText, false, showToolFileIcons)
                                 ) : (

@@ -5,6 +5,7 @@ import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { formatMoney } from '@/lib/money';
+import { formatCompactTokens } from '@/lib/tokenFormat';
 import { clampPercent, resolveUsageTone } from '@/lib/quota';
 
 interface ContextUsageDisplayProps {
@@ -53,16 +54,6 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
       ? 'var(--status-warning)'
       : 'var(--status-success)';
 
-  const formatTokens = (tokens: number) => {
-    if (tokens >= 1_000_000) {
-      return `${(tokens / 1_000_000).toFixed(1)}M`;
-    }
-    if (tokens >= 1_000) {
-      return `${(tokens / 1_000).toFixed(1)}K`;
-    }
-    return tokens.toFixed(1).replace(/\.0$/, '');
-  };
-
   const getPercentageColor = (pct: number) => {
     if (pct >= 90) return 'text-status-error';
     if (pct >= 75) return 'text-status-warning';
@@ -79,9 +70,9 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   const normalizedCost = cost ?? 0;
   const hasCost = normalizedCost > 0 && Number.isFinite(normalizedCost);
   const tooltipLines = [
-    t('contextUsage.tooltip.usedTokens', { tokens: formatTokens(totalTokens) }),
-    t('contextUsage.tooltip.contextLimit', { tokens: formatTokens(contextLimit) }),
-    t('contextUsage.tooltip.outputLimit', { tokens: formatTokens(safeOutputLimit) }),
+    t('contextUsage.tooltip.usedTokens', { tokens: formatCompactTokens(totalTokens) }),
+    t('contextUsage.tooltip.contextLimit', { tokens: formatCompactTokens(contextLimit) }),
+    t('contextUsage.tooltip.outputLimit', { tokens: formatCompactTokens(safeOutputLimit) }),
     ...(hasCost ? [t('contextUsage.tooltip.cost', { cost: formatMoney(normalizedCost) })] : []),
   ];
 
@@ -179,15 +170,15 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
             <div className="rounded-xl border border-border/40 bg-sidebar/30 px-3 py-2 space-y-1">
               <div className="flex justify-between items-center">
                 <span className="typography-meta text-muted-foreground">{t('contextUsage.mobile.usedTokens')}</span>
-                <span className="typography-meta text-foreground font-medium">{formatTokens(totalTokens)}</span>
+                <span className="typography-meta text-foreground font-medium">{formatCompactTokens(totalTokens)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="typography-meta text-muted-foreground">{t('contextUsage.mobile.contextLimit')}</span>
-                <span className="typography-meta text-foreground font-medium">{formatTokens(contextLimit)}</span>
+                <span className="typography-meta text-foreground font-medium">{formatCompactTokens(contextLimit)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="typography-meta text-muted-foreground">{t('contextUsage.mobile.outputLimit')}</span>
-                <span className="typography-meta text-foreground font-medium">{formatTokens(safeOutputLimit)}</span>
+                <span className="typography-meta text-foreground font-medium">{formatCompactTokens(safeOutputLimit)}</span>
               </div>
               {hasCost ? (
                 <div className="flex justify-between items-center">

@@ -15,12 +15,15 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
   useEnsureSessionMessages,
+  useSession,
   useSessionMessageLoadState,
   useSessionMessageRecords,
   useSessionStatus,
 } from '@/sync/sync-context';
 import { isWorkingSessionStatus } from '@/sync/session-status';
 import { useSync } from '@/sync/use-sync';
+
+import { resolveSubtaskSessionTitle } from './sessionTitle';
 
 // The dialog owns its transcript viewport: LegendList renders the scroll
 // container from these props, so the container is a flex item with an explicit
@@ -60,6 +63,10 @@ export const SubtaskSessionDialog: React.FC<SubtaskSessionDialogProps> = ({
   const messages = useSessionMessageRecords(sessionId, resolvedDirectory, { enabled: open });
   const loadState = useSessionMessageLoadState(sessionId, resolvedDirectory);
   const status = useSessionStatus(sessionId, resolvedDirectory);
+  // `useSession` re-reads the session on every session-list notification, so a
+  // rename performed while the dialog is open lands in the header immediately.
+  const session = useSession(sessionId, resolvedDirectory);
+  const dialogTitle = resolveSubtaskSessionTitle({ sessionTitle: session?.title, fallbackTitle: title });
 
   const isLoading = loadState.status === 'idle' || loadState.status === 'loading';
   const isLoadingHistory = loadState.status === 'loading';
@@ -122,7 +129,18 @@ export const SubtaskSessionDialog: React.FC<SubtaskSessionDialogProps> = ({
           'flex flex-col gap-3 overflow-hidden overflow-y-hidden p-4',
         )}
       >
-        <DialogTitle className="pr-8 truncate">{title}</DialogTitle>
+        {/* Session id rides under the title so a subagent stays identifiable even
+            when its name changes: the text is select-all, ready to copy. */}
+        <div className="flex min-w-0 flex-col gap-1">
+          <DialogTitle className="pr-8 truncate" title={dialogTitle}>{dialogTitle}</DialogTitle>
+          <span
+            className="typography-meta select-all truncate font-mono text-muted-foreground"
+            title={sessionId}
+            data-slot="subtask-session-id"
+          >
+            {sessionId}
+          </span>
+        </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-background">
           {hasMessages ? (
             <ChatSurfaceProvider mode="peek">

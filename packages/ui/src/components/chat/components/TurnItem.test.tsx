@@ -6,6 +6,7 @@
  */
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import type { AssistantMessage, Part, UserMessage } from '@opencode-ai/sdk/v2';
@@ -13,6 +14,7 @@ import type { AssistantMessage, Part, UserMessage } from '@opencode-ai/sdk/v2';
 import { projectTurnRecords } from '../lib/turns/projectTurnRecords';
 import { selectTranscriptMessages } from '../lib/turns/transcriptMessages';
 import type { ChatMessageEntry, TurnRecord } from '../lib/turns/types';
+import { stickyFadeBackground } from '../lib/stickyFade';
 import TurnItem from './TurnItem';
 
 const textPart = (messageID: string, text: string): Part => ({
@@ -185,5 +187,44 @@ describe('turn notices', () => {
         const order = await renderTurn(turn, <div data-fixture-message="live" />);
 
         expect(order).toEqual(['u1', 'u2', 'live', 'u3']);
+    });
+
+    test('paints the sticky header behind the prompt strip it pins', () => {
+        // The prompt strip paints its own fill (`--chat-user-row-bg`) as a
+        // background layer and renders inside the header, so the strip's layer
+        // always composites above the header's gradient: the strip closes its own
+        // bottom edge with the same fade instead of being cut by the header's.
+        // The header fades itself only - a mask here would fade the bubble and the
+        // hover action row the strip reserves room for below it.
+        //
+        // Markup, not a mounted DOM: happy-dom drops gradient values written
+        // through CSSOM, so the rendered element cannot be asked for its layer.
+        const turn = projectTurn([
+            userMessage('u1', [textPart('u1', 'prompt')], 1),
+            assistantMessage('a1', 'u1', [], 2),
+        ]);
+        const renderMessage = (rendered: ChatMessageEntry) => (
+            rendered.info.role === 'user' ? (
+                <div key={rendered.info.id} data-fixture-row className="chat-user-row" style={stickyFadeBackground('var(--chat-user-row-bg, transparent)')} />
+            ) : (
+                <div key={rendered.info.id} data-fixture-answer />
+            )
+        );
+
+        const markup = renderToStaticMarkup(
+            <TurnItem turn={turn} stickyUserHeader renderMessage={renderMessage} />,
+        );
+
+        const parsed = document.createElement('div');
+        parsed.innerHTML = markup;
+        const header = parsed.querySelector('.sticky');
+        const row = parsed.querySelector('[data-fixture-row]');
+        expect(header).not.toBeNull();
+        expect(row).not.toBeNull();
+        expect(header?.contains(row)).toBe(true);
+
+        const headerTag = markup.match(/<div[^>]*class="sticky[^>]*>/)?.[0] ?? '';
+        expect(headerTag).toContain(`style="background-image:${stickyFadeBackground('var(--surface-background)').backgroundImage}"`);
+        expect(headerTag).not.toContain('mask');
     });
 });

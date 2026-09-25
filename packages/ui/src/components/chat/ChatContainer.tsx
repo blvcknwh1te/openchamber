@@ -1544,9 +1544,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 activeStreamingPhase={activeStreamingPhase}
                 retryOverlay={retryOverlay}
                 scrollToBottom={resumeToLatestInstant}
-                // A top pin holds the viewport away from the end on purpose,
-                // so the list's own end pinning must be off while it holds —
-                // exactly as it is once a real gesture takes over.
+                // A pinned answer and a real gesture both hold the viewport
+                // away from the end on purpose, so the list's own end pinning
+                // must be off in both cases.
                 endPinningReleased={userOwnsScroll || isTopPinned}
                 revealWaited={revealWaited}
                 revealGate={revealGate}

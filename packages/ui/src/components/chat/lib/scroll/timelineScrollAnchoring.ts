@@ -1,11 +1,10 @@
 // Scroll geometry for the chat timeline.
 //
-// The timeline has three mutually exclusive scroll modes:
+// The timeline has two mutually exclusive scroll modes:
 //
-//   • `following-end`  — stay pinned to the live edge as content grows.
-//   • `top-pinned`     — a freshly started assistant turn holds its top edge
-//     at the top of the viewport while its text streams downward; the viewport
-//     does not follow the growing tail.
+//   • `following-end`  — stay pinned to the live edge as content grows, except
+//     while a freshly started answer holds its own top edge at the top of the
+//     viewport (the top pin, see resolveTopPinOffset).
 //   • `free-scrolling` — the user took over; nothing moves the scroll
 //     position until they opt back in.
 //
@@ -14,7 +13,7 @@
 // there. Keeping it free of DOM and React makes the rules testable without a
 // renderer.
 
-export type TimelineScrollMode = 'following-end' | 'top-pinned' | 'free-scrolling';
+export type TimelineScrollMode = 'following-end' | 'free-scrolling';
 
 export interface TimelineListMeasurementState {
     readonly data: readonly unknown[];
@@ -111,42 +110,41 @@ export const resolveTimelineIsAtEnd = (
     return contentLength - (scroll + scrollLength) <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 };
 
-// Where the viewport must sit so a row's top edge lands at the top of the
-// visible area. The sticky user header of the turn floats over the top of the
-// viewport, so the row is placed below it instead of underneath it: the
-// measured header height is subtracted from the row's own top offset.
+// The offset that holds a freshly started answer at the top of the viewport.
 //
-// Returns null when the row has not been measured yet, so the caller can wait
-// for the next layout instead of scrolling to a guessed offset.
+// `assistantTop` is the top of the ASSISTANT MESSAGE itself, measured in the
+// scroll container's content space (see messageAnchor). It is deliberately not
+// the top of the turn row the message belongs to: a turn row starts with the
+// sticky user header, so anchoring on the row placed the viewport on the user's
+// message — the upward jump this helper exists to prevent. An answer can never
+// be anchored above its own first pixel, because the offset is computed from
+// that pixel and only ever reduced by the sticky overlay.
+//
+// The sticky user header floats over the top of the viewport, so an answer
+// pinned at raw `assistantTop` would be hidden underneath it. The measured
+// header height is subtracted — never more than that, and never below the start
+// of the content — so the answer's top edge stays at the live top edge of the
+// viewport instead of sliding out of view.
+//
+// Returns null when the answer cannot reach the top: a short answer that fits
+// entirely on screen has nothing to pin, and scrolling it up would leave the
+// viewport looking empty, and an unmeasured row is waited for by the caller.
 export const resolveTopPinOffset = ({
-    rowTop,
+    assistantTop,
     stickyHeaderHeight = 0,
-}: {
-    readonly rowTop: number | undefined;
-    readonly stickyHeaderHeight?: number;
-}): number | null => {
-    const top = parseMeasuredPixels(rowTop);
-    if (top === null) return null;
-    const header = Number.isFinite(stickyHeaderHeight) ? Math.max(0, stickyHeaderHeight) : 0;
-    return Math.max(0, top - header);
-};
-
-// A top pin is only meaningful when the pinned row can actually reach the top
-// of the viewport: the content below the row's top must overflow the visible
-// area. A short answer that fits entirely on screen has nothing to pin, and
-// scrolling it to the top would leave the viewport looking empty.
-export const canPinRowTop = ({
-    rowTop,
     contentLength,
     scrollLength,
 }: {
-    readonly rowTop: number | undefined;
+    readonly assistantTop: number | undefined;
+    readonly stickyHeaderHeight?: number;
     readonly contentLength: number | undefined;
     readonly scrollLength: number | undefined;
-}): boolean => {
-    const top = parseMeasuredPixels(rowTop);
+}): number | null => {
+    const top = parseMeasuredPixels(assistantTop);
     const content = parseMeasuredPixels(contentLength);
     const viewport = parseMeasuredPixels(scrollLength);
-    if (top === null || content === null || viewport === null) return false;
-    return content - top > viewport;
+    if (top === null || content === null || viewport === null) return null;
+    if (content - top <= viewport) return null;
+    const header = Number.isFinite(stickyHeaderHeight) ? Math.max(0, stickyHeaderHeight) : 0;
+    return Math.max(0, top - header);
 };

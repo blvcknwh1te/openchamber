@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-    canPinRowTop,
     getRowBottom,
     resolveRealContentEndOffset,
     resolveTimelineIsAtEnd,
@@ -140,37 +139,55 @@ describe('resolveTimelineIsAtEnd', () => {
 });
 
 describe('resolveTopPinOffset', () => {
-    test('places the row top at the viewport top when no header floats over it', () => {
-        expect(resolveTopPinOffset({ rowTop: 1200 })).toBe(1200);
+    test('places the assistant message top at the viewport top', () => {
+        expect(resolveTopPinOffset({
+            assistantTop: 1600,
+            contentLength: 4000,
+            scrollLength: 700,
+        })).toBe(1600);
     });
 
-    test('subtracts the measured sticky header height', () => {
-        expect(resolveTopPinOffset({ rowTop: 1200, stickyHeaderHeight: 96 })).toBe(1104);
+    test('never anchors above the assistant message, only below the sticky header', () => {
+        expect(resolveTopPinOffset({
+            assistantTop: 1600,
+            stickyHeaderHeight: 96,
+            contentLength: 4000,
+            scrollLength: 700,
+        })).toBe(1504);
     });
 
     test('never scrolls above the start of the content', () => {
-        expect(resolveTopPinOffset({ rowTop: 40, stickyHeaderHeight: 96 })).toBe(0);
+        expect(resolveTopPinOffset({
+            assistantTop: 40,
+            stickyHeaderHeight: 96,
+            contentLength: 4000,
+            scrollLength: 700,
+        })).toBe(0);
     });
 
-    test('returns null for an unmeasured row', () => {
-        expect(resolveTopPinOffset({ rowTop: undefined })).toBeNull();
-        expect(resolveTopPinOffset({ rowTop: Number.NaN })).toBeNull();
-    });
-});
-
-describe('canPinRowTop', () => {
-    test('pins when the content below the row top overflows the viewport', () => {
-        expect(canPinRowTop({ rowTop: 1000, contentLength: 2400, scrollLength: 700 })).toBe(true);
+    test('does not pin an answer that fits on screen', () => {
+        expect(resolveTopPinOffset({
+            assistantTop: 1600,
+            contentLength: 2000,
+            scrollLength: 700,
+        })).toBeNull();
     });
 
-    test('does not pin a short answer that fits on screen', () => {
-        expect(canPinRowTop({ rowTop: 1000, contentLength: 1500, scrollLength: 700 })).toBe(false);
-        expect(canPinRowTop({ rowTop: 1000, contentLength: 1700, scrollLength: 700 })).toBe(false);
-    });
-
-    test('does not pin without measurements', () => {
-        expect(canPinRowTop({ rowTop: undefined, contentLength: 2400, scrollLength: 700 })).toBe(false);
-        expect(canPinRowTop({ rowTop: 1000, contentLength: undefined, scrollLength: 700 })).toBe(false);
-        expect(canPinRowTop({ rowTop: 1000, contentLength: 2400, scrollLength: undefined })).toBe(false);
+    test('returns null without measurements', () => {
+        expect(resolveTopPinOffset({
+            assistantTop: undefined,
+            contentLength: 4000,
+            scrollLength: 700,
+        })).toBeNull();
+        expect(resolveTopPinOffset({
+            assistantTop: 1600,
+            contentLength: undefined,
+            scrollLength: 700,
+        })).toBeNull();
+        expect(resolveTopPinOffset({
+            assistantTop: 1600,
+            contentLength: 4000,
+            scrollLength: undefined,
+        })).toBeNull();
     });
 });

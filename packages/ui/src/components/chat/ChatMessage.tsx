@@ -41,12 +41,23 @@ import { getContextObligatoryMessages } from '@/lib/contextObligatoryMessages';
 import { setContextObligatoryMessage } from '@/sync/session-actions';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { focusChatInput } from './composer/editor/dom';
+import { stickyFadeBackground } from './lib/stickyFade';
 
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
 
 const EXPANDED_TOOLS_CACHE_MAX = 4000;
 const expandedToolsStateCache = new Map<string, Set<string>>();
 const collapsedToolsStateCache = new Map<string, Set<string>>();
+
+// The full-width strip the user bubble sits on. The theme's `--chat-user-row-bg`
+// (transparent unless a theme or custom.css paints the band) is applied as a
+// background layer that still dissolves over the last `STICKY_FADE_LENGTH`: the
+// strip is rendered inside the sticky prompt header, so a solid fill would cover
+// the header's soft bottom edge and leave the band cut off against the canvas.
+// See ./lib/stickyFade for the shared length and the paint-order reasoning.
+const USER_MESSAGE_ROW_BACKGROUND: React.CSSProperties = stickyFadeBackground(
+    'var(--chat-user-row-bg, transparent)',
+);
 
 const BASH_TOOL_NAMES = new Set(['bash', 'shell', 'cmd', 'terminal']);
 const EDIT_TOOL_NAMES = new Set([
@@ -884,10 +895,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                             >
                                 {/* [OC-PATCH: chat-user-row] semantic class so
                                     custom.css can style the strip behind the
-                                    user bubble without touching the canvas. */}
+                                    user bubble without touching the canvas.
+                                    The fill is a background layer from
+                                    USER_MESSAGE_ROW_BACKGROUND, not a solid
+                                    colour, so the strip keeps its full height
+                                    and still closes with the header's fade. */}
                                 <div
                                     className={cn('relative flex justify-end chat-user-row', !isMobile ? 'group/user-shell' : undefined)}
-                                    style={{ backgroundColor: 'var(--chat-user-row-bg, transparent)' }}
+                                    style={USER_MESSAGE_ROW_BACKGROUND}
                                 >
                                     {/* peek: the action row under the bubble is suppressed, so
                                         reserve its gap to the next message here, OUTSIDE the
@@ -1046,6 +1061,11 @@ export default React.memo(ChatMessage, (prev, next) => {
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
         && prev.animateUserOnMount === next.animateUserOnMount
         && prev.onUserAnimationConsumed === next.onUserAnimationConsumed
+        // The compaction summary streams in while the notice row itself never
+        // changes: a notice compares its own message, so a growing summary would
+        // leave the row memoised and the notice would keep the first snapshot it
+        // saw, or never turn into a button at all.
+        && prev.compactionContext === next.compactionContext
         && areRelevantTurnGroupingContextsEqual(
             prev.turnGroupingContext,
             next.turnGroupingContext,

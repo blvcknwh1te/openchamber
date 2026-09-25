@@ -33,6 +33,7 @@ import { useViewportStore, viewportSessionKey } from '@/sync/viewport-store';
 import { DraggableSessionRow } from '../folders/sessionFolderDnd';
 import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass } from './sessionNodeItemUtils';
 import { useSessionNodeUsageTotals } from './sessionUsageTotals';
+import { SessionUsageCostBadge } from './SessionUsageCostBadge';
 import type { SessionNode } from '../types';
 import { formatProjectLabel, formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText } from '../utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -44,7 +45,8 @@ import { SessionActivityDuration } from '@/components/session/SessionActivityDur
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import { useI18n } from '@/lib/i18n';
 import { useShiftKeyHeld } from '@/hooks/useShiftKeyHeld';
-import { formatGoalTokens, getSessionGoal } from '@/lib/sessionGoalMetadata';
+import { getSessionGoal } from '@/lib/sessionGoalMetadata';
+import { formatCompactTokens } from '@/lib/tokenFormat';
 import { sessionGoalStatusColor, sessionGoalStatusLabelKey } from '@/lib/sessionGoalPresentation';
 import { getRuntimeBearerTokenSync } from '@/lib/runtime-auth';
 import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
@@ -519,6 +521,22 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
   const sessionUsage = useSessionNodeUsageTotals(node);
   const sessionCost = sessionUsage.cost;
   const sessionTokensUsed = sessionUsage.tokens > 0 ? sessionUsage.tokens : null;
+  const showSessionCost = sessionCost > 0;
+  // Middle dot that stitches the row metadata into `Model · $4.74 · date`.
+  // The divider before the date is skipped when neither goal, branch, model,
+  // nor cost precedes it, so a row that shows only a date never starts with a
+  // stray dot.
+  const sessionMetaDivider = (
+    <span aria-hidden="true" className="flex-shrink-0 text-muted-foreground/40">·</span>
+  );
+  const hasMetadataBeforeCost = Boolean(sessionGoalGlyph || showInlineBranchMarker || lastModelBadge);
+  const hasMetadataBeforeDate = Boolean(hasMetadataBeforeCost || showSessionCost);
+  // The divider inside the cost chip only appears when goal/branch/model
+  // precedes it; the chip itself renders nothing when the session reports no
+  // cost.
+  const sessionCostBadge = (
+    <SessionUsageCostBadge cost={sessionCost} showLeadingDivider={hasMetadataBeforeCost} />
+  );
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
   const hasChildren = node.children.length > 0;
   const isPinnedSession = isSessionPinned(pinnedSessionIds, sessionDirectory, session.id);
@@ -1488,11 +1506,13 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                 />
                               ) : null}
                               {lastModelBadge}
+                              {sessionCostBadge}
+                              {hasMetadataBeforeDate ? sessionMetaDivider : null}
                               {sessionCompactUpdatedLabel}
                             </>
                           )}
                         </span>
-                      ) : (showActivityDuration || sessionGoalGlyph || showInlineBranchMarker || lastModelLabel || renderContext === 'recent') ? (
+                      ) : (showActivityDuration || sessionGoalGlyph || showInlineBranchMarker || lastModelLabel || showSessionCost || renderContext === 'recent') ? (
                         <div className={cn(
                             'relative ml-1 flex h-4 flex-shrink-0 items-center justify-end',
                             isSessionMenuOpen
@@ -1519,6 +1539,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                   />
                                 ) : null}
                                 {lastModelBadge}
+                                {sessionCostBadge}
                                 {/* The recent activity list shows its compact
                                     timestamp inline (touch runtimes already get
                                     it through the alwaysShowActions branch);
@@ -1527,9 +1548,12 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                                     them, so the revealed row actions never
                                     overlap it. */}
                                 {renderContext === 'recent' ? (
-                                  <span className="flex-shrink-0 typography-micro leading-none text-muted-foreground/75 tabular-nums">
-                                    {sessionCompactUpdatedLabel}
-                                  </span>
+                                  <>
+                                    {hasMetadataBeforeDate ? sessionMetaDivider : null}
+                                    <span className="flex-shrink-0 typography-micro leading-none text-muted-foreground/75 tabular-nums">
+                                      {sessionCompactUpdatedLabel}
+                                    </span>
+                                  </>
                                 ) : null}
                               </>
                             )}
@@ -1592,7 +1616,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                     {sessionTokensUsed ? (
                       <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
                         <Icon name="database-2" className="h-3 w-3 flex-shrink-0" />
-                        <span className="min-w-0 truncate">{t('sessions.sidebar.session.tooltip.tokens', { tokens: formatGoalTokens(sessionTokensUsed) })}</span>
+                        <span className="min-w-0 truncate">{t('sessions.sidebar.session.tooltip.tokens', { tokens: formatCompactTokens(sessionTokensUsed) })}</span>
                       </div>
                     ) : null}
                   </div>

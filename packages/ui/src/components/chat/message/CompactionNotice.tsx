@@ -122,9 +122,25 @@ export const CompactionNotice = ({ className, part, createdAt, context }: Compac
       </Tooltip>
       {summary ? (
         <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>
-          <DialogContent className="w-[min(64rem,94vw)] max-w-[min(64rem,94vw)] max-h-[85vh]">
-            <DialogTitle>{t('chat.compaction.notice')}</DialogTitle>
-            <div className="min-h-0 overflow-y-auto pr-1">
+          <DialogContent
+            className={cn(
+              'w-[min(64rem,94vw)] max-w-[min(64rem,94vw)]',
+              'h-[min(48rem,85vh)] max-h-[85vh]',
+              // The summary body is the only scroll container here: the dialog
+              // popup ships `overflow-y-auto` by default and would scroll too,
+              // which is what the subtask dialog avoids the same way.
+              'flex flex-col gap-3 overflow-hidden overflow-y-hidden',
+            )}
+          >
+            <div className="flex flex-col gap-1 pr-8">
+              <DialogTitle>{t('chat.compaction.notice')}</DialogTitle>
+              <span className="typography-ui-label text-muted-foreground">
+                {t('chat.compaction.tooltip.time', { time: compactedAt })}
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-background p-4">
+              {/* The summary keeps streaming into the open dialog: the text is
+                  the prop, so every delta replaces it in place. */}
               <SimpleMarkdownRenderer content={summary} variant="tool" />
             </div>
           </DialogContent>
