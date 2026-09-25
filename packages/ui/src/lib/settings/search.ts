@@ -89,6 +89,16 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['scrollbar', 'scrollbars', 'scroll', 'mouse', 'wheel', 'accessibility', 'always visible'],
   },
   {
+    id: 'appearance.custom-css',
+    page: 'appearance',
+    titleKey: 'settings.openchamber.customCss.field.label',
+    descriptionKey: 'settings.openchamber.customCss.sectionInfo',
+    keywords: ['custom css', 'custom.css', 'css', 'styles', 'tokens', 'override', 'customization'],
+    // Exactly matches the render guard in CustomCssSettings: the actions exist
+    // only in the VS Code runtime, where the extension host owns the file.
+    isAvailable: (ctx) => ctx.isVSCode,
+  },
+  {
     id: 'appearance.pwa-install-name',
     page: 'appearance',
     titleKey: 'settings.openchamber.visual.field.installAppName',

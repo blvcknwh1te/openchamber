@@ -786,6 +786,54 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     setMobileStage('nav');
   }, [backButtonTargetsPageSidebar, runtimeCtx.isVSCode, settingsSlug]);
 
+  // Desktop has neither the mobile stage ladder nor a settings history of its
+  // own, so the header back button walks a local stack of visited pages and,
+  // once that stack is empty, closes Settings exactly like the X.
+  const [desktopBackStack, setDesktopBackStack] = React.useState<SettingsPageSlug[]>([]);
+  const desktopSlugRef = React.useRef(settingsSlug);
+
+  React.useEffect(() => {
+    const previous = desktopSlugRef.current;
+    if (previous === settingsSlug) {
+      return;
+    }
+    desktopSlugRef.current = settingsSlug;
+    if (isMobile) {
+      return;
+    }
+    // 'home' is the mobile nav root and the store's fresh value; on desktop it
+    // only appears as the mount-time state that resolves to General, so it must
+    // never become a back target of its own.
+    if (previous === 'home' || settingsSlug === 'home') {
+      setDesktopBackStack([]);
+      return;
+    }
+    setDesktopBackStack((stack) => [...stack, previous]);
+  }, [isMobile, settingsSlug]);
+
+  // The visited page survives a close in the UI store, so a stack recorded
+  // before closing must not leak into the next visit.
+  React.useEffect(() => {
+    if (!isSettingsDialogOpen) {
+      setDesktopBackStack([]);
+    }
+  }, [isSettingsDialogOpen]);
+
+  const handleDesktopBack = React.useCallback(() => {
+    const target = desktopBackStack[desktopBackStack.length - 1];
+    if (target) {
+      setDesktopBackStack((stack) => stack.slice(0, -1));
+      setSettingsPage(target);
+      return;
+    }
+    onClose?.();
+  }, [desktopBackStack, onClose, setSettingsPage]);
+
+  const showDesktopBackButton = !isMobile && (onClose != null || desktopBackStack.length > 0);
+  const desktopBackButtonLabel = desktopBackStack.length > 0
+    ? t('settings.view.actions.back')
+    : t('settings.view.actions.closeSettings');
+
   // The Android hardware back button belongs to the same ladder as the header's
   // back arrow: one level up per press, and only the press at the root falls
   // through to the shell, which closes Settings.
@@ -833,8 +881,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="px-4 pt-3">
-          <div className="flex h-10 items-center gap-1.5 rounded-md border border-border bg-background/70 px-2 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/40 sm:h-8">
+        <div className="flex items-center gap-1.5 px-4 pt-3">
+          {showDesktopBackButton && (
+            <button
+              type="button"
+              onClick={handleDesktopBack}
+              aria-label={desktopBackButtonLabel}
+              title={desktopBackStack.length > 0 ? desktopBackButtonLabel : closeSettingsTitle}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md p-0.5 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Icon name="arrow-left-s" className="h-5 w-5" />
+            </button>
+          )}
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border bg-background/70 px-2 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/40 sm:h-8">
             <Icon name="search" className="h-4 w-4 shrink-0" />
             <input
               value={settingsSearchQuery}

@@ -1,7 +1,6 @@
-import * as os from 'os';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { readCustomCssForInjection, readCustomThemesForInjection } from './webviewHtml';
+import { OPENCHAMBER_THEMES_DIR, OPENCHAMBER_USER_CONFIG_DIR } from './customAssetsPaths';
 
 export type CustomAssets = { themes: unknown[]; css: string };
 
@@ -20,10 +19,9 @@ export class CustomAssetsWatcher {
   ) {}
 
   start(): void {
-    const base = path.join(os.homedir(), '.config', 'openchamber');
     const patterns = [
-      new vscode.RelativePattern(path.join(base, 'themes'), '*.json'),
-      new vscode.RelativePattern(base, 'custom.css'),
+      new vscode.RelativePattern(OPENCHAMBER_THEMES_DIR, '*.json'),
+      new vscode.RelativePattern(OPENCHAMBER_USER_CONFIG_DIR, 'custom.css'),
     ];
     const fire = () => {
       if (this.timer) {

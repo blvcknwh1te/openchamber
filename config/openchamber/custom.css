@@ -11,6 +11,9 @@
   --background: #131516 !important;
   --chat-user-message-bg: #2a2a2b !important;
 
+  /* Строка пользовательского сообщения (класс chat-user-row) */
+  --chat-user-row-bg: #2a2a2b !important;
+
   /* Основной текст (ответы ассистента и текст сообщений идут от него) */
   --foreground: #f0f0f0 !important;
 

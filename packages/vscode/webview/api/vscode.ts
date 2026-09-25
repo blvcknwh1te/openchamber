@@ -34,4 +34,15 @@ export const createVSCodeActionsAPI = (): VSCodeAPI => ({
   async saveMarkdown(payload: unknown): Promise<unknown> {
     return sendBridgeMessage('api:files/save-markdown', payload);
   },
+
+  // [OC-PATCH: custom-css] The host command resolves
+  // `~/.config/openchamber/custom.css` and rewrites the `openchamber.` prefix
+  // to this fork's `openchamberBnw.` command ids.
+  async openCustomCss(template: string): Promise<void> {
+    await executeVSCodeCommand('openchamber.openCustomCss', [template]);
+  },
+
+  async resetCustomCss(template: string): Promise<void> {
+    await executeVSCodeCommand('openchamber.resetCustomCss', [template]);
+  },
 });

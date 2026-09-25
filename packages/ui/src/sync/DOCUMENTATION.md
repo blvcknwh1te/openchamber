@@ -48,6 +48,7 @@ So:
 | `session-ordering.ts` | Ephemeral lifecycle rank used by every user-visible session list | All known sessions in the active runtime |
 | `session-activity-timing.ts` | Elapsed time of the running turn and of the turn that just finished, plus the persisted starts that survive a reload | All known sessions in the active runtime |
 | `session-last-model.ts` | Last model used per session, projected from the global session cache for the row badge and row tooltip | All sessions in the global cache of the active runtime |
+| `live-compaction.ts` | Live compaction projection: the transcript rows a streaming compaction adds before OpenCode persists its `compaction` part, plus the projected row IDs snapshot caches use to tell them from authoritative ones | The live rows of one session in one directory store |
 | `session-ui-store.ts` | Session selection, draft lifecycle, one-shot draft-materialization transition identity, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
 | `useGlobalSessionsStore.ts` | Global active/archived entities plus root, parent/child, and directory indexes | All opened project/worktree session lists |
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
@@ -472,13 +473,15 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 
 | Event type | Fields to clone |
 |---|---|
-| `session.created/updated/deleted` | `session`, `permission`, `todo`, `part`; archived/deleted sessions also clone `question` |
+| `session.created/updated/deleted` | `session`, `permission`, `todo`, `part`, `live_compaction`; archived/deleted sessions also clone `question` |
 | `session.diff` | `session_diff` |
 | `session.status` | `session_status` |
 | `todo.updated` | `todo` |
 | `message.updated` | `message` |
-| `message.removed` | `message`, `part` |
-| `message.part.updated/removed/delta` | `part` |
+| `message.removed` | `message`, `part`, `live_compaction` |
+| `message.part.updated/removed/delta` | `part`, `live_compaction` |
+| `session.next.compaction.started/delta/ended` | `live_compaction` |
+| `session.compacted` | `live_compaction` |
 | `vcs.branch.updated` | (none — mutates `draft.vcs` directly) |
 | `permission.asked/replied` | `permission` |
 | `question.asked/replied/rejected` | `question` |
@@ -487,6 +490,10 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 ### Directory-less session events
 
 The global stream can omit a directory for a session-addressed event. Resolve it through the session routing index first. If the index is briefly stale during a session transition, route only when the event session matches the active session and that directory store exists; otherwise leave it un-routed rather than updating another directory.
+
+### Live compaction projection
+
+`session.next.compaction.started`, `.delta`, and `.ended` fill `State.live_compaction` — one `LiveCompactionRecord` per session — and `session.compacted` only clears the record's `streaming` flag. The record is shadow state, never authority: `live-compaction.ts` projects it into the session's transcript while the compaction streams, and the projection emits nothing once the authoritative message for the record's `messageID` reaches the store, so the persisted `compaction` part replaces the live rows. Those rows are a user message carrying the `compaction` part plus the assistant message flagged `summary` that holds the streamed text; their IDs derive from `messageID`, so re-projecting an unchanged record keeps identical rows. A changed record counts as a transcript change in `child-store.ts`, and `session-cache.ts` drops the records of evicted sessions.
 
 ## Adding a new event type
 

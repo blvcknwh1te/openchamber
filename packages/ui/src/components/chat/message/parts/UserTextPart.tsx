@@ -40,6 +40,28 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
+/**
+ * Markdown tables are moved into a wrapper carrying this attribute by
+ * `decorateTables` (`chat/markdown/decorate.ts`); the collapsed clamp targets
+ * that wrapper instead of the line-clamped box.
+ */
+const TABLE_WRAPPER_SELECTOR = '[data-markdown="table-wrapper"]';
+
+/**
+ * `line-clamp-2` clips line boxes only. A table is not a line box: it keeps its
+ * natural height inside the clamped box, so the box reports no overflow and the
+ * expand affordance never appears. The collapsed class list therefore bounds the
+ * table wrapper itself, and that wrapper is what reports the clip.
+ */
+const hasClippedContent = (element: HTMLElement): boolean => {
+    if (element.scrollHeight > element.clientHeight) {
+        return true;
+    }
+    return Array.from(element.querySelectorAll<HTMLElement>(TABLE_WRAPPER_SELECTOR)).some(
+        (wrapper) => wrapper.scrollHeight > wrapper.clientHeight
+    );
+};
+
 const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMention, messageExpanded, onExpandMessage }) => {
     // Structured context (inline comments, terminal selections, annotations,
     // PR context) renders as a dedicated block instead of raw prompt text.
@@ -92,7 +114,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         if (!collapsibleUserMessages || effectiveExpanded) return;
 
         const checkTruncation = () => {
-            setIsTruncated(el.scrollHeight > el.clientHeight);
+            setIsTruncated(hasClippedContent(el));
         };
 
         checkTruncation();
@@ -113,6 +135,11 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         const observeChildren = () => {
             for (const child of Array.from(el.children)) {
                 resizeObserver.observe(child);
+            }
+            // A clamped table wrapper pins its own height, so the decorated table
+            // is what still reports the table's natural growth.
+            for (const table of Array.from(el.querySelectorAll('table'))) {
+                resizeObserver.observe(table);
             }
         };
         observeChildren();
@@ -162,7 +189,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         // Measure at click time instead of trusting the observed flag: whether
         // the text is clipped right now is what decides if expanding does
         // anything, and the flag can still be catching up on a fresh message.
-        if (collapsibleUserMessages && !effectiveExpanded && element.scrollHeight > element.clientHeight) {
+        if (collapsibleUserMessages && !effectiveExpanded && hasClippedContent(element)) {
             setIsTruncated(true);
             if (isControlled) {
                 onExpandMessage?.();
@@ -301,6 +328,13 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                                  "[&_[data-md-code-line]]:!inline",
                                  "[&_[data-md-code-line-number]]:hidden",
                                  "[&_[data-md-code-line-break]]:!inline",
+                                 // A table is not a line box, so `line-clamp-2`
+                                 // cannot clamp it. Bound the decorated table
+                                 // wrapper to roughly three rows and fade its
+                                 // bottom edge so the cut reads as truncation.
+                                 "[&_[data-markdown='table-wrapper']]:max-h-28",
+                                 "[&_[data-markdown='table-wrapper']]:overflow-hidden",
+                                 "[&_[data-markdown='table-wrapper']]:mask-b-from-60%",
                              ]
                         )}
                         disableLinkSafety

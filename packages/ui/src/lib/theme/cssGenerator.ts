@@ -422,6 +422,9 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push(`  --chat-background: ${chatBackground};`);
     vars.push(`  --chat-user-message: ${chat.userMessage || theme.colors.surface.foreground};`);
     vars.push(`  --chat-user-message-bg: ${chat.userMessageBackground || theme.colors.surface.elevated};`);
+    // Full-width strip the user bubble sits on (`chat-user-row`). Transparent by
+    // default so the chat canvas shows through; themes and custom.css paint it.
+    vars.push(`  --chat-user-row-bg: ${chat.userMessageRowBackground || 'transparent'};`);
     vars.push(`  --chat-assistant-message: ${chat.assistantMessage || theme.colors.surface.foreground};`);
     vars.push(`  --chat-assistant-message-bg: ${chat.assistantMessageBackground || theme.colors.surface.muted};`);
     vars.push(`  --chat-timestamp: ${chat.timestamp || theme.colors.surface.mutedForeground};`);
@@ -437,6 +440,7 @@ const sidebarBaseRgb = hexToRgb(theme.colors.surface.muted);
     vars.push(`  --chat-background: ${theme.colors.surface.background};`);
     vars.push(`  --chat-user-message: ${theme.colors.surface.foreground};`);
     vars.push(`  --chat-user-message-bg: ${theme.colors.surface.elevated};`);
+    vars.push(`  --chat-user-row-bg: transparent;`);
     vars.push(`  --chat-assistant-message: ${theme.colors.surface.foreground};`);
     vars.push(`  --chat-assistant-message-bg: ${theme.colors.surface.muted};`);
     vars.push(`  --chat-timestamp: ${theme.colors.surface.mutedForeground};`);

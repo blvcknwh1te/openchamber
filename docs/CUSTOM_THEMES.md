@@ -165,6 +165,7 @@ OpenChamber supports user-defined themes. Drop a JSON file into the themes direc
     "chat": {
       "userMessage": "#CECDC3",
       "userMessageBackground": "#2d1d15",
+      "userMessageRowBackground": "#00000000",
       "assistantMessage": "#CECDC3",
       "assistantMessageBackground": "#100F0F",
       "timestamp": "#878580",

@@ -75,4 +75,23 @@ describe('settings search', () => {
     expect(results.some((result) => result.id === 'integrations.linear.add-workspace')).toBe(false);
     expect(results.some((result) => result.id === 'integrations.linear.mapping')).toBe(false);
   });
+
+  test('finds the custom.css actions on the appearance page in VS Code only', () => {
+    const query = 'custom css';
+    const vscodeResults = buildSettingsSearchResults({
+      query,
+      runtimeCtx: { ...runtimeCtx, isVSCode: true },
+      t,
+      getPageTitle: (page) => page,
+    });
+    const webResults = buildSettingsSearchResults({
+      query,
+      runtimeCtx,
+      t,
+      getPageTitle: (page) => page,
+    });
+
+    expect(vscodeResults.find((result) => result.id === 'appearance.custom-css')?.page).toBe('appearance');
+    expect(webResults.some((result) => result.id === 'appearance.custom-css')).toBe(false);
+  });
 });

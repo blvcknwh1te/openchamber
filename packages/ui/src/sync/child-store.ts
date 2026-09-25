@@ -164,6 +164,20 @@ const notifyChangedSessionMessages = (
     }
   }
 
+  // A live compaction changes the transcript without touching `message` or
+  // `part`: the notice is projected from it until the persisted part lands.
+  if (current.live_compaction !== previous.live_compaction) {
+    for (const sessionID of subscribers.keys()) {
+      if (current.live_compaction[sessionID] === previous.live_compaction[sessionID]) continue
+      const existing = notifications.get(sessionID)
+      notifications.set(sessionID, {
+        messagesChanged: true,
+        reset: existing?.reset ?? false,
+        partMessageIDs: existing?.partMessageIDs ?? [],
+      })
+    }
+  }
+
   if (current.part !== previous.part) {
     if (pendingParts && pendingParts.size > 0) {
       for (const [sessionID, messageIDs] of pendingParts) {

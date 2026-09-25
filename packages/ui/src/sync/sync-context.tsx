@@ -66,7 +66,8 @@ import {
   applyGlobalSessionStatusSnapshot,
   useGlobalSessionStatusStore,
 } from "./global-session-status"
-import type { State } from "./types"
+import type { LiveCompactionRecord, State } from "./types"
+import { liveCompactionEntryIds, projectLiveCompaction } from "./live-compaction"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
 import type { QuestionRequest } from "@/types/question"
@@ -962,6 +963,20 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     }
     const id = (info as { id?: unknown }).id
     return typeof id === "string" && id.length > 0 ? id : null
+  }
+
+  // Compaction lifecycle events carry no directory, so the session ID is the
+  // only thing that can route them to the store that owns the transcript. They
+  // are listed here for the same reason as `session.status`: without it they
+  // fall into the global bucket, where nothing consumes them.
+  if (
+    event.type === "session.next.compaction.started"
+    || event.type === "session.next.compaction.delta"
+    || event.type === "session.next.compaction.ended"
+    || event.type === "session.compacted"
+  ) {
+    const sessionID = props.sessionID
+    return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
   }
 
   return null
@@ -1877,6 +1892,7 @@ export function handleEvent(
       }
       cloneField("todo", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
+      cloneField("live_compaction", (value) => ({ ...value }))
       cloneField("sessionEventRevision", (value) => ({ ...(value ?? {}) }))
       cloneField("sessionDeletedRevision", (value) => ({ ...(value ?? {}) }))
       break
@@ -1897,11 +1913,21 @@ export function handleEvent(
     case "message.removed":
       cloneField("message", (value) => ({ ...value }))
       cloneField("part", (value) => ({ ...value }))
+      cloneField("live_compaction", (value) => ({ ...value }))
       break
     case "message.part.updated":
     case "message.part.removed":
     case "message.part.delta":
       cloneField("part", (value) => ({ ...value }))
+      cloneField("live_compaction", (value) => ({ ...value }))
+      break
+    // The compaction lifecycle only touches the live shadow record: the notice
+    // it feeds is projected from there until the persisted part arrives.
+    case "session.next.compaction.started":
+    case "session.next.compaction.delta":
+    case "session.next.compaction.ended":
+    case "session.compacted":
+      cloneField("live_compaction", (value) => ({ ...value }))
       break
     case "vcs.branch.updated":
       break
@@ -3217,6 +3243,12 @@ type SessionMessageRecordsSnapshot = {
   suspendedPartUpdatesMessageID?: string
   list: SessionMessageRecord[]
   byId: Map<string, SessionMessageRecord>
+  /**
+   * Live compaction record this list projected, by reference. The projected rows
+   * have no `state.part` entry, so the cache compares the record itself instead
+   * of the parts behind the rows it produced.
+   */
+  liveCompaction?: LiveCompactionRecord
 }
 
 const SESSION_MESSAGE_RECORDS_CACHE_MAX = 40
@@ -3365,7 +3397,13 @@ const hasTaskSessionIdentityChange = (previous: Part[], current: Part[] | undefi
 }
 
 const snapshotPartsMatchState = (snapshot: SessionMessageRecordsSnapshot, state: State): boolean => {
+  // Projected compaction rows are not backed by `state.part`; the record
+  // reference is what decides whether they are still current.
+  const projectedIds = new Set(liveCompactionEntryIds(snapshot.liveCompaction))
   for (const record of snapshot.list) {
+    if (projectedIds.has(record.info.id)) {
+      continue
+    }
     if (snapshot.suspendPartUpdates) {
       const suspendedID = snapshot.suspendedPartUpdatesMessageID
       if (
@@ -3401,6 +3439,7 @@ const getReusableSessionMessageRecordsSnapshot = (
     && cached.revertMessageID === revertMessageID
     && cached.suspendPartUpdates === suspendPartUpdates
     && cached.suspendedPartUpdatesMessageID === suspendedPartUpdatesMessageID
+    && cached.liveCompaction === state.live_compaction[sessionID]
     && snapshotPartsMatchState(cached, state)
   ) {
     return cached
@@ -3464,10 +3503,27 @@ export function buildSessionMessageRecordsSnapshot(
     return nextRecord
   })
 
+  // A streaming compaction has no persisted part yet, so its notice exists only
+  // as a projection. The rows go last: the compaction is the newest history
+  // rewrite, and the turn in flight keeps it inside the turn it arrived in.
+  const liveCompaction = state.live_compaction[sessionID]
+  const liveEntries = projectLiveCompaction(liveCompaction, visibleMessages)
+  const liveRowsCurrent = Boolean(previous)
+    && previous?.liveCompaction === liveCompaction
+    && previous?.visibleMessages === visibleMessages
+  for (const entry of liveEntries) {
+    // The projection rebuilds its rows on every call; reusing the previous ones
+    // keeps the list reference-stable while the record itself is unchanged.
+    const nextRecord = (liveRowsCurrent ? previous?.byId.get(entry.info.id) : undefined) ?? entry
+    nextById.set(entry.info.id, nextRecord)
+    nextList.push(nextRecord)
+  }
+
   const unchanged = Boolean(previous)
     && previous?.visibleMessages === visibleMessages
-    && previous.suspendPartUpdates === suspendPartUpdates
-    && previous.suspendedPartUpdatesMessageID === suspendedPartUpdatesMessageID
+    && previous?.suspendPartUpdates === suspendPartUpdates
+    && previous?.suspendedPartUpdatesMessageID === suspendedPartUpdatesMessageID
+    && previous?.liveCompaction === liveCompaction
     && previous.list.length === nextList.length
     && previous.list.every((record, index) => record === nextList[index])
 
@@ -3484,6 +3540,7 @@ export function buildSessionMessageRecordsSnapshot(
     suspendedPartUpdatesMessageID,
     list: nextList,
     byId: nextById,
+    liveCompaction,
   }
 }
 

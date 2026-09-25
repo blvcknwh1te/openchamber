@@ -885,7 +885,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 {/* [OC-PATCH: chat-user-row] semantic class so
                                     custom.css can style the strip behind the
                                     user bubble without touching the canvas. */}
-                                <div className={cn('relative flex justify-end chat-user-row', !isMobile ? 'group/user-shell' : undefined)}>
+                                <div
+                                    className={cn('relative flex justify-end chat-user-row', !isMobile ? 'group/user-shell' : undefined)}
+                                    style={{ backgroundColor: 'var(--chat-user-row-bg, transparent)' }}
+                                >
                                     {/* peek: the action row under the bubble is suppressed, so
                                         reserve its gap to the next message here, OUTSIDE the
                                         bubble background. */}

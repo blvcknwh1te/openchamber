@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+    canPinRowTop,
     getRowBottom,
     resolveRealContentEndOffset,
     resolveTimelineIsAtEnd,
+    resolveTopPinOffset,
     type TimelineListMeasurementState,
 } from './timelineScrollAnchoring';
 
@@ -36,6 +38,11 @@ describe('getRowBottom', () => {
         const state = buildState({ positions: [0], sizes: [80] });
 
         expect(getRowBottom(state, 5)).toBeNull();
+    });
+
+    test('returns null for non-finite measurements', () => {
+        expect(getRowBottom(buildState({ positions: [Number.NaN], sizes: [80] }), 0)).toBeNull();
+        expect(getRowBottom(buildState({ positions: [0], sizes: [Number.NaN] }), 0)).toBeNull();
     });
 
     test('treats a zero-height row as one pixel tall', () => {
@@ -110,5 +117,60 @@ describe('resolveTimelineIsAtEnd', () => {
 
     test('reports nothing without a state', () => {
         expect(resolveTimelineIsAtEnd(undefined)).toBe(undefined);
+    });
+
+    test('parses a non-finite content length as unavailable and keeps reported list numbers verbatim', () => {
+        expect(resolveTimelineIsAtEnd({
+            contentLength: Number.NaN,
+            scroll: 1400,
+            scrollLength: 600,
+            isAtEnd: true,
+        })).toBe(true);
+        expect(resolveTimelineIsAtEnd({
+            contentLength: 2000,
+            scroll: Number.NaN,
+            scrollLength: 600,
+        })).toBe(false);
+        expect(resolveTimelineIsAtEnd({
+            contentLength: 2000,
+            scroll: 1400,
+            scrollLength: Number.POSITIVE_INFINITY,
+        })).toBe(true);
+    });
+});
+
+describe('resolveTopPinOffset', () => {
+    test('places the row top at the viewport top when no header floats over it', () => {
+        expect(resolveTopPinOffset({ rowTop: 1200 })).toBe(1200);
+    });
+
+    test('subtracts the measured sticky header height', () => {
+        expect(resolveTopPinOffset({ rowTop: 1200, stickyHeaderHeight: 96 })).toBe(1104);
+    });
+
+    test('never scrolls above the start of the content', () => {
+        expect(resolveTopPinOffset({ rowTop: 40, stickyHeaderHeight: 96 })).toBe(0);
+    });
+
+    test('returns null for an unmeasured row', () => {
+        expect(resolveTopPinOffset({ rowTop: undefined })).toBeNull();
+        expect(resolveTopPinOffset({ rowTop: Number.NaN })).toBeNull();
+    });
+});
+
+describe('canPinRowTop', () => {
+    test('pins when the content below the row top overflows the viewport', () => {
+        expect(canPinRowTop({ rowTop: 1000, contentLength: 2400, scrollLength: 700 })).toBe(true);
+    });
+
+    test('does not pin a short answer that fits on screen', () => {
+        expect(canPinRowTop({ rowTop: 1000, contentLength: 1500, scrollLength: 700 })).toBe(false);
+        expect(canPinRowTop({ rowTop: 1000, contentLength: 1700, scrollLength: 700 })).toBe(false);
+    });
+
+    test('does not pin without measurements', () => {
+        expect(canPinRowTop({ rowTop: undefined, contentLength: 2400, scrollLength: 700 })).toBe(false);
+        expect(canPinRowTop({ rowTop: 1000, contentLength: undefined, scrollLength: 700 })).toBe(false);
+        expect(canPinRowTop({ rowTop: 1000, contentLength: 2400, scrollLength: undefined })).toBe(false);
     });
 });

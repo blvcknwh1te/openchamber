@@ -92,6 +92,17 @@ The webview build emits each worker as one self-contained file. VS Code webviews
   - Owns the persisted VS Code permission auto-accept policy and its GET/PUT bridge contract.
   - Serializes reads and read-modify-write updates, persists a monotonic policy revision, and broadcasts the exact committed snapshot to every active OpenChamber webview. Permission replies remain foreground UI-owned because VS Code does not run the OpenChamber server runtime.
 
+- `customAssetsPaths.ts`
+  - Single owner for the user-level OpenChamber asset locations under `~/.config/openchamber`: the config directory, the themes directory, and `custom.css`. The webview HTML injection, the live assets watcher, and the Settings actions resolve through it rather than building paths themselves.
+
+- `customCss.ts`
+  - Owns the Settings-driven `custom.css` actions (`openchamberBnw.openCustomCss`, `openchamberBnw.resetCustomCss`): open creates the config directory and the file from the UI-owned template when it is missing, reset overwrites it with that template and discards the user's edits.
+  - Both reject a payload that is blank or over 512 KB, matching the reader's cap in `webviewHtml.ts`.
+
+- `customAssetsWatcher.ts`
+  - Watches the themes directory (`*.json`) and `custom.css` and re-reads both on create, change, and delete, debounced by 250 ms.
+  - The extension broadcasts the re-read assets to every webview, which applies them without a reload.
+
 - `InlineCommentThreads.ts`
   - Owns the `openchamber.inlineComments` comment controller: the gutter `+` range, the thread opened by `openchamber.addLineComment`, and every thread a submitted comment leaves anchored in the editor until the message goes out.
   - A thread never owns a draft. It mints the draft id, hands the payload to a chat webview with the same routing as Add to Context (the active session panel when one exists, else the sidebar, revealed if needed), and follows the webview's whole-draft-list `inlineComments:sync` snapshots: present means show, absent after having been seen means dispose. A snapshot is tagged with the surface that produced it (a panel id or `sidebar`) and only decides that surface's own threads, because every webview runs its own draft store.

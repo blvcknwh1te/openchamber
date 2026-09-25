@@ -5,6 +5,7 @@ import * as path from 'path';
 import { getThemeKindName } from './theme';
 import type { ConnectionStatus } from './opencode';
 import type { WorkspaceFolderCandidate } from './workspaceResolver';
+import { OPENCHAMBER_CUSTOM_CSS_PATH, OPENCHAMBER_THEMES_DIR } from './customAssetsPaths';
 
 // [OC-PATCH: custom-themes-vscode]
 // The VS Code runtime has no OpenChamber web server, so `/api/config/themes`
@@ -14,7 +15,7 @@ import type { WorkspaceFolderCandidate } from './workspaceResolver';
 const MAX_CUSTOM_THEME_FILE_BYTES = 512 * 1024;
 
 export const readCustomThemesForInjection = (): unknown[] => {
-  const themesDir = path.join(os.homedir(), '.config', 'openchamber', 'themes');
+  const themesDir = OPENCHAMBER_THEMES_DIR;
   try {
     const entries = fs.readdirSync(themesDir, { withFileTypes: true });
     const themes: unknown[] = [];
@@ -39,7 +40,7 @@ export const readCustomThemesForInjection = (): unknown[] => {
 // token tweaks (e.g. --chat-inline-pad) survive without rebuilding the fork.
 export const readCustomCssForInjection = (): string => {
   try {
-    const cssPath = path.join(os.homedir(), '.config', 'openchamber', 'custom.css');
+    const cssPath = OPENCHAMBER_CUSTOM_CSS_PATH;
     if (fs.statSync(cssPath).size > MAX_CUSTOM_THEME_FILE_BYTES) return '';
     return fs.readFileSync(cssPath, 'utf8');
   } catch {
@@ -133,6 +134,9 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
   const customCssHtml = readCustomCssForInjection()
     .replace(/<\/style/gi, '<\\/style')
     .replace(/<!--/g, '<\\!--');
+  // [OC-PATCH: custom-css] The Settings page shows the resolved custom.css
+  // location; the extension host is the only side that knows it.
+  const customCssPathJson = JSON.stringify(OPENCHAMBER_CUSTOM_CSS_PATH).replace(/</g, '\\u003c');
 
   // Use VS Code CSS variables for proper theme integration
   // These variables are automatically provided by VS Code to webviews
@@ -257,6 +261,8 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       tableMarkdown: ${tableMarkdownJson},
       // [OC-PATCH: custom-themes-vscode]
       customThemes: ${customThemesJson},
+      // [OC-PATCH: custom-css]
+      customCssPath: ${customCssPathJson},
     };
     window.__OPENCHAMBER_HOME__ = "${workspaceFolder.replace(/\\/g, '\\\\')}";
     // VS Code's display language. The UI bundle uses it as the default locale

@@ -1111,6 +1111,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         restoreSnapshot,
         isPinned,
         isFollowingProgrammatically,
+        isTopPinned,
         showScrollButton,
         userOwnsScroll,
     } = useChatTimelineScroll({
@@ -1121,6 +1122,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         sessionIsWorking,
         revealGate,
         onActiveTurnChange: handleActiveTurnChange,
+        activeStreamingMessageId: streamingMessageId,
     });
 
     const viewportMessages = sessionMessages;
@@ -1542,7 +1544,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 activeStreamingPhase={activeStreamingPhase}
                 retryOverlay={retryOverlay}
                 scrollToBottom={resumeToLatestInstant}
-                endPinningReleased={userOwnsScroll}
+                // A top pin holds the viewport away from the end on purpose,
+                // so the list's own end pinning must be off while it holds —
+                // exactly as it is once a real gesture takes over.
+                endPinningReleased={userOwnsScroll || isTopPinned}
                 revealWaited={revealWaited}
                 revealGate={revealGate}
                 sessionQuestions={sessionQuestions}

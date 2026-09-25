@@ -38,6 +38,30 @@ export type ProjectMeta = {
   }
 }
 
+/**
+ * A compaction while it is still streaming, as reported only by the live event
+ * stream (`session.next.compaction.started|delta|ended`).
+ *
+ * It is optimistic shadow state, never authority: the persisted `compaction`
+ * part of `messageID` is the source of truth, and the projection stops emitting
+ * the moment that message reaches the store. Keyed by session in `State` so one
+ * record describes the one compaction a session can be running.
+ */
+export type LiveCompactionRecord = {
+  sessionID: string
+  /** Message the persisted `compaction` part will belong to. */
+  messageID: string
+  reason: "auto" | "manual"
+  /** True until `session.next.compaction.ended` (or `session.compacted`) lands. */
+  streaming: boolean
+  /** Summary text written so far; the whole summary once the compaction ends. */
+  text: string
+  startedAt: number
+  endedAt?: number
+}
+
+export type LiveCompactionRecords = Readonly<Record<string, LiveCompactionRecord>>
+
 /** Per-directory store state */
 export type State = {
   status: "loading" | "partial" | "complete"
@@ -68,6 +92,8 @@ export type State = {
   limit: number
   message: Record<string, Message[]>
   part: Record<string, Part[]>
+  /** Live-only compaction shadow state, keyed by session. */
+  live_compaction: LiveCompactionRecords
 }
 
 /** Global store state */
@@ -155,6 +181,7 @@ export const INITIAL_STATE: State = {
   limit: 5,
   message: {},
   part: {},
+  live_compaction: {},
 }
 
 export const INITIAL_GLOBAL_STATE: GlobalState = {

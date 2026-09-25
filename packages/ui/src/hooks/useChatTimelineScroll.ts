@@ -1,4 +1,5 @@
 import React from 'react';
+import { z } from 'zod';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
 import { createScrollSpy } from '@/components/chat/lib/scroll/scrollSpy';
@@ -6,9 +7,11 @@ import { useViewportStore } from '@/sync/viewport-store';
 import { useUIStore } from '@/stores/useUIStore';
 import type { TimelineRevealGate } from '@/components/chat/timelineRevealGate';
 import {
+    canPinRowTop,
     getRowBottom,
     resolveRealContentEndOffset,
     resolveTimelineIsAtEnd,
+    resolveTopPinOffset,
     TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
     type TimelineListMeasurementState,
     type TimelineScrollMode,
@@ -40,6 +43,37 @@ import {
 // guard/settle/entry-stick timers here.
 // ──────────────────────────────────────────────────────────────────────────
 
+// ── input boundaries ───────────────────────────────────────────────────────
+// Two external representations reach this hook: the platform capabilities a
+// runtime may not provide, and the rows the virtualized list carries. Both are
+// resolved once here, at the boundary, so the code below branches on domain
+// values instead of probing the raw representation with `typeof`.
+
+// DOM-less runtimes (SSR) and this hook's test harness have no `window`,
+// `ResizeObserver`, or `MutationObserver`. DOM lib declares all three as always
+// present, so they are read as optional capabilities off the global object.
+interface PlatformCapabilities {
+    readonly window?: Window;
+    readonly ResizeObserver?: typeof ResizeObserver;
+    readonly MutationObserver?: typeof MutationObserver;
+}
+const platform: PlatformCapabilities = globalThis;
+
+// A width the resize observer reported, or null when no entry carried one.
+const parseReportedWidth = (entries: readonly ResizeObserverEntry[]): number | null => {
+    const width = entries[entries.length - 1]?.contentRect.width;
+    return width === undefined ? null : width;
+};
+
+// The row shape the timeline list carries. The list widens its rows to
+// `unknown`, so a row is parsed against this schema before the pin reads
+// message ids off it.
+const timelineRowSchema = z.object({
+    kind: z.string().optional(),
+    message: z.object({ info: z.object({ id: z.string().optional() }).optional() }).optional(),
+    turn: z.object({ assistantMessageIds: z.array(z.string()).optional() }).optional(),
+});
+
 // The subset of the list ref this hook drives. Declared structurally so the
 // hook stays testable without a renderer and does not hard-depend on the list
 // implementation.
@@ -52,14 +86,14 @@ export interface TimelineListHandle {
         ) => () => void;
     };
     getScrollableNode: () => HTMLElement | null;
-    scrollToEnd: (options?: { animated?: boolean }) => unknown;
-    scrollToOffset: (params: { offset: number; animated?: boolean }) => unknown;
+    scrollToEnd: (options?: { animated?: boolean }) => void;
+    scrollToOffset: (params: { offset: number; animated?: boolean }) => void;
     scrollToIndex: (params: {
         index: number;
         animated?: boolean;
         viewPosition?: number;
         viewOffset?: number;
-    }) => unknown;
+    }) => void;
 }
 
 interface UseChatTimelineScrollOptions {
@@ -77,6 +111,11 @@ interface UseChatTimelineScrollOptions {
     // pinned to the end, so the session is never shown scrolled to the top.
     revealGate?: TimelineRevealGate | null;
     onActiveTurnChange?: (turnId: string | null) => void;
+    // The assistant message currently streaming, or null. A transition from
+    // null/another id to a new id is what starts a top pin: the freshly
+    // started answer holds its top edge at the top of the viewport while its
+    // text streams downward.
+    activeStreamingMessageId?: string | null;
 }
 
 
@@ -96,6 +135,8 @@ export interface UseChatTimelineScrollResult {
     /** A real gesture took the scroll; flips back on any explicit opt-in. */
     userOwnsScroll: boolean;
     isFollowingProgrammatically: boolean;
+    /** True while a streaming answer holds its top edge at the viewport top. */
+    isTopPinned: boolean;
     goToBottom: (mode?: 'instant' | 'smooth') => void;
     scrollToBottomOnSend: () => void;
     saveSnapshotNow: () => void;
@@ -107,6 +148,10 @@ export interface UseChatTimelineScrollResult {
 // Hiding is always immediate.
 const SHOW_SCROLL_BUTTON_DELAY_MS = 150;
 const SAVE_DEBOUNCE_MS = 150;
+// A top pin waits for the freshly started row to be measured. The list lays
+// rows out within a frame or two; the cap keeps a never-measured row from
+// spinning a rAF loop forever.
+const TOP_PIN_SETTLE_MAX_FRAMES = 8;
 
 export const useChatTimelineScroll = ({
     currentSessionId,
@@ -116,6 +161,7 @@ export const useChatTimelineScroll = ({
     sessionIsWorking,
     revealGate = null,
     onActiveTurnChange,
+    activeStreamingMessageId = null,
 }: UseChatTimelineScrollOptions): UseChatTimelineScrollResult => {
     const sessionIsWorkingRef = React.useRef(sessionIsWorking);
     sessionIsWorkingRef.current = sessionIsWorking;
@@ -141,6 +187,18 @@ export const useChatTimelineScroll = ({
     const userGenerationRef = React.useRef(0);
     const liveFollowGenerationRef = React.useRef<number | null>(0);
     const showButtonTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // ── top pin ─────────────────────────────────────────────────────────────
+    // The assistant message whose top edge is held at the top of the viewport,
+    // or null when no pin is active. The pin is a mode, not a scroll loop: it
+    // is written once when the streaming turn starts and never re-asserted, so
+    // the growing tail simply extends below the viewport.
+    const [topPinnedMessageId, setTopPinnedMessageId] = React.useState<string | null>(null);
+    const topPinnedMessageIdRef = React.useRef<string | null>(null);
+    topPinnedMessageIdRef.current = topPinnedMessageId;
+    // The streaming id the pin was last evaluated against, so a re-render of
+    // the same turn does not restart the pin.
+    const lastStreamingMessageIdRef = React.useRef<string | null>(null);
 
     const composerOverlayHeightRef = React.useRef(composerOverlayHeight);
     composerOverlayHeightRef.current = composerOverlayHeight;
@@ -180,12 +238,18 @@ export const useChatTimelineScroll = ({
     }, []);
 
     // A real gesture: stop every automatic movement until the user opts back
-    // in.
+    // in. This is the single release path for both bottom following and the
+    // top pin, so "the user scrolled" is detected in exactly one place.
     const onManualNavigation = React.useCallback(() => {
         userGenerationRef.current += 1;
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
         setUserOwnsScroll(true);
+        // A gesture ends the top pin: the reader is now driving the viewport.
+        if (topPinnedMessageIdRef.current !== null) {
+            topPinnedMessageIdRef.current = null;
+            setTopPinnedMessageId(null);
+        }
         // The end may already have been left by our own movement, in which
         // case no further at-end transition will fire — and while an animated
         // follow glide trails the live edge, isAtEndRef is deliberately not
@@ -264,7 +328,12 @@ export const useChatTimelineScroll = ({
         setIsPinned(true);
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
-        // Returning to the end is an explicit opt back IN to live follow.
+        // Returning to the end is an explicit opt back IN to live follow, and
+        // it ends any top pin: the reader asked for the live edge.
+        if (topPinnedMessageIdRef.current !== null) {
+            topPinnedMessageIdRef.current = null;
+            setTopPinnedMessageId(null);
+        }
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
         void listRef.current?.scrollToEnd({ animated: mode === 'smooth' });
@@ -311,6 +380,10 @@ export const useChatTimelineScroll = ({
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
+        if (topPinnedMessageIdRef.current !== null) {
+            topPinnedMessageIdRef.current = null;
+            setTopPinnedMessageId(null);
+        }
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
         void listRef.current?.scrollToEnd({ animated: false });
@@ -320,12 +393,27 @@ export const useChatTimelineScroll = ({
     // ── list callbacks ──────────────────────────────────────────────────────
     const registerList = React.useCallback((list: TimelineListHandle | null) => {
         listRef.current = list;
+        // SAFETY: `getScrollableNode` is the list's own scroll container, which
+        // the timeline renders as a <div>; the structural handle type only
+        // promises an HTMLElement, and narrowing by tag name would reject the
+        // test harness's equivalent node stub.
         const node = (list?.getScrollableNode() as HTMLDivElement | null) ?? null;
         scrollRef.current = node;
         setScrollNode(node);
     }, []);
 
     const onIsAtEndChange = React.useCallback((isAtEnd: boolean) => {
+        // A top pin deliberately sits away from the end: the viewport holds the
+        // answer's top edge while the tail grows below it. The pin owns the
+        // mode until a real gesture releases it, so end-crossings reported by
+        // the pin's own write are ignored. Reaching the end, however, means the
+        // reader is back on the live edge — the pin has served its purpose and
+        // ordinary bottom following takes over.
+        if (topPinnedMessageIdRef.current !== null) {
+            if (!isAtEnd) return;
+            topPinnedMessageIdRef.current = null;
+            setTopPinnedMessageId(null);
+        }
         // While an automatic movement owns the viewport, leaving the end is our
         // own doing (the glide trails its target between corrections) — not a
         // reason to offer the pill. Only a
@@ -355,21 +443,11 @@ export const useChatTimelineScroll = ({
         const state = list.getState();
         if (state.data.length === 0) return false;
 
-        const lastIndex = state.data.length - 1;
-        const lastTop = state.positionAtIndex(lastIndex);
-        const lastHeight = state.sizeAtIndex(lastIndex);
-        if (
-            typeof lastTop !== 'number'
-            || typeof lastHeight !== 'number'
-            || !Number.isFinite(lastTop)
-            || !Number.isFinite(lastHeight)
-        ) {
-            return false;
-        }
+        const lastRowBottom = getRowBottom(state, state.data.length - 1);
+        if (lastRowBottom === null) return false;
 
-        const realContentBottom = lastTop + Math.max(1, lastHeight);
         const visibleScrollLength = Math.max(0, state.scrollLength - composerOverlayHeightRef.current);
-        return realContentBottom > visibleScrollLength;
+        return lastRowBottom > visibleScrollLength;
     }, []);
 
     // While the list width is resizing every row re-wraps, and the list's
@@ -385,12 +463,12 @@ export const useChatTimelineScroll = ({
     // is never scrolled.
     const widthResizingRef = React.useRef(false);
     React.useEffect(() => {
-        if (!scrollNode || typeof ResizeObserver === 'undefined') return;
+        if (!scrollNode || platform.ResizeObserver === undefined) return;
         let lastWidth: number | null = null;
         let quietTimer: ReturnType<typeof setTimeout> | null = null;
         const observer = new ResizeObserver((observerEntries) => {
-            const width = observerEntries[observerEntries.length - 1]?.contentRect.width;
-            if (typeof width !== 'number') return;
+            const width = parseReportedWidth(observerEntries);
+            if (width === null) return;
             if (lastWidth === null) {
                 lastWidth = width;
                 return;
@@ -655,7 +733,7 @@ export const useChatTimelineScroll = ({
     // followEnd, which glides. A width resize is the one case handled for a
     // streaming reader as well — see the resize observer above.
     React.useEffect(() => {
-        if (!scrollNode || typeof MutationObserver === 'undefined') return;
+        if (!scrollNode || platform.MutationObserver === undefined) return;
         const content = scrollNode.firstElementChild;
         if (!content) return;
         const pin = () => {
@@ -689,7 +767,7 @@ export const useChatTimelineScroll = ({
         // and let one frame paint with the end out of view.
         const mutations = new MutationObserver(pin);
         mutations.observe(content, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
-        const resizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(pin);
+        const resizes = platform.ResizeObserver === undefined ? null : new ResizeObserver(pin);
         resizes?.observe(content);
         return () => {
             mutations.disconnect();
@@ -710,9 +788,131 @@ export const useChatTimelineScroll = ({
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
+        if (topPinnedMessageIdRef.current !== null) {
+            topPinnedMessageIdRef.current = null;
+            setTopPinnedMessageId(null);
+        }
+        lastStreamingMessageIdRef.current = null;
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
     }, [currentSessionId, currentSessionKey, flushSave, hideScrollButton]);
+
+    // ── top pin ─────────────────────────────────────────────────────────────
+    // A freshly started assistant turn holds its top edge at the top of the
+    // viewport while its text streams downward, so the reader watches the
+    // answer grow instead of chasing the live edge. The pin is written ONCE,
+    // on the frame the streaming turn starts; no further scroll is issued while
+    // it holds, so streaming chunks cost nothing here.
+    //
+    // It engages only when the reader was already following the end (a reader
+    // who scrolled away keeps their position) and only when the answer can
+    // actually reach the top (a short answer that fits on screen has nothing to
+    // pin, and scrolling it up would leave the viewport looking empty).
+    const stickyHeaderHeight = React.useCallback((): number => {
+        const container = scrollNode;
+        if (!container) return 0;
+        // The turn's user header is the sticky element inside the scroll
+        // container. Every turn renders the same header component, so any
+        // mounted one measures the same height; measure it instead of
+        // hardcoding. Absent (the sticky-header setting is off, or no turn is
+        // mounted yet) the answer's top goes to the very top of the viewport.
+        const sticky = container.querySelector<HTMLElement>('[data-turn-id] .sticky');
+        if (!sticky) return 0;
+        const height = sticky.getBoundingClientRect().height;
+        return Number.isFinite(height) ? Math.max(0, height) : 0;
+    }, [scrollNode]);
+
+    React.useEffect(() => {
+        const streamingId = activeStreamingMessageId;
+        if (streamingId === lastStreamingMessageIdRef.current) return;
+        lastStreamingMessageIdRef.current = streamingId;
+
+        // The stream ended (or handed off): release the pin so ordinary
+        // bottom following resumes. A reader who scrolled away is already in
+        // `free-scrolling` and is left untouched.
+        if (!streamingId) {
+            if (topPinnedMessageIdRef.current !== null) {
+                topPinnedMessageIdRef.current = null;
+                setTopPinnedMessageId(null);
+                if (modeRef.current === 'top-pinned') {
+                    // The viewport is still at the pinned position, away from
+                    // the end; hand control back to bottom following, which
+                    // glides to the live edge on the next data change.
+                    modeRef.current = 'following-end';
+                    liveFollowGenerationRef.current = userGenerationRef.current;
+                    isAtEndRef.current = false;
+                    setIsPinned(false);
+                }
+            }
+            return;
+        }
+
+        // Only a reader who is still following the end gets the pin; one who
+        // took over the scroll keeps their position.
+        if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return;
+
+        // The streaming entry is added in the same commit as the id, so the
+        // row may not be measured yet. Retry across a bounded number of frames
+        // until it is, then write the pin once. A user gesture or a session
+        // switch cancels the wait.
+        let frames = 0;
+        let frame: number | null = null;
+        const attempt = () => {
+            frame = null;
+            if (topPinnedMessageIdRef.current !== null) return;
+            if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return;
+
+            const list = listRef.current;
+            if (!list) return;
+            const state = list.getState();
+            const index = state.data.findIndex((rawRow) => {
+                const row = timelineRowSchema.safeParse(rawRow);
+                if (!row.success) return false;
+                if (row.data.kind === 'ungrouped') return row.data.message?.info?.id === streamingId;
+                return row.data.turn?.assistantMessageIds?.includes(streamingId) ?? false;
+            });
+            if (index < 0) {
+                if (frames < TOP_PIN_SETTLE_MAX_FRAMES) {
+                    frames += 1;
+                    frame = window.requestAnimationFrame(attempt);
+                }
+                return;
+            }
+
+            const rowTop = state.positionAtIndex(index);
+            if (!canPinRowTop({ rowTop, contentLength: state.contentLength, scrollLength: state.scrollLength })) {
+                // A short answer has nothing to pin; ordinary bottom following
+                // stays in charge so the viewport never looks empty.
+                return;
+            }
+            const offset = resolveTopPinOffset({ rowTop, stickyHeaderHeight: stickyHeaderHeight() });
+            if (offset === null) {
+                if (frames < TOP_PIN_SETTLE_MAX_FRAMES) {
+                    frames += 1;
+                    frame = window.requestAnimationFrame(attempt);
+                }
+                return;
+            }
+
+            topPinnedMessageIdRef.current = streamingId;
+            setTopPinnedMessageId(streamingId);
+            modeRef.current = 'top-pinned';
+            // The pin is not the reader leaving the end: keep the pill hidden
+            // and the live-follow generation armed so a later return to the
+            // end is still recognised.
+            hideScrollButton();
+            void list.scrollToOffset({ offset, animated: false });
+        };
+
+        if (platform.window === undefined) {
+            attempt();
+            return;
+        }
+        frame = window.requestAnimationFrame(attempt);
+        return () => {
+            if (frame !== null) window.cancelAnimationFrame(frame);
+        };
+    }, [activeStreamingMessageId, hideScrollButton, scrollNode, stickyHeaderHeight]);
 
     // Suppress the overlay scrollbar thumb while automatic movement owns the
     // scroll position, so it does not jump on each correction.
@@ -811,6 +1011,7 @@ export const useChatTimelineScroll = ({
         showScrollButton,
         userOwnsScroll,
         isFollowingProgrammatically,
+        isTopPinned: topPinnedMessageId !== null,
         goToBottom,
         scrollToBottomOnSend,
         saveSnapshotNow,

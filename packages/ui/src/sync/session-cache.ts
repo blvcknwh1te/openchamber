@@ -6,7 +6,7 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import type { FileDiff } from "./types"
+import type { FileDiff, LiveCompactionRecords } from "./types"
 
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
@@ -16,6 +16,7 @@ type SessionCache = {
   part: Record<string, Part[] | undefined>
   permission: Record<string, PermissionRequest[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
+  live_compaction?: LiveCompactionRecords | undefined
 }
 
 export function getProtectedSessionCacheIds(store: SessionCache): Set<string> {
@@ -81,6 +82,14 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
     delete store.session_status[sessionID]
     delete store.permission[sessionID]
     delete store.question[sessionID]
+  }
+
+  // The compaction records are read-only, so the ones that survive are collected
+  // rather than deleted one by one.
+  if (store.live_compaction) {
+    store.live_compaction = Object.fromEntries(
+      Object.entries(store.live_compaction).filter(([sessionID]) => !stale.has(sessionID)),
+    )
   }
 }
 

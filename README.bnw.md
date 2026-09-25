@@ -22,7 +22,20 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - Custom themes from `~/.config/openchamber/themes` load in the VS Code runtime.
 - `~/.config/openchamber/custom.css` is injected into every webview and applied after the theme.
 - Editing a theme file or `custom.css` on disk applies without reloading: the host watches the files and pushes the update to open webviews.
-- Chat spacing, tool colors, and font sizes live in `custom.css`. The horizontal chat padding is the `--chat-inline-pad` variable, and the user message row uses the `chat-user-row` class plus `--chat-user-row-bg`.
+- Chat spacing, tool colors, and font sizes live in `custom.css`. The variables that are worth touching:
+  - `--chat-inline-pad` — horizontal padding of the chat columns (messages, composer, container).
+  - `--chat-user-message-bg` — the user bubble itself.
+  - `--chat-user-row-bg` — the full-width strip the user bubble sits on, so you can paint that band without touching the app canvas.
+  - `--background` — the app canvas, including the chat background.
+  - `--foreground`, `--muted-foreground`, `--surface-muted-foreground` — answer text and secondary text.
+  - `--tools-title`, `--tools-description`, `--tools-icon` — tool and thinking rows.
+  - `--chat-divider` — dividers, including the one before a turn result.
+  - `--markdown-heading1`, `--markdown-heading2`, `--markdown-heading3` — headings inside answers.
+
+### Settings
+
+- Appearance has `custom.css` actions: Open / create writes the fork template when the file is missing and reveals it in the editor; Reset to defaults overwrites the file with that template. Reset has no undo, so keep a copy of anything you care about.
+- A back button sits in the settings header next to the search box. It walks back through the pages you visited and closes Settings once there is nothing left to go back to — the X is still there for closing outright.
 
 ### Reload and restart
 
@@ -47,7 +60,10 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - The per-message link budget counts links, not candidates. A message holds far more path-shaped tokens than real references, and spending the budget on those left every later path unlinked. A link also stays granted while its text is unchanged, so a repeated annotation pass no longer drops or re-probes it.
 - A reference resolves when the opened folder sits inside the repository or the repository inside the opened folder, and a path without an extension is searched as a directory as well, so `packages/ui/...` and folder references link in both cases.
 - The automatic compaction summary is no longer rendered as an assistant answer. Compaction itself is unchanged, and the summary stays in the session.
+- The "Context compacted" notice appears while the summary streams, instead of only after the turn settles.
 - Older history stays reachable in the VS Code webview. A session whose messages were already materialized (realtime events, a send confirmation) no longer marks itself as fully loaded while OpenCode coverage is still unknown, so the initial page is fetched, the real cursor is registered, and scrolling up loads older messages again.
+- A streaming answer aligns to the top: when a new answer starts streaming, its first line pins to the top of the viewport and the text grows downward, instead of the view chasing the bottom. The first manual scroll releases the pin and following the live edge works again.
+- A large markdown table in a user message collapses to a few rows with a soft bottom fade — in the sticky header too — and expands by clicking the message like any other truncated text.
 
 ### Permission descriptions
 

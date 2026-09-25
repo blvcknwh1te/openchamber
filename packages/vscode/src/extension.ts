@@ -4,6 +4,7 @@ import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { TableViewerPanelProvider } from './TableViewerPanelProvider';
 import { CustomAssetsWatcher } from './customAssetsWatcher';
+import { registerCustomCssCommands } from './customCss';
 import { OpenCodeConfigWatcher } from './opencodeConfigWatcher';
 import { ReloadSignalWatcher } from './reloadSignalWatcher';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
@@ -227,6 +228,10 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   customAssetsWatcher.start();
   context.subscriptions.push(customAssetsWatcher);
+
+  // [OC-PATCH: custom-css] Settings actions: create/open and reset the same
+  // `~/.config/openchamber/custom.css` the injection and the watcher above use.
+  registerCustomCssCommands(context);
 
   // [OC-PATCH: opencode-config-live] Restart the managed opencode server when
   // opencode.json(c) (global or project) changes on disk, so config edits are

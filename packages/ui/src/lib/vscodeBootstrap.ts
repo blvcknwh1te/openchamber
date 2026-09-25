@@ -6,6 +6,8 @@
 export interface VSCodeBootstrapConfig {
   workspaceFolder?: unknown;
   workspaceFolders?: unknown;
+  /** Absolute path of the user-level custom.css the extension host injects. */
+  customCssPath?: unknown;
 }
 
 export const getVSCodeBootstrapConfig = (): VSCodeBootstrapConfig | null => {

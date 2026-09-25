@@ -10,7 +10,7 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client"
 import { Binary } from "./binary"
-import type { FileDiff, GlobalState, State } from "./types"
+import type { FileDiff, GlobalState, LiveCompactionRecord, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
@@ -179,6 +179,27 @@ export type DirectoryEventResult = boolean | {
     messageID: string
     partID?: string
   }
+}
+
+/**
+ * Drops the live compaction shadow record of a session, optionally only when it
+ * is the record for `messageID`. Returns whether state changed.
+ *
+ * Called wherever the compaction stops being live: the persisted part landed,
+ * the message it describes was removed, or the session was dropped. The record
+ * is never dropped because time passed - the notice must stay on screen until
+ * the authoritative row replaces it, which is the whole point of the record.
+ */
+function dropLiveCompaction(draft: State, sessionID: string | undefined, messageID?: string): boolean {
+  if (!sessionID) return false
+  const current = draft.live_compaction[sessionID]
+  if (!current) return false
+  if (messageID !== undefined && current.messageID !== messageID) return false
+
+  const next = { ...draft.live_compaction }
+  delete next[sessionID]
+  draft.live_compaction = next
+  return true
 }
 
 function hasMessage(draft: State, sessionID: string | undefined, messageID: string): boolean {
@@ -351,6 +372,90 @@ export function applyDirectoryEvent(
       return true
     }
 
+    // A compaction streams its summary before OpenCode persists the
+    // `compaction` part the transcript notice keys off. These three events are
+    // that stream; they fill the live shadow record the message snapshot
+    // projects into a notice, and the persisted part ends it.
+    case "session.next.compaction.started": {
+      const props = event.properties as {
+        timestamp: number
+        sessionID: string
+        messageID: string
+        reason: "auto" | "manual"
+      }
+      const next: LiveCompactionRecord = {
+        sessionID: props.sessionID,
+        messageID: props.messageID,
+        reason: props.reason === "auto" ? "auto" : "manual",
+        streaming: true,
+        text: "",
+        startedAt: props.timestamp,
+      }
+      // A `started` for the compaction already tracked is that compaction retold:
+      // the relay can re-deliver it after a reconnect, and the text streamed
+      // since then has to survive, as must an `ended` that already landed. A
+      // genuinely new compaction carries a new message ID or a new start time,
+      // and only then does it replace the record.
+      const current = draft.live_compaction[props.sessionID]
+      if (current && current.messageID === props.messageID && current.startedAt === props.timestamp) {
+        return false
+      }
+
+      draft.live_compaction = { ...draft.live_compaction, [props.sessionID]: next }
+      return true
+    }
+
+    case "session.next.compaction.delta": {
+      const props = event.properties as { sessionID: string; messageID: string; text: string }
+      const current = draft.live_compaction[props.sessionID]
+      // A delta for an unknown or already finished compaction is not a
+      // transition the stream can produce: accepting it would put a notice on
+      // screen for a compaction this client never saw start.
+      if (!current || current.messageID !== props.messageID || !current.streaming) {
+        return false
+      }
+      const text = appendNonOverlappingDelta(current.text, props.text)
+      if (text === current.text) return false
+
+      draft.live_compaction = {
+        ...draft.live_compaction,
+        [props.sessionID]: { ...current, text },
+      }
+      return true
+    }
+
+    case "session.next.compaction.ended": {
+      const props = event.properties as { timestamp: number; sessionID: string; messageID: string; text: string }
+      const current = draft.live_compaction[props.sessionID]
+      if (!current || current.messageID !== props.messageID) return false
+
+      // The event carries the whole summary, so it replaces whatever the deltas
+      // accumulated instead of extending them.
+      const text = typeof props.text === "string" ? props.text : current.text
+      if (!current.streaming && current.text === text) return false
+
+      draft.live_compaction = {
+        ...draft.live_compaction,
+        [props.sessionID]: { ...current, streaming: false, text, endedAt: props.timestamp },
+      }
+      return true
+    }
+
+    // OpenCode's own "a compaction finished" signal. It carries no message ID,
+    // so it only stops the session's stream: the persisted part still decides
+    // when the live row goes away.
+    case "session.compacted": {
+      const props = event.properties as { sessionID: string }
+      const current = draft.live_compaction[props.sessionID]
+      if (!current || !current.streaming) return false
+
+      draft.live_compaction = {
+        ...draft.live_compaction,
+        [props.sessionID]: { ...current, streaming: false },
+      }
+      return true
+    }
+
     case "message.updated": {
       const info = (event.properties as { info: Message }).info
       const messages = draft.message[info.sessionID]
@@ -395,6 +500,7 @@ export function applyDirectoryEvent(
         }
       }
       delete draft.part[props.messageID]
+      dropLiveCompaction(draft, props.sessionID, props.messageID)
       return true
     }
 
@@ -408,6 +514,11 @@ export function applyDirectoryEvent(
       const messageID = (part as { messageID?: string }).messageID
       const sessionID = props.sessionID ?? (part as { sessionID?: string }).sessionID
       if (!messageID) return false
+      // The persisted compaction part is the notice's authority. Matching on the
+      // session rather than the ID keeps a single notice even if the server
+      // stores the compaction under a different message ID than the one its
+      // started event announced.
+      const compactionSettled = part.type === "compaction" && dropLiveCompaction(draft, sessionID)
       const missingOwningMessage = !hasMessage(draft, sessionID, messageID)
       const parts = draft.part[messageID]
       if (!parts) {
@@ -425,7 +536,7 @@ export function applyDirectoryEvent(
       if (partIndex >= 0) {
         const previous = next[partIndex]
         if (shouldPreserveExistingPart(previous, part)) {
-          return false
+          return compactionSettled
         }
         const dedupeFields = getUpdatedDeltaFields(previous, part)
         next[partIndex] = dedupeFields.length > 0

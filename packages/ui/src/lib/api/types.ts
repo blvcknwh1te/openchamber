@@ -793,6 +793,14 @@ export interface VSCodeAPI {
   pickFiles?(options?: { extensions?: string[] }): Promise<unknown>;
   saveImage?(payload: unknown): Promise<unknown>;
   saveMarkdown?(payload: unknown): Promise<unknown>;
+  /**
+   * Reveal the user-level custom.css in the editor, creating it from `template`
+   * when it does not exist yet. The template text lives in the shared UI
+   * (`lib/customCss.ts`); the host owns the file location.
+   */
+  openCustomCss?(template: string): Promise<void>;
+  /** Overwrite the user-level custom.css with `template`, discarding user edits. */
+  resetCustomCss?(template: string): Promise<void>;
   /** Add a directory as a VS Code workspace folder; resolves with the full folder list after the add. */
   addWorkspaceFolder?(path: string): Promise<Array<{ name: string; path: string }>>;
 }

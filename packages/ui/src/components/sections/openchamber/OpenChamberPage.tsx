@@ -1,5 +1,6 @@
 import React from 'react';
 import { OpenChamberVisualSettings } from './OpenChamberVisualSettings';
+import { CustomCssSettings } from './CustomCssSettings';
 import { AboutSettings } from './AboutSettings';
 import { SessionRetentionSettings } from './SessionRetentionSettings';
 import { PasskeySettings } from './PasskeySettings';
@@ -164,21 +165,27 @@ const GeneralSectionContent: React.FC = () => {
 // Visual section: Theme Mode, Font Size, Spacing, Input Bar Offset (mobile), Nav Rail
 const VisualSectionContent: React.FC = () => {
     const isVSCode = isVSCodeRuntime();
-    return <OpenChamberVisualSettings visibleSettings={[
-        'theme',
-        'windowControlsPosition',
-        'pwaInstallName',
-        'pwaOrientation',
-        'mobileKeyboardMode',
-        'timeFormat',
-        ...(!isVSCode ? ['weekStart' as const] : []),
-        'fontSize',
-        'terminalFontSize',
-        'editorFontSize',
-        'spacing',
-        'scrollbars',
-        'inputBarOffset',
-    ]} />;
+    return (
+        <>
+            <OpenChamberVisualSettings visibleSettings={[
+                'theme',
+                'windowControlsPosition',
+                'pwaInstallName',
+                'pwaOrientation',
+                'mobileKeyboardMode',
+                'timeFormat',
+                ...(!isVSCode ? ['weekStart' as const] : []),
+                'fontSize',
+                'terminalFontSize',
+                'editorFontSize',
+                'spacing',
+                'scrollbars',
+                'inputBarOffset',
+            ]} />
+            {/* Self-gated: only the VS Code host exposes the custom.css actions. */}
+            <CustomCssSettings />
+        </>
+    );
 };
 
 // Chat section: User message rendering, Diff layout, Mobile status bar, Show reasoning traces, Follow-up behavior, Persist draft
