@@ -29,6 +29,32 @@ export const snapScaleToPixelGrid = (value: number, devicePixelRatio = 1): numbe
   return Math.round(value / step) * step;
 };
 
+/**
+ * Opening zoom for a table opened in the viewer: the whole table width is made
+ * to fit the panel width, so nothing of the table is cut off horizontally on
+ * open. Height takes no part in the calculation — a table taller than the panel
+ * keeps its full width and the rest is reached by panning.
+ *
+ * The pixel-grid snap may only round the fitted scale down. A round-up would
+ * push the right edge past the panel, which is exactly the clipping this helper
+ * exists to prevent, so the snapped value is used only when it is not larger
+ * than the exact ratio — and only when it stays above zero, since a whole-pixel
+ * grid step on a standard display would otherwise collapse a small fit to none.
+ * The manual-zoom maximum still bounds the result, which can only leave side
+ * margins on a very narrow table, never clip one.
+ */
+export const fitScaleToWidth = (
+  viewportWidth: number,
+  contentWidth: number,
+  devicePixelRatio = 1,
+): number => {
+  if (!(viewportWidth > 0) || !(contentWidth > 0)) return 1;
+
+  const fit = viewportWidth / contentWidth;
+  const snapped = snapScaleToPixelGrid(fit, devicePixelRatio);
+  return Math.min(TABLE_VIEWER_SCALE.max, snapped > 0 ? Math.min(fit, snapped) : fit);
+};
+
 /** Zoom applied by one wheel notch, expressed as a multiplier around 1. */
 export const TABLE_VIEWER_WHEEL_FACTOR = 1 + TABLE_VIEWER_SCALE.wheelStep;
 

@@ -10,8 +10,7 @@ mock.module('@/components/chat/MarkdownRenderer', () => ({
   SimpleMarkdownRenderer: ({ content }: { content: string }) => <div data-content={content} />,
 }));
 
-const { TABLE_VIEWER_SCALE, clampScale, snapScaleToPixelGrid, zoomTableAtPointer } =
-  await import('./tableViewerConstants');
+const { TABLE_VIEWER_SCALE, fitScaleToWidth, zoomTableAtPointer } = await import('./tableViewerConstants');
 const { TableViewerView } = await import('./TableViewerView');
 
 const WIDE_TABLE = [
@@ -99,13 +98,16 @@ describe('TableViewerView', () => {
   test('fits a wide table down to the panel width', async () => {
     await renderFitted(WIDE_TABLE, 400, { width: 1200, height: 100 });
 
-    expect(getScale()).toBeCloseTo(clampScale(snapScaleToPixelGrid(400 / 1200, 1)), 5);
+    expect(getScale()).toBeCloseTo(400 / 1200, 5);
   });
 
-  test('never fits below the configured minimum scale', async () => {
+  test('never fits wider than the panel, even for an extremely wide table', async () => {
     await renderFitted(WIDE_TABLE, 100, { width: 4000, height: 100 });
 
-    expect(getScale()).toBeCloseTo(TABLE_VIEWER_SCALE.min, 5);
+    // Below the manual minimum on purpose: the whole table width must fit.
+    const scale = getScale();
+    expect(scale).toBeCloseTo(100 / 4000, 5);
+    expect(scale * 4000).toBeLessThanOrEqual(100 + 1e-6);
   });
 
   test('enlarges a small table to fill the panel', async () => {
@@ -114,19 +116,26 @@ describe('TableViewerView', () => {
     expect(getScale()).toBeCloseTo(2, 5);
   });
 
-  test('fills the tighter axis when the table is taller than it is wide', async () => {
-    await renderFitted(WIDE_TABLE, 800, { width: 100, height: 200 });
+  test('fits by width regardless of the table height', async () => {
+    await renderFitted(WIDE_TABLE, 800, { width: 400, height: 1600 });
 
-    // Both axes would allow 4x, so the configured maximum is what bounds it.
+    // A table taller than the panel used to be shrunk by the height too
+    // (min(2, 0.5) = 0.5), which is what left it short of the panel width.
+    expect(getScale()).toBeCloseTo(2, 5);
+  });
+
+  test('caps the opening zoom at the configured maximum', async () => {
+    await renderFitted(WIDE_TABLE, 2000, { width: 100, height: 100 });
+
+    // The cap can only leave side margins on a very narrow table, never clip it.
     expect(getScale()).toBeCloseTo(TABLE_VIEWER_SCALE.max, 5);
   });
 
-  test('snaps the fitted scale to the pixel grid so text is not resampled', async () => {
-    await renderFitted(WIDE_TABLE, 400, { width: 1200, height: 100 });
+  test('paints the panel on the muted surface so the table stands out', async () => {
+    await renderFitted(WIDE_TABLE, 800, { width: 400, height: 100 });
 
-    // A fractional zoom makes Chromium resample the glyphs, which is what read
-    // as unstable quality across scales; the applied value must sit on the grid.
-    expect(getScale()).toBeCloseTo(0.33, 5);
+    const viewport = getContent().parentElement;
+    expect(viewport?.className).toContain('bg-surface-muted');
   });
 
   test('scales layout with zoom so text stays sharp', async () => {
@@ -144,6 +153,38 @@ describe('TableViewerView', () => {
 
     const transform = getContent().style.transform;
     expect(transform).toContain('translate(-50%, -50%)');
+  });
+});
+
+describe('fitScaleToWidth', () => {
+  test('fits the width exactly', () => {
+    expect(fitScaleToWidth(900, 1200)).toBeCloseTo(0.75, 5);
+  });
+
+  test('keeps an extremely wide table fitted, below the manual minimum', () => {
+    expect(fitScaleToWidth(100, 4000)).toBeCloseTo(0.025, 5);
+  });
+
+  test('caps the enlargement at the manual maximum', () => {
+    expect(fitScaleToWidth(2000, 100)).toBe(TABLE_VIEWER_SCALE.max);
+  });
+
+  test('snaps down to the pixel grid when that keeps the width visible', () => {
+    // 1600/1000 = 1.6 and a retina grid step is 0.5, so the fit lands on 1.5.
+    expect(fitScaleToWidth(1600, 1000, 2)).toBeCloseTo(1.5, 5);
+  });
+
+  test('never rounds a fit up past the panel width', () => {
+    // 1.4 on a 0.5 grid would round up to 1.5 and clip the right edge; the
+    // exact ratio wins instead.
+    const scale = fitScaleToWidth(1400, 1000, 2);
+    expect(scale).toBeCloseTo(1.4, 5);
+    expect(scale * 1000).toBeLessThanOrEqual(1400 + 1e-6);
+  });
+
+  test('falls back to the neutral scale without measurements', () => {
+    expect(fitScaleToWidth(0, 1200)).toBe(1);
+    expect(fitScaleToWidth(900, 0)).toBe(1);
   });
 });
 

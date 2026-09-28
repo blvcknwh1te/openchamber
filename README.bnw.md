@@ -36,6 +36,7 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 
 - Appearance has `custom.css` actions: Open / create writes the fork template when the file is missing and reveals it in the editor; Reset to defaults overwrites the file with that template. Reset has no undo, so keep a copy of anything you care about.
 - A back button sits in the settings header next to the search box. It walks back through the pages you visited and closes Settings once there is nothing left to go back to — the X is still there for closing outright.
+- The same back button is there in the narrow, sidebar-width settings layout, where the settings root used to offer the X alone: on the root it closes Settings like the X, on a subpage it steps one level up.
 
 ### Reload and restart
 
@@ -62,8 +63,13 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - The automatic compaction summary is no longer rendered as an assistant answer. Compaction itself is unchanged, and the summary stays in the session.
 - The "Context compacted" notice appears while the summary streams, instead of only after the turn settles.
 - Older history stays reachable in the VS Code webview. A session whose messages were already materialized (realtime events, a send confirmation) no longer marks itself as fully loaded while OpenCode coverage is still unknown, so the initial page is fetched, the real cursor is registered, and scrolling up loads older messages again.
-- A streaming answer aligns to the top: when a new answer starts streaming, its first line pins to the top of the viewport and the text grows downward, instead of the view chasing the bottom. The first manual scroll releases the pin and following the live edge works again.
-- A large markdown table in a user message collapses to a few rows with a soft bottom fade — in the sticky header too — and expands by clicking the message like any other truncated text.
+- A streaming answer aligns to the top: when a new answer starts streaming, its first line pins to the top of the viewport and the text grows downward, instead of the view chasing the bottom. The pin survives the step boundaries inside one answer — the end of a streaming message no longer releases it or re-issues it for the next one — and the end re-asserts that follow a send leave an active pin alone. The first manual scroll releases the pin and following the live edge works again.
+- A large markdown table in a user message collapses to a few rows with a soft bottom fade and expands by clicking the message like any other truncated text. In the sticky prompt header the table is always collapsed, including when message collapsing is switched off, so the header keeps its fixed height.
+
+### Table panel
+
+- The panel that opens from the expand action on a chat table scales the table so its whole width fits the panel width on open, whatever the table height: a tall table keeps its full width instead of being shrunk to fit vertically, and a wide one is scaled down until nothing is cut off side to side. Wheel zoom and Ctrl-drag pan work as before.
+- The panel paints the muted surface behind the table, so the table's own elevated background and border read as a distinct sheet instead of blending into the panel.
 
 ### Permission descriptions
 

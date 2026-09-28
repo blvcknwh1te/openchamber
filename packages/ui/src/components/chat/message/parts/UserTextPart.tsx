@@ -16,6 +16,7 @@ import {
 import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
 import { extractTerminalContexts } from '@/lib/messages/terminalContext';
 import { readContextPart } from '@/lib/messages/contextParts';
+import { useStickyUserHeader } from '../../components/stickyUserHeaderContext';
 import UserContextPart from './UserContextPart';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
@@ -85,6 +86,13 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
     const isControlled = messageExpanded !== undefined;
     const effectiveExpanded = messageExpanded ?? isExpanded;
     const isCollapsed = collapsibleUserMessages && !effectiveExpanded;
+    const inStickyUserHeader = useStickyUserHeader();
+    // `line-clamp-2` clamps line boxes only, so a table keeps its natural
+    // height inside a collapsed message. The decorated table wrapper is bounded
+    // on its own instead, and the sticky prompt header must never grow to the
+    // full table height: there the bound holds regardless of the collapsing
+    // setting and of the message's expanded state.
+    const clampTables = isCollapsed || inStickyUserHeader;
     const textRef = React.useRef<HTMLDivElement>(null);
     const skillByName = React.useMemo(() => new Map(skills.map((skill) => [skill.name, skill])), [skills]);
 
@@ -328,14 +336,14 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                                  "[&_[data-md-code-line]]:!inline",
                                  "[&_[data-md-code-line-number]]:hidden",
                                  "[&_[data-md-code-line-break]]:!inline",
-                                 // A table is not a line box, so `line-clamp-2`
-                                 // cannot clamp it. Bound the decorated table
-                                 // wrapper to roughly three rows and fade its
-                                 // bottom edge so the cut reads as truncation.
-                                 "[&_[data-markdown='table-wrapper']]:max-h-28",
-                                 "[&_[data-markdown='table-wrapper']]:overflow-hidden",
-                                 "[&_[data-markdown='table-wrapper']]:mask-b-from-60%",
-                             ]
+                             ],
+                            clampTables && [
+                                // Roughly three rows, with the bottom edge faded
+                                // so the cut reads as truncation.
+                                "[&_[data-markdown='table-wrapper']]:max-h-28",
+                                "[&_[data-markdown='table-wrapper']]:overflow-hidden",
+                                "[&_[data-markdown='table-wrapper']]:mask-b-from-60%",
+                            ]
                         )}
                         disableLinkSafety
                         enableFileReferences={false}

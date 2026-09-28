@@ -213,6 +213,19 @@ Why: only navigation tools use the compact static path; all other tools need obs
 ## Quick map of files in this folder
 
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
+  - `UserTextPart` bounds markdown tables through the decorated table wrapper
+    (`[data-markdown="table-wrapper"]`, `TABLE_WRAPPER_SELECTOR`), because
+    `line-clamp-2` only clamps line boxes. The bound lives in `clampTables`
+    (`isCollapsed || inStickyUserHeader`): while the message is collapsed, and
+    always while it is rendered as the sticky prompt header. The sticky flag
+    reaches the part as `StickyUserHeaderContext`
+    (`components/stickyUserHeaderContext.ts`), published by `TurnItem` around
+    the sticky user message, so the header keeps its fixed height regardless of
+    the `collapsibleUserMessages` setting and of the message's expanded state.
+    The bound turns off only for a regular, non-collapsed user message: with
+    `collapsibleUserMessages` off and no sticky header, a long table keeps its
+    full height. `MessageBody`'s 40% `useStickyScrollableUserContent` limit is
+    independent of this and applies only in inline actions mode.
 - User-attached context (inline code comments, terminal selections, browser
   annotations, PR comments/checks): `UserContextPart.tsx`. `UserTextPart`
   routes to it when the part's metadata carries an `openchamberContext`

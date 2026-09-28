@@ -236,6 +236,13 @@ const flushFrames = async () => {
     });
 };
 
+// Timers that the hook arms itself (the end re-asserts) need real time.
+const flushMs = async (ms: number) => {
+    await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+};
+
 const createListHandle = (
     node: ScrollNodeStub,
     state: TimelineListMeasurementState,
@@ -282,10 +289,19 @@ describe('useChatTimelineScroll end following', () => {
     const renderPinHarness = async (
         node: ScrollNodeStub,
         streamingId: StreamingIdBox,
+        options: {
+            // Whether the turn is still producing output. A box, so a test can
+            // retire the turn and re-render.
+            readonly working?: { value: boolean };
+            // The list's reported geometry, when a test needs an answer that
+            // cannot reach the viewport top yet.
+            readonly state?: TimelineListMeasurementState;
+        } = {},
     ) => {
         const dom = installMinimalDom();
         const root: Root = createRoot(dom.container);
-        const { handle, scrolls, endCalls } = createListHandle(node, buildState());
+        const working = options.working ?? { value: true };
+        const { handle, scrolls, endCalls } = createListHandle(node, options.state ?? buildState());
 
         let result!: UseChatTimelineScrollResult;
 
@@ -295,7 +311,7 @@ describe('useChatTimelineScroll end following', () => {
                 currentSessionKey: 'ses_1',
                 sessionMessageCount: 2,
                 composerOverlayHeight: 0,
-                sessionIsWorking: true,
+                sessionIsWorking: working.value,
                 activeStreamingMessageId: streamingId.value,
             });
             React.useLayoutEffect(() => {
@@ -397,6 +413,20 @@ describe('useChatTimelineScroll end following', () => {
 
             expect(node.scrollTop).toBe(300);
             expect(harness.scrolls).toEqual([1600]);
+
+            // The next output of the turn does not win the scroll back: after a
+            // gesture the reader owns the viewport until they opt in again.
+            streamingId.value = 'msg_3';
+            await harness.rerender();
+            await flushFrames();
+
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([1600]);
+            expect(node.scrollTop).toBe(300);
         } finally {
             await harness.unmount();
         }
@@ -455,7 +485,7 @@ describe('useChatTimelineScroll end following', () => {
         }
     });
 
-    test("re-pins a new streaming message to its own top, never to the user's message", async () => {
+    test('holds one pin per answer across the step handoff of a running turn', async () => {
         const node = createScrollNode({ messageTops: { msg_2: 1600, msg_3: 2400 } });
         const streamingId: StreamingIdBox = { value: null };
         const harness = await renderPinHarness(node, streamingId);
@@ -465,19 +495,229 @@ describe('useChatTimelineScroll end following', () => {
             await harness.rerender();
             await flushFrames();
 
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600]);
+
+            // The step boundary: the finished step's message gets
+            // `time.completed` before the next step's message exists, so the
+            // trailing id goes null while the turn keeps running. The hold must
+            // survive it — dropping it here hands the viewport back to end
+            // maintenance for the rest of the step.
+            streamingId.value = null;
+            await harness.rerender();
+            await flushFrames();
+
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600]);
+            expect(node.scrollTop).toBe(1600);
+
+            // The next step of the SAME turn appends below the edge that is
+            // already held: no second write, no second jump.
             streamingId.value = 'msg_3';
             await harness.rerender();
             await flushFrames();
 
-            expect(harness.scrolls).toEqual([1600, 2400]);
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600]);
             expect(harness.scrolls).not.toContain(1200);
+            expect(node.scrollTop).toBe(1600);
+
+            // Growth inside the step moves nothing either: the held edge is the
+            // reading position.
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            expect(harness.scrolls).toEqual([1600]);
+            expect(node.scrollTop).toBe(1600);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('keeps the held edge when the turn retires and drops only the waiting request', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: 'msg_2' };
+        const working = { value: true };
+        // The answer is shorter than the viewport, so there is nothing to pin
+        // yet: the request waits instead of writing a clamped offset.
+        const state: TimelineListMeasurementState = {
+            data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
+            scroll: 0,
+            scrollLength: 700,
+            contentLength: 2000,
+            positionAtIndex: () => 1200,
+            sizeAtIndex: () => 1000,
+        };
+        const harness = await renderPinHarness(node, streamingId, { working, state });
+
+        try {
+            await flushFrames();
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([]);
+
+            // The turn retires while the answer never reached the top: the
+            // waiting request belongs to that turn and is dropped, so no later
+            // growth measures or scrolls for it.
+            working.value = false;
+            await harness.rerender();
+            await flushFrames();
+
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([]);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('pins an answer that only becomes tall enough after it started', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: 'msg_2' };
+        // Mutable on purpose: the growth of the streaming answer is what the
+        // list reports through its own measurement state.
+        const state = {
+            data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
+            scroll: 0,
+            scrollLength: 700,
+            contentLength: 2000,
+            positionAtIndex: () => 1200,
+            sizeAtIndex: () => 1000,
+        };
+        const harness = await renderPinHarness(node, streamingId, { state });
+
+        try {
+            await flushFrames();
+            expect(harness.scrolls).toEqual([]);
+
+            // The stream grows past the viewport: the growth signal the list
+            // already emits retries the wait, so the hold lands without any new
+            // message id and without a frame loop.
+            state.contentLength = 4000;
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600]);
+            expect(node.scrollTop).toBe(1600);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('opens a streaming session on the answer top, not on the end', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: 'msg_2' };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            await flushFrames();
+
+            // The answer is already streaming when the session opens: its own
+            // top edge is the position the session is meant to show, so the
+            // growth signal lands the hold.
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600]);
+
+            // The entry settle arrives right after the session opened: while a
+            // hold belongs to the live answer, it must not settle the end —
+            // that would move the reader and drop the hold for the rest of the
+            // step, which is how the hold "worked only sometimes" at open.
+            await act(async () => {
+                await harness.result().restoreSnapshot();
+            });
+            await flushFrames();
+
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.endCalls).toEqual([]);
+            expect(node.scrollTop).toBe(1600);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('opens an idle session on the end', async () => {
+        const node = createScrollNode();
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            await flushFrames();
+
+            await act(async () => {
+                await harness.result().restoreSnapshot();
+            });
+
+            expect(harness.endCalls.length).toBe(1);
+            expect(harness.result().isTopPinned).toBe(false);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('keeps the end re-asserts of a send away from an active pin', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            // A send asks for the live edge while no answer is streaming yet.
+            act(() => {
+                harness.result().scrollToBottomOnSend();
+            });
+            expect(harness.endCalls.length).toBe(1);
+
+            // The reply starts streaming and its top edge is pinned.
+            streamingId.value = 'msg_2';
+            await harness.rerender();
+            await flushFrames();
             expect(harness.result().isTopPinned).toBe(true);
 
-            // The stream ends: releasing the pin scrolls nothing.
-            streamingId.value = null;
+            // Every scheduled re-assert (150/400/800ms) lands inside the pin
+            // window; none of them may drag the viewport back to the end.
+            await flushMs(900);
+
+            expect(harness.endCalls.length).toBe(1);
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(node.scrollTop).toBe(1600);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('a request for the edge during a stream outranks the pin until the reader drives again', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600, msg_3: 2400 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            streamingId.value = 'msg_2';
             await harness.rerender();
+            await flushFrames();
+            expect(harness.result().isTopPinned).toBe(true);
+
+            // The reader asks for the live edge while the answer is streaming:
+            // an explicit command, so the pin must not come back on the next
+            // output — not for this answer and not for the step that follows it.
+            act(() => {
+                harness.result().goToBottom();
+            });
             expect(harness.result().isTopPinned).toBe(false);
-            expect(harness.scrolls).toEqual([1600, 2400]);
+
+            streamingId.value = 'msg_3';
+            await harness.rerender();
+            await flushFrames();
+            expect(harness.result().isTopPinned).toBe(false);
+            expect(harness.scrolls).toEqual([1600]);
+
+            // Growth follows the end again, as the reader asked.
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+            expect(node.scrollTop).toBe(3300);
         } finally {
             await harness.unmount();
         }

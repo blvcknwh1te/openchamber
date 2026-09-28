@@ -3,6 +3,7 @@ import React from 'react';
 import type { ChatMessageEntry, Turn } from '../lib/turns/types';
 import { stickyFadeBackground } from '../lib/stickyFade';
 import TurnAssistantBlock from './TurnAssistantBlock';
+import { StickyUserHeaderContext } from './stickyUserHeaderContext';
 
 interface TurnItemProps {
     turn: Turn;
@@ -106,10 +107,16 @@ const TurnItem: React.FC<TurnItemProps> = ({ turn, stickyUserHeader = true, rend
             {stickyUserHeader ? (
                 <div
                     className="sticky top-0 z-20 [overflow-anchor:none]"
+                    data-testid="sticky-user-header"
                     style={STICKY_HEADER_BACKGROUND}
                 >
                     <div className="relative z-10">
-                        {renderMessage(turn.userMessage)}
+                        {/* The header owns a fixed height, so parts rendered here
+                            clamp their markdown tables even when message
+                            collapsing is off. */}
+                        <StickyUserHeaderContext.Provider value={true}>
+                            {renderMessage(turn.userMessage)}
+                        </StickyUserHeaderContext.Provider>
                     </div>
                 </div>
             ) : (

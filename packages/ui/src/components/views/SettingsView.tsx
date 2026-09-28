@@ -55,6 +55,7 @@ import { useI18n } from '@/lib/i18n';
 import { Icon } from "@/components/icon/Icon";
 import { McpIcon } from '@/components/icons/McpIcon';
 import { OpenCodeReloadFooterAction } from '@/components/views/OpenCodeReloadFooterAction';
+import { resolveMobileBackAction } from '@/components/views/settingsMobileBack';
 import {
   selectPendingOpenCodeRestartCount,
   usePendingOpenCodeRestartStore,
@@ -705,18 +706,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     setMobileStage(def.kind === 'split' ? 'page-sidebar' : 'page-content');
   }, [isMobile, mobileStage, settingsSlug]);
 
-  const showBackButton = isMobile && mobileStage !== 'nav';
+  const mobileBackAction = resolveMobileBackAction({
+    isMobile,
+    stage: mobileStage,
+    canClose: onClose != null,
+  });
+  const showBackButton = mobileBackAction !== 'hidden';
   // Split pages drill down on mobile: nav → the page's own list → the item.
   // Back walks that path in reverse, so it takes one tap to reach the next
   // item instead of a round trip through the settings root.
   const backButtonTargetsPageSidebar = isMobile
     && mobileStage === 'page-content'
     && activePageMeta?.kind === 'split';
-  const mobileBackButtonLabel = backButtonTargetsPageSidebar
-    ? t('settings.view.actions.back')
-    : showBackButton
-      ? t('settings.view.actions.backToSettings')
-      : t('settings.view.actions.closeSettings');
+  const mobileBackButtonLabel = mobileBackAction === 'close'
+    ? t('settings.view.actions.closeSettings')
+    : backButtonTargetsPageSidebar
+      ? t('settings.view.actions.back')
+      : t('settings.view.actions.backToSettings');
   const openSettingsCombo = getEffectiveShortcutCombo(
     'open_settings',
     openSettingsShortcutOverride === undefined ? undefined : { open_settings: openSettingsShortcutOverride },
@@ -771,6 +777,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   }, [isMobile, mobileStage, settingsSlug]);
 
   const handleBack = React.useCallback(() => {
+    if (mobileBackAction === 'close') {
+      // The root list has no level above it inside Settings, so the control
+      // leaves Settings exactly like the X beside it.
+      onClose?.();
+      return;
+    }
+
     if (backButtonTargetsPageSidebar) {
       const currentDetail = typeof window !== 'undefined'
         ? getSettingsDetailHistoryEntry(window.history.state)
@@ -784,7 +797,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     }
 
     setMobileStage('nav');
-  }, [backButtonTargetsPageSidebar, runtimeCtx.isVSCode, settingsSlug]);
+  }, [backButtonTargetsPageSidebar, mobileBackAction, onClose, runtimeCtx.isVSCode, settingsSlug]);
 
   // Desktop has neither the mobile stage ladder nor a settings history of its
   // own, so the header back button walks a local stack of visited pages and,
@@ -1114,9 +1127,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         <div
           className={cn(
             'flex h-[var(--oc-header-height,56px)] shrink-0 items-center gap-2 px-3',
-            // The root nav list reads as a single quiet page — no divider and
-            // no back arrow (the X on the right is the only way out); subpages
-            // keep both.
+            // The root nav list reads as a single quiet page — no divider; its
+            // back control is the same one the subpages use, and at the root it
+            // leaves Settings like the X on the right.
             mobileStage !== 'nav' && 'border-b',
             'bg-background'
           )}
@@ -1127,6 +1140,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
               type="button"
               onClick={handleBack}
               aria-label={mobileBackButtonLabel}
+              title={mobileBackAction === 'close' ? closeSettingsTitle : mobileBackButtonLabel}
               className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <Icon name="arrow-left-s" className="h-5 w-5" />

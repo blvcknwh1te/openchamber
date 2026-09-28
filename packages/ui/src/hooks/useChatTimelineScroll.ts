@@ -137,10 +137,6 @@ export interface UseChatTimelineScrollResult {
 // Hiding is always immediate.
 const SHOW_SCROLL_BUTTON_DELAY_MS = 150;
 const SAVE_DEBOUNCE_MS = 150;
-// A top pin waits for the freshly started answer to be mounted and measured.
-// The list lays rows out within a frame or two; the cap keeps a never-measured
-// answer from spinning a rAF loop forever.
-const TOP_PIN_SETTLE_MAX_FRAMES = 8;
 
 export const useChatTimelineScroll = ({
     currentSessionId,
@@ -189,6 +185,38 @@ export const useChatTimelineScroll = ({
     // The streaming id the pin was last evaluated against, so a re-render of
     // the same answer does not restart the pin, while a new answer re-pins.
     const lastStreamingMessageIdRef = React.useRef<string | null>(null);
+    // A pin waiting for its hold to land: the streaming answer whose top edge
+    // belongs at the top of the viewport but whose geometry is not usable yet
+    // (the row is still an estimate) or whose answer does not reach the
+    // viewport top yet. The request survives until it lands and is retried by
+    // the content-growth signal the list already emits, so nothing runs per
+    // frame while it waits.
+    const topPinRequestRef = React.useRef<string | null>(null);
+    // The live attempt, read by `onTimelineDataChange` (declared above the pin
+    // block). Assigned during render, like the refs above.
+    const attemptTopPinRef = React.useRef<(messageId: string) => boolean>(() => false);
+    // The streaming id as of the last render, for the growth signal that must
+    // arm a pin without an id transition (a session opened mid-answer).
+    const activeStreamingMessageIdRef = React.useRef<string | null>(activeStreamingMessageId);
+    activeStreamingMessageIdRef.current = activeStreamingMessageId;
+    // Set when the reader explicitly asks for the live edge while an answer is
+    // still streaming: they want to watch the tail, so the top edge must not
+    // pull them back. Lifted by the reader's own gesture, by a later request for
+    // the edge made while nothing is streaming (a fresh send), and on the next
+    // session. Without it the pin would re-arm one signal after the "scroll to
+    // bottom" pill and undo the reader's own command.
+    const pinOptOutRef = React.useRef(false);
+
+    // The single release path for the pin: the request and the hold are dropped
+    // together and NOTHING is scrolled, so releasing can never move the
+    // viewport — the reader keeps the position they hold and ordinary
+    // end-following rules take over from there.
+    const releaseTopPin = React.useCallback(() => {
+        topPinRequestRef.current = null;
+        if (topPinnedMessageIdRef.current === null) return;
+        topPinnedMessageIdRef.current = null;
+        setTopPinnedMessageId(null);
+    }, []);
 
     const composerOverlayHeightRef = React.useRef(composerOverlayHeight);
     composerOverlayHeightRef.current = composerOverlayHeight;
@@ -237,10 +265,12 @@ export const useChatTimelineScroll = ({
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
         setUserOwnsScroll(true);
-        if (topPinnedMessageIdRef.current !== null) {
-            topPinnedMessageIdRef.current = null;
-            setTopPinnedMessageId(null);
-        }
+        releaseTopPin();
+        // The reader drives again: an explicit "watch the tail" choice made
+        // earlier does not survive their own gesture. Returning to the end
+        // afterwards re-arms ordinary following, and a fresh answer may pin
+        // again from there.
+        pinOptOutRef.current = false;
         // The end may already have been left by our own movement, in which
         // case no further at-end transition will fire — and while an animated
         // follow glide trails the live edge, isAtEndRef is deliberately not
@@ -253,7 +283,7 @@ export const useChatTimelineScroll = ({
             cancelShowButtonTimer();
             setShowScrollButton(true);
         }
-    }, [cancelShowButtonTimer]);
+    }, [cancelShowButtonTimer, releaseTopPin]);
 
     const isLiveFollowActive = React.useCallback(() => (
         liveFollowGenerationRef.current === userGenerationRef.current
@@ -320,10 +350,12 @@ export const useChatTimelineScroll = ({
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
         // Asking for the live edge ends any top pin: the reader wants the edge.
-        if (topPinnedMessageIdRef.current !== null) {
-            topPinnedMessageIdRef.current = null;
-            setTopPinnedMessageId(null);
-        }
+        releaseTopPin();
+        // Asked for the edge while an answer is streaming: the reader wants to
+        // watch the tail of THAT answer, so the top pin stays out until they
+        // opt in again (a gesture and back to the end) or a later send starts a
+        // fresh answer. Outside a stream there is nothing to opt out of.
+        pinOptOutRef.current = activeStreamingMessageIdRef.current !== null;
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
         void listRef.current?.scrollToEnd({ animated: mode === 'smooth' });
@@ -337,12 +369,19 @@ export const useChatTimelineScroll = ({
             goToBottomReassertTimersRef.current.push(setTimeout(() => {
                 if (userGenerationRef.current !== generation) return;
                 if (modeRef.current !== 'following-end') return;
+                // The reply that this send started is streaming again by now:
+                // its top pin — armed or already holding — is the reader's
+                // reading position, and landing on the end under it would be
+                // the up/down jiggle the pin exists to remove. The pin releases
+                // this window itself the moment the reader gestures or asks for
+                // the edge.
+                if (topPinnedMessageIdRef.current !== null || topPinRequestRef.current !== null) return;
                 const state = listRef.current?.getState();
                 if (state && resolveTimelineIsAtEnd(state) === true) return;
                 void listRef.current?.scrollToEnd({ animated: false });
             }, delay));
         }
-    }, [clearGoToBottomReasserts, hideScrollButton]);
+    }, [clearGoToBottomReasserts, hideScrollButton, releaseTopPin]);
 
     // User preference: with auto-follow off, streaming growth never moves the
     // viewport. Sending from the live edge still lands on the end; sending
@@ -365,20 +404,33 @@ export const useChatTimelineScroll = ({
         const sessionKey = currentSessionKeyRef.current;
         if (!sessionKey) return false;
 
+        // A hold (or the wait for one) that belongs to an answer still
+        // streaming IS the position this session opens with: the reader is
+        // meant to watch the live answer from its own top edge, and settling
+        // the end here would both move them and drop the hold for the rest of
+        // the step. A session opened with no answer in flight has nothing to
+        // pin and always lands on the end.
+        if (
+            activeStreamingMessageIdRef.current !== null
+            && (topPinnedMessageIdRef.current !== null || topPinRequestRef.current !== null)
+        ) {
+            return false;
+        }
+
         // Entering a session always returns to the live edge. Late async growth
         // is handled by the list staying at the end, not by a timed hold.
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
-        if (topPinnedMessageIdRef.current !== null) {
-            topPinnedMessageIdRef.current = null;
-            setTopPinnedMessageId(null);
-        }
+        releaseTopPin();
+        // A fresh entry always shows the end; a pin opted out of in the session
+        // that was just left does not carry over.
+        pinOptOutRef.current = false;
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
         void listRef.current?.scrollToEnd({ animated: false });
         return false;
-    }, [hideScrollButton]);
+    }, [hideScrollButton, releaseTopPin]);
 
     // ── list callbacks ──────────────────────────────────────────────────────
     const registerList = React.useCallback((list: TimelineListHandle | null) => {
@@ -395,10 +447,7 @@ export const useChatTimelineScroll = ({
     const onIsAtEndChange = React.useCallback((isAtEnd: boolean) => {
         // Reaching the end means the reader chose the live edge, so a pin that
         // still holds is dropped here: ordinary end following resumes.
-        if (isAtEnd && topPinnedMessageIdRef.current !== null) {
-            topPinnedMessageIdRef.current = null;
-            setTopPinnedMessageId(null);
-        }
+        if (isAtEnd) releaseTopPin();
         // While an automatic movement owns the viewport, leaving the end is our
         // own doing (the glide trails its target between corrections) — not a
         // reason to offer the pill. Only a
@@ -421,7 +470,7 @@ export const useChatTimelineScroll = ({
             scheduleShowScrollButton();
         }
         queueSave();
-    }, [hideScrollButton, isLiveFollowActive, queueSave, scheduleShowScrollButton]);
+    }, [hideScrollButton, isLiveFollowActive, queueSave, releaseTopPin, scheduleShowScrollButton]);
 
     // Whether the real rows are tall enough to scroll at all.
     const realContentOverflowsViewport = React.useCallback((list: TimelineListHandle): boolean => {
@@ -525,6 +574,26 @@ export const useChatTimelineScroll = ({
         // `following-end`, which is why a gesture or a return to the end
         // releases it without any extra state machine.
         if (topPinnedMessageIdRef.current !== null) return;
+
+        // A pending pin outranks everything below: the answer's top edge belongs
+        // at the top of the viewport as soon as it can reach it. The retry rides
+        // this growth signal, which the list already emits (the streaming tail
+        // grows inside one row), so it costs one measurement per growth event
+        // and only until the hold lands — no per-frame work, and no timer to
+        // outrun the layout. A pin is only ever ARMED on a streaming message id
+        // (see the top-pin effect), so a reader who released the hold by
+        // returning to the end is not pulled off the edge again here. Auto-follow
+        // off is excluded: with that preference growth must never move the
+        // viewport, and a wait outliving its first attempt is exactly growth
+        // moving it later.
+        const pendingPinId = topPinRequestRef.current;
+        if (
+            pendingPinId !== null
+            && streamingAutoFollowEnabledRef.current
+            && attemptTopPinRef.current(pendingPinId)
+        ) {
+            return;
+        }
 
         // Stranded-viewport rescue, independent of any follow mode or
         // preference: when off-screen size estimates settle smaller than
@@ -705,7 +774,15 @@ export const useChatTimelineScroll = ({
         let frame: number | null = null;
         const settle = () => {
             frame = null;
-            if (!userOwnsScrollRef.current && modeRef.current === 'following-end') {
+            // A hold that landed in the meantime is the reading position: the
+            // entry write would drag the viewport back down to the end it was
+            // already given, which is the frame of flicker between opening a
+            // streaming session and the answer's top edge.
+            if (
+                topPinnedMessageIdRef.current === null
+                && !userOwnsScrollRef.current
+                && modeRef.current === 'following-end'
+            ) {
                 const end = scrollNode.scrollHeight - scrollNode.clientHeight;
                 if (end - scrollNode.scrollTop > 1) scrollNode.scrollTop = end;
             }
@@ -731,6 +808,10 @@ export const useChatTimelineScroll = ({
         if (!content) return;
         const pin = () => {
             if (userOwnsScrollRef.current || !isAtEndRef.current || modeRef.current !== 'following-end') return;
+            // A held or pending top pin owns the viewport: growth of the tail —
+            // including a footer that renders after the answer finished — must
+            // not drag the reader down to the end they are reading away from.
+            if (topPinnedMessageIdRef.current !== null || topPinRequestRef.current !== null) return;
             if (widthResizingRef.current) {
                 // Re-wrapping rows: the scroll node's scrollHeight carries the
                 // list's stale total, so the end is the measured bottom of the
@@ -781,14 +862,12 @@ export const useChatTimelineScroll = ({
         isAtEndRef.current = true;
         setUserOwnsScroll(false);
         modeRef.current = 'following-end';
-        if (topPinnedMessageIdRef.current !== null) {
-            topPinnedMessageIdRef.current = null;
-            setTopPinnedMessageId(null);
-        }
+        releaseTopPin();
+        pinOptOutRef.current = false;
         lastStreamingMessageIdRef.current = null;
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
-    }, [currentSessionId, currentSessionKey, flushSave, hideScrollButton]);
+    }, [currentSessionId, currentSessionKey, flushSave, hideScrollButton, releaseTopPin]);
 
     // ── top pin ─────────────────────────────────────────────────────────────
     // A freshly started answer holds its OWN top edge at the top of the viewport
@@ -800,8 +879,12 @@ export const useChatTimelineScroll = ({
     //
     // The pin engages only while the reader is still following the end and it
     // only suppresses movement; it never changes the mode, so a real gesture or
-    // reaching the end releases it and leaves an ordinary following hook. The
-    // write is issued ONCE per answer, so streaming chunks cost nothing here.
+    // reaching the end releases it and leaves an ordinary following hook. Once
+    // the hold lands it is LATCHED: a whole answer costs one write, and the
+    // per-step handoff inside a turn (id → null → next id) neither drops nor
+    // re-issues it. Everything else that could move the viewport — end
+    // maintenance, the end-follow correction, the go-to-bottom re-asserts —
+    // steps aside while a request is armed or a hold is active.
     const stickyHeaderHeight = React.useCallback((): number => {
         const container = scrollNode;
         if (!container) return 0;
@@ -816,76 +899,83 @@ export const useChatTimelineScroll = ({
         return Number.isFinite(height) ? Math.max(0, height) : 0;
     }, [scrollNode]);
 
+    // One write of the hold, issued only when the anchor actually resolves.
+    // `false` means "not yet": the row is still an estimate, or the answer is
+    // short enough to fit on screen and has nothing to pin (pinning it would
+    // leave the viewport looking empty). The caller keeps the request armed and
+    // the growth signal retries, so the wait costs no frames.
+    const attemptTopPin = React.useCallback((messageId: string): boolean => {
+        const container = scrollNode;
+        if (!container) return false;
+        // A reader who took the scroll keeps it: nothing arms or re-arms under
+        // a gesture.
+        if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return false;
+
+        const listState = listRef.current?.getState();
+        const offset = resolveTopPinOffset({
+            assistantTop: measureMessageTop(container, messageId) ?? undefined,
+            stickyHeaderHeight: stickyHeaderHeight(),
+            contentLength: listState?.contentLength,
+            scrollLength: listState?.scrollLength,
+        });
+        if (offset === null) return false;
+
+        topPinRequestRef.current = null;
+        topPinnedMessageIdRef.current = messageId;
+        setTopPinnedMessageId(messageId);
+        // The pin is not the reader leaving the end: keep the pill hidden and
+        // the live-follow generation armed so a later return to the end is
+        // still recognised.
+        hideScrollButton();
+        void listRef.current?.scrollToOffset({ offset, animated: false });
+        return true;
+    }, [hideScrollButton, scrollNode, stickyHeaderHeight]);
+    attemptTopPinRef.current = attemptTopPin;
+
     React.useEffect(() => {
         const streamingId = activeStreamingMessageId;
         if (streamingId === lastStreamingMessageIdRef.current) return;
         lastStreamingMessageIdRef.current = streamingId;
 
-        // The stream ended (or handed off): drop the pin, so the next data
-        // change follows the end again. Nothing is scrolled here, so releasing
-        // the pin can never move the viewport upwards.
-        if (!streamingId) {
-            if (topPinnedMessageIdRef.current !== null) {
-                topPinnedMessageIdRef.current = null;
-                setTopPinnedMessageId(null);
-            }
-            return;
-        }
+        // A step boundary inside one running turn: the finished step's message
+        // gets `time.completed` before the next step's message exists, so the
+        // trailing id goes null while the answer keeps coming. The hold is
+        // LATCHED across that gap — dropping it here handed the viewport back
+        // to end maintenance for the rest of the step, and the next id then
+        // pinned the answer's top all over again. That re-issue is the up/down
+        // jiggle the reader sees on every new output.
+        if (!streamingId) return;
+
+        // A held pin already owns this answer's top edge: the new step appends
+        // BELOW the edge that is held, so re-writing the same kind of hold for
+        // it would only move the viewport. One hold per answer, not per step.
+        if (topPinnedMessageIdRef.current !== null) return;
+
+        // The reader explicitly asked for the live edge while an answer was
+        // streaming; that choice stands until they drive the scroll themselves.
+        if (pinOptOutRef.current) return;
 
         // Only a reader who is still following the end gets the pin; one who
         // took over the scroll keeps their position.
         if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return;
 
-        const container = scrollNode;
-        if (!container) return;
+        // The answer is mounted in the same commit as its id, but the list may
+        // still report an estimated offset for it, and a short answer cannot
+        // reach the top at all. Both are handled by arming the request: the
+        // attempt below lands now when the geometry is ready, otherwise the
+        // next growth signal retries it.
+        topPinRequestRef.current = streamingId;
+        attemptTopPin(streamingId);
+    }, [activeStreamingMessageId, attemptTopPin]);
 
-        // The answer is mounted in the same commit as its id, but its final
-        // height may not be measured yet. Retry across a bounded number of
-        // frames until the anchor resolves, then write the pin once. A user
-        // gesture or a session switch cancels the wait through the guards.
-        let frames = 0;
-        let frame: number | null = null;
-        const attempt = () => {
-            frame = null;
-            if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return;
-
-            const listState = listRef.current?.getState();
-            const offset = resolveTopPinOffset({
-                assistantTop: measureMessageTop(container, streamingId) ?? undefined,
-                stickyHeaderHeight: stickyHeaderHeight(),
-                contentLength: listState?.contentLength,
-                scrollLength: listState?.scrollLength,
-            });
-            if (offset === null) {
-                // The answer is either not measured yet or short enough to fit
-                // on screen (nothing to pin, and pinning it would leave the
-                // viewport looking empty). Waiting a bounded number of frames
-                // resolves the first case and leaves the second unpinned.
-                if (frames < TOP_PIN_SETTLE_MAX_FRAMES) {
-                    frames += 1;
-                    frame = window.requestAnimationFrame(attempt);
-                }
-                return;
-            }
-
-            topPinnedMessageIdRef.current = streamingId;
-            setTopPinnedMessageId(streamingId);
-            // The pin is not the reader leaving the end: keep the pill hidden
-            // and the live-follow generation armed so a later return to the
-            // end is still recognised.
-            hideScrollButton();
-            void listRef.current?.scrollToOffset({ offset, animated: false });
-        };
-
-        if (platform.window === undefined) {
-            attempt();
-            return;
-        }
-        frame = window.requestAnimationFrame(attempt);
-        return () => {
-            if (frame !== null) window.cancelAnimationFrame(frame);
-        };
-    }, [activeStreamingMessageId, hideScrollButton, scrollNode, stickyHeaderHeight]);
+    // A request that never resolved belongs to the turn that raised it: once the
+    // session stops working no answer is streaming, so it is dropped. The hold
+    // itself is NOT — the reader keeps reading the answer from the top edge they
+    // were given, exactly as when a gesture had not happened.
+    React.useEffect(() => {
+        if (sessionIsWorking) return;
+        topPinRequestRef.current = null;
+    }, [sessionIsWorking]);
 
     // Suppress the overlay scrollbar thumb while automatic movement owns the
     // scroll position, so it does not jump on each correction.

@@ -1,7 +1,7 @@
 import * as React from 'react';
 
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { clampScale, snapScaleToPixelGrid, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
+import { fitScaleToWidth, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
 import { isOnText, shouldStartPan } from './tableViewerPan';
 
 interface TableViewerViewProps {
@@ -17,11 +17,13 @@ type PanState = {
 };
 
 /**
- * Full-bleed surface for a single markdown table: the table is fitted to the
- * panel on open, panned by dragging the empty surround (or anywhere while Ctrl
- * is held) and zoomed with the wheel, the way an image preview behaves. The
- * table keeps native text selection unless Ctrl turns the press into a pan.
- * Nothing is drawn behind it and no scrollbars appear.
+ * Full-bleed surface for a single markdown table: the table is scaled so its
+ * whole width fits the panel width on open, panned by dragging the empty
+ * surround (or anywhere while Ctrl is held) and zoomed with the wheel, the way
+ * an image preview behaves. The table keeps native text selection unless Ctrl
+ * turns the press into a pan. The surface behind the table uses the muted
+ * background so the elevated table (its own `surface-elevated` wrapper) stays
+ * clearly separated instead of blending into the panel; no scrollbars appear.
  */
 export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) => {
   const viewportRef = React.useRef<HTMLDivElement>(null);
@@ -37,11 +39,14 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   // the table itself keeps native text selection.
   const [panArmed, setPanArmed] = React.useState(false);
 
+  // Writes a scale that was already resolved by its owner — `fitScaleToWidth`
+  // for the opening fit, `zoomTableAtPointer` for the wheel — so the value is
+  // applied as computed. The epsilon guard keeps the ResizeObserver's repeated
+  // measurements from re-rendering for no visible change.
   const applyScale = React.useCallback((next: number) => {
-    const snapped = clampScale(snapScaleToPixelGrid(next, window.devicePixelRatio || 1));
-    if (Math.abs(snapped - scaleRef.current) < TABLE_VIEWER_SCALE.epsilon) return;
-    scaleRef.current = snapped;
-    setScale(snapped);
+    if (Math.abs(next - scaleRef.current) < TABLE_VIEWER_SCALE.epsilon) return;
+    scaleRef.current = next;
+    setScale(next);
   }, []);
 
   // Fit to the panel when the markdown changes. The table is rendered by a
@@ -66,12 +71,10 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
     const fit = () => {
       const rect = content.getBoundingClientRect();
       const naturalWidth = rect.width;
-      const naturalHeight = rect.height;
-      if (naturalWidth <= 0 || naturalHeight <= 0) return;
+      if (naturalWidth <= 0) return;
 
-      // The table fills the viewport along its tighter axis, so neither a wide
-      // nor a tall table gets clipped and no empty margin is left over.
-      applyScale(Math.min(viewport.clientWidth / naturalWidth, viewport.clientHeight / naturalHeight));
+      // Fit across the width only, so the whole table is visible side to side.
+      applyScale(fitScaleToWidth(viewport.clientWidth, naturalWidth, window.devicePixelRatio || 1));
       fitted = true;
     };
 
@@ -180,7 +183,7 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   return (
     <div
       ref={viewportRef}
-      className={`h-full w-full cursor-grab overflow-hidden touch-none ${
+      className={`bg-surface-muted h-full w-full cursor-grab overflow-hidden touch-none ${
         dragging ? 'cursor-grabbing' : ''
       } ${panArmed ? 'select-none' : 'select-auto'}`}
       onPointerDown={beginPan}
