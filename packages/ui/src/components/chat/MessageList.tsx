@@ -309,6 +309,11 @@ interface MessageListProps {
     onIsAtEndChange?: (isAtEnd: boolean) => void;
     onListMetricsChange?: (metrics: { readonly footerSize: number }) => void;
     onTimelineDataChange?: () => void;
+    // The first assistant message of the answer in flight, or null when no
+    // answer is being produced. The list owns the turn projection, so it is the
+    // one place that knows where an answer begins; the timeline scroll hook
+    // anchors the top hold there. Reported on change only.
+    onAnswerAnchorMessageIdChange?: (messageId: string | null) => void;
     // Content that used to sit as siblings of the list inside the scroll
     // container. The list owns that container now, so they render as its
     // header/footer and scroll with the rows exactly as before.
@@ -1206,6 +1211,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     onIsAtEndChange,
     onListMetricsChange,
     onTimelineDataChange,
+    onAnswerAnchorMessageIdChange,
     listHeader,
     listFooter,
     scrollContainerProps,
@@ -1332,6 +1338,19 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         showTurnChangedFiles,
         planModeEnabled,
     });
+    // The answer currently being produced is the tail turn, and an answer starts
+    // at its FIRST assistant message: a turn is one message per step, and the
+    // message streaming right now is only the newest step. With no answer in
+    // flight the anchor is null, so the scroll hook knows the hold belongs to no
+    // answer.
+    const answerAnchorMessageId = sessionIsWorking
+        ? (streamingTurn?.headerMessageId ?? streamingTurn?.assistantMessageIds[0] ?? null)
+        : null;
+    const onAnswerAnchorMessageIdChangeRef = React.useRef(onAnswerAnchorMessageIdChange);
+    onAnswerAnchorMessageIdChangeRef.current = onAnswerAnchorMessageIdChange;
+    React.useEffect(() => {
+        onAnswerAnchorMessageIdChangeRef.current?.(answerAnchorMessageId);
+    }, [answerAnchorMessageId]);
     const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
     const tailHasAssistant = Boolean(streamingTurn?.assistantMessages.length);
     const turnsWithLaterAssistant = React.useMemo(() => {

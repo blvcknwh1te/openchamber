@@ -176,6 +176,8 @@ type ChatViewportProps = {
     onIsAtEndChange: (isAtEnd: boolean) => void;
     onListMetricsChange: (metrics: { readonly footerSize: number }) => void;
     onTimelineDataChange: () => void;
+    /** The first assistant message of the answer in flight, or null. */
+    onAnswerAnchorMessageIdChange: (messageId: string | null) => void;
     /** Releases live follow when the reader grabs the overlay scrollbar thumb. */
     onManualNavigation: () => void;
     renderedMessages: SessionMessageRecord[];
@@ -220,6 +222,7 @@ const ChatViewport = React.memo(({
     onIsAtEndChange,
     onListMetricsChange,
     onTimelineDataChange,
+    onAnswerAnchorMessageIdChange,
     onManualNavigation,
     renderedMessages,
     isLoadingOlder,
@@ -507,6 +510,7 @@ const ChatViewport = React.memo(({
                     onIsAtEndChange={onIsAtEndChange}
                     onListMetricsChange={onListMetricsChange}
                     onTimelineDataChange={onTimelineDataChange}
+                    onAnswerAnchorMessageIdChange={onAnswerAnchorMessageIdChange}
                     listHeader={listHeader}
                     listFooter={listFooter}
                     scrollContainerProps={scrollContainerProps}
@@ -1101,6 +1105,10 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         statusOverlayObserverRef.current?.disconnect();
         statusOverlayObserverRef.current = null;
     }, []);
+    // The list reports the first message of the answer in flight (it owns the
+    // turn projection). The timeline scroll hook anchors the top hold there, so
+    // the answer's first line is what stays at the top of the viewport.
+    const [answerAnchorMessageId, setAnswerAnchorMessageId] = React.useState<string | null>(null);
     const {
         scrollRef,
         scrollNode,
@@ -1126,6 +1134,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
         revealGate,
         onActiveTurnChange: handleActiveTurnChange,
         activeStreamingMessageId: streamingMessageId,
+        answerAnchorMessageId,
     });
 
     const viewportMessages = sessionMessages;
@@ -1539,6 +1548,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 onIsAtEndChange={onIsAtEndChange}
                 onListMetricsChange={onListMetricsChange}
                 onTimelineDataChange={onTimelineDataChange}
+                onAnswerAnchorMessageIdChange={setAnswerAnchorMessageId}
                 onManualNavigation={onManualNavigation}
                 messageListRef={messageListRef}
                 renderedMessages={timelineController.renderedMessages}

@@ -313,6 +313,10 @@ describe('useChatTimelineScroll end following', () => {
             // The list's reported geometry, when a test needs an answer that
             // cannot reach the viewport top yet.
             readonly state?: TimelineListMeasurementState;
+            // The FIRST message of the running answer. A real turn reports it,
+            // and a turn is one message per step: without it the hold falls back
+            // to the step streaming right now.
+            readonly anchor?: StreamingIdBox;
         } = {},
     ) => {
         const dom = installMinimalDom();
@@ -330,6 +334,7 @@ describe('useChatTimelineScroll end following', () => {
                 composerOverlayHeight: 0,
                 sessionIsWorking: working.value,
                 activeStreamingMessageId: streamingId.value,
+                answerAnchorMessageId: options.anchor?.value ?? streamingId.value,
             });
             React.useLayoutEffect(() => {
                 result.registerList(handle);
@@ -380,6 +385,66 @@ describe('useChatTimelineScroll end following', () => {
             });
             expect(harness.scrolls).toEqual([1600]);
             expect(node.scrollTop).toBe(1600);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test("holds the answer's FIRST message, not the step streaming right now", async () => {
+        // One answer, two steps. The second step is the one streaming now (and
+        // the first one tall enough to be pinned), but the answer starts at the
+        // first step: the hold belongs to its top edge.
+        const node = createScrollNode({ messageTops: { msg_1: 1000, msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const anchor: StreamingIdBox = { value: null };
+        // The answer starts short enough that pinning it would leave the viewport
+        // looking empty, so the hold waits for the answer to outgrow the viewport.
+        // Mutable on purpose: the growth is what the list reports through its own
+        // measurement state.
+        const state = {
+            data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_1', 'msg_2'] } }],
+            scroll: 0,
+            scrollLength: 700,
+            // The answer's first line sits 1000px down, and the content ends
+            // 600px below it: the answer still fits under the viewport.
+            contentLength: 1600,
+            positionAtIndex: () => 1000,
+            sizeAtIndex: () => 600,
+        };
+        const harness = await renderPinHarness(node, streamingId, { anchor, state });
+
+        try {
+            // The answer starts: its first step mounts, nothing is pinned yet.
+            anchor.value = 'msg_1';
+            streamingId.value = 'msg_1';
+            await harness.rerender();
+            await flushFrames();
+            expect(harness.scrolls).toEqual([]);
+
+            // The answer grows past the viewport while the NEXT step streams. The
+            // wait for the answer's first line resolves on this growth: the hold
+            // lands there, not on the step that happens to be streaming when the
+            // geometry becomes pinnable.
+            state.contentLength = 4000;
+            streamingId.value = 'msg_2';
+            await harness.rerender();
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1000]);
+            expect(node.scrollTop).toBe(1000);
+
+            // The step boundary inside the answer: the finished step completes
+            // before the next one exists, so the streaming id goes null while the
+            // answer keeps coming. The hold stays on the answer's first message.
+            streamingId.value = null;
+            await harness.rerender();
+            await flushFrames();
+
+            expect(harness.scrolls).toEqual([1000]);
+            expect(node.scrollTop).toBe(1000);
         } finally {
             await harness.unmount();
         }

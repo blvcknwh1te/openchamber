@@ -105,6 +105,14 @@ interface UseChatTimelineScrollOptions {
     // id starts a top pin: the answer holds its OWN top edge at the top of the
     // viewport while its text streams downward.
     activeStreamingMessageId?: string | null;
+    // The FIRST assistant message of the answer being produced, or null when no
+    // answer is in flight. One answer is several assistant messages — a step per
+    // message — and `activeStreamingMessageId` is only the step that is
+    // streaming right now, so a hold armed from it lands on whatever step
+    // happened to be tall enough first, mid-answer. This id is the answer's own
+    // first pixel: the hold belongs there, and it keeps belonging there as later
+    // steps append below it.
+    answerAnchorMessageId?: string | null;
 }
 
 
@@ -147,6 +155,7 @@ export const useChatTimelineScroll = ({
     revealGate = null,
     onActiveTurnChange,
     activeStreamingMessageId = null,
+    answerAnchorMessageId = null,
 }: UseChatTimelineScrollOptions): UseChatTimelineScrollResult => {
     const sessionIsWorkingRef = React.useRef(sessionIsWorking);
     sessionIsWorkingRef.current = sessionIsWorking;
@@ -185,6 +194,10 @@ export const useChatTimelineScroll = ({
     // The streaming id the pin was last evaluated against, so a re-render of
     // the same answer does not restart the pin, while a new answer re-pins.
     const lastStreamingMessageIdRef = React.useRef<string | null>(null);
+    // The answer the hold was armed for, so one answer costs one arming. Cleared
+    // with the session, never on a step boundary: the answer's first message does
+    // not change while the answer runs.
+    const lastTopPinAnchorRef = React.useRef<string | null>(null);
     // A pin waiting for its hold to land: the streaming answer whose top edge
     // belongs at the top of the viewport but whose geometry is not usable yet
     // (the row is still an estimate) or whose answer does not reach the
@@ -199,6 +212,8 @@ export const useChatTimelineScroll = ({
     // arm a pin without an id transition (a session opened mid-answer).
     const activeStreamingMessageIdRef = React.useRef<string | null>(activeStreamingMessageId);
     activeStreamingMessageIdRef.current = activeStreamingMessageId;
+    const answerAnchorMessageIdRef = React.useRef<string | null>(answerAnchorMessageId);
+    answerAnchorMessageIdRef.current = answerAnchorMessageId;
     // Set when the reader explicitly asks for the live edge while an answer is
     // still streaming: they want to watch the tail, so the top edge must not
     // pull them back. Lifted by the reader's own gesture, by a later request for
@@ -939,6 +954,7 @@ export const useChatTimelineScroll = ({
         releaseTopPin();
         pinOptOutRef.current = false;
         lastStreamingMessageIdRef.current = null;
+        lastTopPinAnchorRef.current = null;
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
     }, [currentSessionId, currentSessionKey, flushSave, hideScrollButton, releaseTopPin]);
@@ -950,6 +966,12 @@ export const useChatTimelineScroll = ({
     // message element itself (see messageAnchor), never on the turn row that
     // starts with the user's sticky header — that is what used to scroll the
     // viewport up to the user's message.
+    //
+    // That edge belongs to the answer's FIRST message (`answerAnchorMessageId`),
+    // because one answer is several assistant messages. The id of the step
+    // streaming right now moves with the answer, so a hold armed from it landed
+    // wherever the first step tall enough to be pinned happened to be — the
+    // reader saw the hold appear mid-answer instead of at its first line.
     //
     // The pin engages only while the reader is still following the end and it
     // only suppresses movement; it never changes the mode, so a real gesture or
@@ -1009,18 +1031,29 @@ export const useChatTimelineScroll = ({
     attemptTopPinRef.current = attemptTopPin;
 
     React.useEffect(() => {
-        const streamingId = activeStreamingMessageId;
-        if (streamingId === lastStreamingMessageIdRef.current) return;
-        lastStreamingMessageIdRef.current = streamingId;
+        // The hold is armed on the FIRST message of the answer, not on the step
+        // streaming right now: one answer is several assistant messages, and the
+        // step that happens to be tall enough first is not where the answer
+        // starts. The caller supplies that first message; a caller that cannot
+        // falls back to the streaming id, which is the previous behaviour.
+        const anchorId = answerAnchorMessageId ?? activeStreamingMessageId;
+        if (anchorId === null) {
+            // No answer in flight: the next answer arms a hold of its own.
+            lastTopPinAnchorRef.current = null;
+            lastStreamingMessageIdRef.current = null;
+            return;
+        }
 
-        // A step boundary inside one running turn: the finished step's message
-        // gets `time.completed` before the next step's message exists, so the
-        // trailing id goes null while the answer keeps coming. The hold is
-        // LATCHED across that gap — dropping it here handed the viewport back
-        // to end maintenance for the rest of the step, and the next id then
-        // pinned the answer's top all over again. That re-issue is the up/down
-        // jiggle the reader sees on every new output.
-        if (!streamingId) return;
+        // One arming per answer. The anchor does not change while the answer
+        // runs, so a step boundary inside it — the finished step's message gets
+        // `time.completed` before the next step's message exists, and the
+        // streaming id goes null in that gap — neither drops the hold nor arms
+        // it again: re-arming on the next step pinned the answer's top edge a
+        // second time, which is the up/down jiggle the reader saw on every new
+        // output.
+        if (anchorId === lastTopPinAnchorRef.current) return;
+        lastTopPinAnchorRef.current = anchorId;
+        lastStreamingMessageIdRef.current = activeStreamingMessageId;
 
         // A held pin already owns this answer's top edge: the new step appends
         // BELOW the edge that is held, so re-writing the same kind of hold for
@@ -1044,9 +1077,9 @@ export const useChatTimelineScroll = ({
         // reach the top at all. Both are handled by arming the request: the
         // attempt below lands now when the geometry is ready, otherwise the
         // next growth signal retries it.
-        topPinRequestRef.current = streamingId;
-        attemptTopPin(streamingId);
-    }, [activeStreamingMessageId, attemptTopPin]);
+        topPinRequestRef.current = anchorId;
+        attemptTopPin(anchorId);
+    }, [activeStreamingMessageId, answerAnchorMessageId, attemptTopPin]);
 
     // A request that never resolved belongs to the turn that raised it: once the
     // session stops working no answer is streaming, so it is dropped. The hold
