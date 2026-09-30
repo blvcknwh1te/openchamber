@@ -292,6 +292,17 @@ describe('useChatTimelineScroll end following', () => {
         sizeAtIndex: () => 1000,
     });
 
+    // A tall timeline that overflows the viewport, so an upward wheel is a
+    // valid release and an end correction actually has somewhere to move.
+    const overflowingState = (): TimelineListMeasurementState => ({
+        data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
+        scroll: 0,
+        scrollLength: 700,
+        contentLength: 4000,
+        positionAtIndex: () => 0,
+        sizeAtIndex: () => 4000,
+    });
+
     const renderPinHarness = async (
         node: ScrollNodeStub,
         streamingId: StreamingIdBox,
@@ -486,6 +497,46 @@ describe('useChatTimelineScroll end following', () => {
             });
             await flushFrames();
             expect(node.scrollTop).toBe(3300);
+            expect(harness.scrolls).toEqual([1600]);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('holds the edge when the list reports an end the viewport has not reached', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600 } });
+        const streamingId: StreamingIdBox = { value: null };
+        // The measured rows put the real end 3300px down, far below the held
+        // edge — the state a reader is in while watching an answer grow.
+        const harness = await renderPinHarness(node, streamingId, { state: overflowingState() });
+
+        try {
+            streamingId.value = 'msg_2';
+            await harness.rerender();
+            await flushFrames();
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(node.scrollTop).toBe(1600);
+
+            // The list recomputes its ESTIMATED total length while the pin holds
+            // the viewport mid-answer, and the estimate briefly claims the end
+            // is in view. The hold must survive it: releasing here hands the
+            // viewport back to end maintenance, which rides it down to the real
+            // end in a single jump — the answer leaving the top of the screen
+            // while it is still streaming.
+            act(() => {
+                harness.result().onIsAtEndChange(true);
+            });
+
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.result().userOwnsScroll).toBe(false);
+            expect(node.scrollTop).toBe(1600);
+
+            // Growth still moves nothing: the held edge is the reading position.
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+            await flushFrames();
+            expect(node.scrollTop).toBe(1600);
             expect(harness.scrolls).toEqual([1600]);
         } finally {
             await harness.unmount();
@@ -767,17 +818,6 @@ describe('useChatTimelineScroll end following', () => {
             await act(async () => root.unmount());
             dom.restore();
         }
-    });
-
-    // A tall timeline that overflows the viewport, so an upward wheel is a
-    // valid release and an end correction actually has somewhere to move.
-    const overflowingState = (): TimelineListMeasurementState => ({
-        data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
-        scroll: 0,
-        scrollLength: 700,
-        contentLength: 4000,
-        positionAtIndex: () => 0,
-        sizeAtIndex: () => 4000,
     });
 
     test('drops a queued end correction when the reader gestures instead of gliding after it', async () => {

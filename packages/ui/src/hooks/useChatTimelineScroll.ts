@@ -226,6 +226,35 @@ export const useChatTimelineScroll = ({
     const onListMetricsChange = React.useCallback((metrics: { readonly footerSize: number }) => {
         listFooterSizeRef.current = Number.isFinite(metrics.footerSize) ? metrics.footerSize : 0;
     }, []);
+
+    // Where the viewport sits relative to the MEASURED end of the content.
+    // `above` means the reader is reading away from the end — the only state a
+    // top pin belongs in. The list reports its own at-end flag from the
+    // ESTIMATED total length, which it recomputes whenever rows are re-measured:
+    // while a pin holds the viewport mid-answer that estimate can briefly shrink
+    // enough to claim the end is in view. Every decision that follows from a
+    // reported `isAtEnd` therefore measures the real rows instead — the same
+    // measurement the follow corrections use. `unknown` means nothing is
+    // measurable yet, and callers keep their previous behaviour.
+    const realContentEndRelation = React.useCallback((): 'above' | 'at-or-below' | 'unknown' => {
+        const node = scrollRef.current;
+        const state = listRef.current?.getState();
+        const measuredEnd = state
+            ? resolveRealContentEndOffset({
+                state,
+                composerOverlayHeight: composerOverlayHeightRef.current,
+                footerSize: listFooterSizeRef.current,
+            })
+            : null;
+        if (measuredEnd === null) {
+            // No measurable row: the scroll node's own end is all there is.
+            if (!node) return 'unknown';
+            const end = Math.max(0, node.scrollHeight - node.clientHeight);
+            return end - node.scrollTop > 1 ? 'above' : 'at-or-below';
+        }
+        if (!node) return 'unknown';
+        return measuredEnd - node.scrollTop > 1 ? 'above' : 'at-or-below';
+    }, []);
     const sessionMessageCountRef = React.useRef(sessionMessageCount);
     sessionMessageCountRef.current = sessionMessageCount;
     const currentSessionIdRef = React.useRef(currentSessionId);
@@ -464,8 +493,15 @@ export const useChatTimelineScroll = ({
 
     const onIsAtEndChange = React.useCallback((isAtEnd: boolean) => {
         // Reaching the end means the reader chose the live edge, so a pin that
-        // still holds is dropped here: ordinary end following resumes.
-        if (isAtEnd) releaseTopPin();
+        // still holds is dropped here: ordinary end following resumes. The
+        // reported flag alone is not enough: while a pin holds the viewport
+        // mid-answer, the list's total-length ESTIMATE — the number behind the
+        // flag — can dip below what is measured for a moment and claim an end
+        // the reader is nowhere near. Dropping the pin there handed the
+        // viewport back to end maintenance, which then rode it down to the
+        // real end in one jump. Only a viewport that MEASURES as the end
+        // releases the hold.
+        if (isAtEnd && realContentEndRelation() !== 'above') releaseTopPin();
         // While an automatic movement owns the viewport, leaving the end is our
         // own doing (the glide trails its target between corrections) — not a
         // reason to offer the pill. Only a
@@ -488,7 +524,14 @@ export const useChatTimelineScroll = ({
             scheduleShowScrollButton();
         }
         queueSave();
-    }, [hideScrollButton, isLiveFollowActive, queueSave, releaseTopPin, scheduleShowScrollButton]);
+    }, [
+        hideScrollButton,
+        isLiveFollowActive,
+        queueSave,
+        realContentEndRelation,
+        releaseTopPin,
+        scheduleShowScrollButton,
+    ]);
 
     // Whether the real rows are tall enough to scroll at all.
     const realContentOverflowsViewport = React.useCallback((list: TimelineListHandle): boolean => {
@@ -594,6 +637,17 @@ export const useChatTimelineScroll = ({
         // releases it without any extra state machine.
         if (topPinnedMessageIdRef.current !== null) return;
 
+        // A pending pin outranks everything below: the answer's top edge belongs
+        // at the top of the viewport as soon as it can reach it. The retry rides
+        // this growth signal, which the list already emits (the streaming tail
+        // grows inside one row), so it costs one measurement per growth event
+        // and only until the hold lands — no per-frame work, and no timer to
+        // outrun the layout. A pin is only ever ARMED on a streaming message id
+        // (see the top-pin effect), so a reader who released the hold by
+        // returning to the end is not pulled off the edge again here. Auto-follow
+        // off is excluded: with that preference growth must never move the
+        // viewport, and a wait outliving its first attempt is exactly growth
+        // moving it later.
         // A pending pin outranks everything below: the answer's top edge belongs
         // at the top of the viewport as soon as it can reach it. The retry rides
         // this growth signal, which the list already emits (the streaming tail
