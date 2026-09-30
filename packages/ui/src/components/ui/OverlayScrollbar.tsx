@@ -18,12 +18,22 @@ type OverlayScrollbarProps = {
   suppressVisibility?: boolean;
   /** Requires recent user input in the default auto-hide mode. */
   userIntentOnly?: boolean;
+  /**
+   * Fires once when the user grabs a thumb and starts dragging it. A thumb drag
+   * writes `scrollTop` directly, so it produces no wheel, touch, or pointer
+   * event on the scrolling element itself; the consumer that needs to know the
+   * reader took over the scroll is told here instead.
+   */
+  onUserDragStart?: () => void;
 };
 
 type ScrollbarOptions = Required<Pick<
   OverlayScrollbarProps,
   "minThumbSize" | "hideDelayMs" | "disableHorizontal" | "observeMutations" | "suppressVisibility" | "userIntentOnly"
->> & { alwaysVisible: boolean };
+>> & {
+  alwaysVisible: boolean;
+  onUserDragStart: (() => void) | undefined;
+};
 
 // The inset is part of both rendering and drag math; changing it must preserve that shared track.
 const TRACK_INSET = 8;
@@ -205,6 +215,7 @@ function bindScrollbar(
       pointerStartPx: axis === "vertical" ? event.clientY : event.clientX,
       scrollStartPx: axis === "vertical" ? container.scrollTop : container.scrollLeft,
     };
+    options.onUserDragStart?.();
     markUserIntent();
     hideDeadlineMs = Number.POSITIVE_INFINITY;
     if (hideTimerId !== null) {
@@ -397,6 +408,7 @@ export const OverlayScrollbar: React.FC<OverlayScrollbarProps> = ({
   observeMutations = true,
   suppressVisibility = false,
   userIntentOnly = false,
+  onUserDragStart,
 }) => {
   const alwaysVisible = useUIStore((state) => state.alwaysShowScrollbars === true);
   const rootRef = React.useRef<HTMLDivElement>(null);
@@ -412,6 +424,7 @@ export const OverlayScrollbar: React.FC<OverlayScrollbarProps> = ({
     observeMutations,
     suppressVisibility,
     userIntentOnly,
+    onUserDragStart,
   });
   optionsRef.current = {
     alwaysVisible,
@@ -421,6 +434,7 @@ export const OverlayScrollbar: React.FC<OverlayScrollbarProps> = ({
     observeMutations,
     suppressVisibility,
     userIntentOnly,
+    onUserDragStart,
   };
 
   // Follow the LIVE container node, not the ref object: the chat timeline's
@@ -460,8 +474,9 @@ export const OverlayScrollbar: React.FC<OverlayScrollbarProps> = ({
       observeMutations,
       suppressVisibility,
       userIntentOnly,
+      onUserDragStart,
     });
-  }, [alwaysVisible, disableHorizontal, hideDelayMs, minThumbSize, observeMutations, suppressVisibility, userIntentOnly]);
+  }, [alwaysVisible, disableHorizontal, hideDelayMs, minThumbSize, observeMutations, suppressVisibility, userIntentOnly, onUserDragStart]);
 
   return (
     <div ref={rootRef} className={cn("overlay-scrollbar", className)} aria-hidden="true">

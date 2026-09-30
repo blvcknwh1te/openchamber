@@ -176,6 +176,8 @@ type ChatViewportProps = {
     onIsAtEndChange: (isAtEnd: boolean) => void;
     onListMetricsChange: (metrics: { readonly footerSize: number }) => void;
     onTimelineDataChange: () => void;
+    /** Releases live follow when the reader grabs the overlay scrollbar thumb. */
+    onManualNavigation: () => void;
     renderedMessages: SessionMessageRecord[];
     isLoadingOlder: boolean;
     sessionIsWorking: boolean;
@@ -218,6 +220,7 @@ const ChatViewport = React.memo(({
     onIsAtEndChange,
     onListMetricsChange,
     onTimelineDataChange,
+    onManualNavigation,
     renderedMessages,
     isLoadingOlder,
     sessionIsWorking,
@@ -509,7 +512,7 @@ const ChatViewport = React.memo(({
                     scrollContainerProps={scrollContainerProps}
                 />
               </TimelineRevealGateContext.Provider>
-                <OverlayScrollbar containerRef={scrollRef} disableHorizontal suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} />
+                <OverlayScrollbar containerRef={scrollRef} disableHorizontal suppressVisibility={isProgrammaticFollowActive} userIntentOnly observeMutations={false} onUserDragStart={onManualNavigation} />
                 {showPromptNavigator && promptTurnIds.length >= PROMPT_NAVIGATOR_MIN_TURNS ? (
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}
@@ -1536,6 +1539,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({
                 onIsAtEndChange={onIsAtEndChange}
                 onListMetricsChange={onListMetricsChange}
                 onTimelineDataChange={onTimelineDataChange}
+                onManualNavigation={onManualNavigation}
                 messageListRef={messageListRef}
                 renderedMessages={timelineController.renderedMessages}
                 isLoadingOlder={timelineController.isLoadingOlder}

@@ -355,6 +355,47 @@ describe('OverlayScrollbar', () => {
     expect(scrollTop).toBe(200);
   });
 
+  test('reports a thumb drag start once so the consumer can release following', async () => {
+    useUIStore.getState().setAlwaysShowScrollbars(true);
+    let dragStarts = 0;
+    await renderScrollbar({ onUserDragStart: () => { dragStarts += 1; } });
+    const thumb = host.querySelector<HTMLElement>('[data-overlay-scrollbar-thumb="vertical"]');
+    if (!thumb) throw new Error('OverlayScrollbar did not render its vertical thumb');
+
+    thumb.setPointerCapture = () => {};
+    thumb.releasePointerCapture = () => {};
+
+    thumb.dispatchEvent(new window.PointerEvent('pointerdown', {
+      bubbles: true,
+      clientY: 0,
+      pointerId: 1,
+    }));
+    // A drag writes scrollTop directly and emits no wheel/touch/pointer event
+    // on the scroll element, so this callback is the consumer's only signal.
+    expect(dragStarts).toBe(1);
+
+    // Movement within the same grab is not a second gesture.
+    thumb.dispatchEvent(new window.PointerEvent('pointermove', {
+      bubbles: true,
+      clientY: 26,
+      pointerId: 1,
+    }));
+    expect(dragStarts).toBe(1);
+
+    // A new grab reports again.
+    thumb.dispatchEvent(new window.PointerEvent('pointerup', {
+      bubbles: true,
+      clientY: 26,
+      pointerId: 1,
+    }));
+    thumb.dispatchEvent(new window.PointerEvent('pointerdown', {
+      bubbles: true,
+      clientY: 26,
+      pointerId: 2,
+    }));
+    expect(dragStarts).toBe(2);
+  });
+
   test('keeps the minimum thumb size within a short track', async () => {
     Object.defineProperty(scroller, 'clientHeight', {
       configurable: true,

@@ -255,12 +255,30 @@ export const useChatTimelineScroll = ({
         }, SHOW_SCROLL_BUTTON_DELAY_MS);
     }, []);
 
+    // ── follow correction scheduling ────────────────────────────────────────
+    // Stream growth fires the correction many times per frame. It is coalesced
+    // into one animation frame that reads the LIVE end when it runs, so a burst
+    // of growth costs one write instead of one smooth scroll per tick. The
+    // frame is cancelled the instant the reader takes the scroll (a wheel,
+    // touch, key, or scrollbar-thumb drag), so no correction queued before the
+    // gesture can move the viewport after it — that trailing glide is what made
+    // the viewport keep creeping down after the reader pulled it up.
+    const followFrameRef = React.useRef<number | null>(null);
+    const cancelScheduledFollow = React.useCallback(() => {
+        if (followFrameRef.current === null) return;
+        cancelAnimationFrame(followFrameRef.current);
+        followFrameRef.current = null;
+    }, []);
+
     // A real gesture: stop every automatic movement until the user opts back
     // in. This is the single release path for bottom following, so "the user
     // scrolled" is detected in exactly one place. It also drops the top pin:
     // the reader is driving the viewport now, so the answer's top edge must not
     // pull the view back.
     const onManualNavigation = React.useCallback(() => {
+        // Before anything else: a queued correction must not fire after the
+        // gesture and drag the viewport back down.
+        cancelScheduledFollow();
         userGenerationRef.current += 1;
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
@@ -272,10 +290,10 @@ export const useChatTimelineScroll = ({
         // again from there.
         pinOptOutRef.current = false;
         // The end may already have been left by our own movement, in which
-        // case no further at-end transition will fire — and while an animated
-        // follow glide trails the live edge, isAtEndRef is deliberately not
-        // updated, so measure the real distance instead of trusting it. This
-        // is an explicit gesture — show the pill immediately, no debounce.
+        // case no further at-end transition will fire — while a follow
+        // correction is pending, isAtEndRef is deliberately not updated, so
+        // measure the real distance instead of trusting it. This is an explicit
+        // gesture — show the pill immediately, no debounce.
         const listState = listRef.current?.getState();
         const atEndNow = (listState ? resolveTimelineIsAtEnd(listState) : undefined) ?? isAtEndRef.current;
         isAtEndRef.current = atEndNow;
@@ -283,7 +301,7 @@ export const useChatTimelineScroll = ({
             cancelShowButtonTimer();
             setShowScrollButton(true);
         }
-    }, [cancelShowButtonTimer, releaseTopPin]);
+    }, [cancelShowButtonTimer, cancelScheduledFollow, releaseTopPin]);
 
     const isLiveFollowActive = React.useCallback(() => (
         liveFollowGenerationRef.current === userGenerationRef.current
@@ -539,30 +557,31 @@ export const useChatTimelineScroll = ({
         };
     }, [scrollNode]);
 
-    // Keep the live edge in view after content growth. Within a viewport of
-    // the end the remaining distance is glided so a revealed block and the
-    // scroll read as one motion; further behind, the viewport first jumps to
-    // one screen above the end and glides only that last screen, so the
-    // reader is never left staring at a gap several screens tall. Writes go
-    // to the scroll node directly: routing each chunk through the list's
-    // scrollToEnd bookkeeping roughly doubled frame production when measured.
-    // A user gesture interrupts the native smooth scroll on its own, and the
-    // gesture handler drops live follow so no later correction re-engages.
-    const followEnd = React.useCallback(() => {
+    // Keep the live edge in view after content growth. Writes go to the scroll
+    // node directly: routing each chunk through the list's scrollToEnd
+    // bookkeeping roughly doubled frame production when measured.
+    //
+    // A burst of growth is coalesced into one animation frame per correction:
+    // the frame re-reads the live end when it runs, so N ticks in one frame
+    // cost one write. The frame is dropped by `cancelScheduledFollow` on any
+    // real gesture — no queued or in-flight correction survives the moment the
+    // reader takes the scroll.
+    const followWrite = React.useCallback(() => {
+        followFrameRef.current = null;
+        // Re-check the mode: a gesture may have landed between the schedule and
+        // this frame; the queued write already belongs to a follow that is over.
+        if (modeRef.current !== 'following-end' || !isLiveFollowActive()) return;
         const node = scrollRef.current;
         if (!node) return;
         const end = node.scrollHeight - node.clientHeight;
-        const distance = end - node.scrollTop;
-        if (distance <= 1) return;
-        if (!sessionIsWorkingRef.current) {
-            node.scrollTop = end;
-            return;
-        }
-        if (distance > node.clientHeight) {
-            node.scrollTop = end - node.clientHeight;
-        }
-        node.scrollTo({ top: end, behavior: 'smooth' });
-    }, []);
+        if (end - node.scrollTop <= 1) return;
+        node.scrollTop = end;
+    }, [isLiveFollowActive]);
+
+    const followEnd = React.useCallback(() => {
+        if (followFrameRef.current !== null) return;
+        followFrameRef.current = requestAnimationFrame(followWrite);
+    }, [followWrite]);
 
     const onTimelineDataChange = React.useCallback(() => {
         if (widthResizingRef.current) return;
@@ -800,8 +819,9 @@ export const useChatTimelineScroll = ({
     // sits on the end of a session that is not producing output, any growth
     // of the content (a footer that decides to render, a row re-measured)
     // keeps the end in view with one instant write. Output growth belongs to
-    // followEnd, which glides. A width resize is the one case handled for a
-    // streaming reader as well — see the resize observer above.
+    // followEnd, which coalesces its correction into one frame. A width resize
+    // is the one case handled for a streaming reader as well — see the resize
+    // observer above.
     React.useEffect(() => {
         if (!scrollNode || platform.MutationObserver === undefined) return;
         const content = scrollNode.firstElementChild;
@@ -893,7 +913,9 @@ export const useChatTimelineScroll = ({
         // mounted one measures the same height; measure it instead of
         // hardcoding. Absent (the sticky-header setting is off, or no turn is
         // mounted yet) the answer's top goes to the very top of the viewport.
-        const sticky = container.querySelector<HTMLElement>('[data-turn-id] .sticky');
+        // The header carries its own test id; a bare `.sticky` would also match
+        // an unrelated sticky element that happens to sit inside a turn row.
+        const sticky = container.querySelector<HTMLElement>('[data-testid="sticky-user-header"]');
         if (!sticky) return 0;
         const height = sticky.getBoundingClientRect().height;
         return Number.isFinite(height) ? Math.max(0, height) : 0;
@@ -959,6 +981,10 @@ export const useChatTimelineScroll = ({
         // took over the scroll keeps their position.
         if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return;
 
+        // The pin is part of following: with auto-follow off, growth must never
+        // move the viewport, and a pin is exactly growth moving it.
+        if (!streamingAutoFollowEnabledRef.current) return;
+
         // The answer is mounted in the same commit as its id, but the list may
         // still report an estimated offset for it, and a short answer cannot
         // reach the top at all. Both are handled by arming the request: the
@@ -985,8 +1011,9 @@ export const useChatTimelineScroll = ({
 
     React.useEffect(() => () => {
         cancelShowButtonTimer();
+        cancelScheduledFollow();
         if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
-    }, [cancelShowButtonTimer]);
+    }, [cancelShowButtonTimer, cancelScheduledFollow]);
 
     // ── active-turn spy ─────────────────────────────────────────────────────
     // Reads turn positions straight from the DOM, so it is unaffected by which

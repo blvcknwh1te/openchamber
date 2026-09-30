@@ -81,13 +81,33 @@ Set `OPENCHAMBER_FILEREF_DEBUG=1` in the environment and restart VS Code to log 
 
 ## Development
 
-Build the VSIX from `packages/vscode`:
+The local loop is: bump the version, build, package, install, reload.
 
-```bash
-bun install
-cd packages/vscode
-bun run package
-```
+1. Bump the version. Every `package.json` that carries the fork version must move together: `package.json`, `packages/ui/package.json`, `packages/web/package.json`, `packages/electron/package.json`, and `packages/vscode/package.json`. `version:bump` writes the new value to all of them (`scripts/bump-version.mjs`), so use it instead of editing the files by hand:
+
+   ```bash
+   bun run version:bump 1.23.0-bnw.38
+   ```
+
+2. Build and package the VSIX from `packages/vscode`. `package` runs `vsce package --no-dependencies`, which triggers `vscode:prepublish` and therefore `build` (`build:extension` via esbuild, then `build:webview` via vite):
+
+   ```bash
+   bun install
+   bun run --cwd packages/vscode build
+   bun run --cwd packages/vscode package
+   ```
+
+3. The artifact lands at `packages/vscode/openchamber-bnw-<version>.vsix`. Install it by absolute path. Add `--force` only when the manifest version matches an already installed one; when the version changes, VS Code updates the extension on its own:
+
+   ```bash
+   code --install-extension "C:\path\to\packages\vscode\openchamber-bnw-<version>.vsix" --force
+   ```
+
+4. Reload the VS Code window after installing.
+
+`bun run oc-dev install-vscode-extension-local` does the build, package, and install in one step, but before installing it runs `code --uninstall-extension fedaykindev.openchamber` (`scripts/oc-dev.mjs:583`), which removes the upstream extension. Use the script only when removing the upstream extension is intended; otherwise run the steps above.
+
+The webview build can take a few minutes. If a command hits a timeout, find out what is slow instead of raising the limit.
 
 ## Credit and license
 

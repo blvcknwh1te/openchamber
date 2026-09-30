@@ -204,20 +204,26 @@ const createScrollNode = ({
         dispatch: (type: string, gesture: DispatchedGesture) => {
             for (const listener of listeners.get(type) ?? []) listener(gesture);
         },
-        // The hook glides its last correction through the native smooth scroll;
-        // the stub lands it immediately instead of animating.
+        // The hook's correction lands the end directly; the stub applies it.
         scrollTo: ({ top }) => {
             node.scrollTop = top;
         },
         getBoundingClientRect: () => ({ top: 0, height: 700 }),
         querySelector: (selector: string) => {
-            if (selector === '[data-turn-id] .sticky') {
+            if (selector === '[data-testid="sticky-user-header"]') {
                 return stickyHeight > 0
                     ? asMeasuredElement(createMeasuredElement(() => ({ top: 0, height: stickyHeight })))
                     : null;
             }
             const messageId = /^\[data-message-id="(.+)"\]$/.exec(selector)?.[1];
-            const messageTop = messageId === undefined ? undefined : messageTops[messageId];
+            if (messageId === undefined) {
+                // The hook measures exactly two things in the DOM. An unknown
+                // selector means it stopped anchoring on the assistant message
+                // element or the sticky header's test id, which is the contract
+                // these tests exist to hold.
+                throw new Error(`unexpected selector ${selector}`);
+            }
+            const messageTop = messageTops[messageId];
             if (messageTop === undefined) return null;
             // The DOM agreement: getBoundingClientRect reports viewport-relative
             // coordinates, so the fixture subtracts the scroll already applied.
@@ -474,10 +480,11 @@ describe('useChatTimelineScroll end following', () => {
             expect(harness.result().isPinned).toBe(true);
 
             // End following owns the viewport again: the next growth lands on
-            // the live edge.
+            // the live edge. The correction is one animation frame later.
             act(() => {
                 harness.result().onTimelineDataChange();
             });
+            await flushFrames();
             expect(node.scrollTop).toBe(3300);
             expect(harness.scrolls).toEqual([1600]);
         } finally {
@@ -717,6 +724,7 @@ describe('useChatTimelineScroll end following', () => {
             act(() => {
                 harness.result().onTimelineDataChange();
             });
+            await flushFrames();
             expect(node.scrollTop).toBe(3300);
         } finally {
             await harness.unmount();
@@ -758,6 +766,76 @@ describe('useChatTimelineScroll end following', () => {
         } finally {
             await act(async () => root.unmount());
             dom.restore();
+        }
+    });
+
+    // A tall timeline that overflows the viewport, so an upward wheel is a
+    // valid release and an end correction actually has somewhere to move.
+    const overflowingState = (): TimelineListMeasurementState => ({
+        data: [{ kind: 'turn', turn: { assistantMessageIds: ['msg_2'] } }],
+        scroll: 0,
+        scrollLength: 700,
+        contentLength: 4000,
+        positionAtIndex: () => 0,
+        sizeAtIndex: () => 4000,
+    });
+
+    test('drops a queued end correction when the reader gestures instead of gliding after it', async () => {
+        const node = createScrollNode();
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId, { state: overflowingState() });
+
+        try {
+            // Growth schedules ONE correction for the next frame.
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            // The reader wheels up before that frame runs. The scheduled
+            // correction must be dropped, so nothing creeps the viewport back
+            // down after the gesture — the endless drift the top edge and the
+            // gesture release exist to stop.
+            node.scrollTop = 300;
+            act(() => {
+                node.dispatch('wheel', { deltaY: -120, target: node });
+            });
+            await flushFrames();
+
+            expect(harness.result().userOwnsScroll).toBe(true);
+            expect(node.scrollTop).toBe(300);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('re-arms follow once the reader returns to the real bottom after a gesture', async () => {
+        const node = createScrollNode();
+        const streamingId: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId, { state: overflowingState() });
+
+        try {
+            node.scrollTop = 300;
+            act(() => {
+                node.dispatch('wheel', { deltaY: -120, target: node });
+            });
+            expect(harness.result().userOwnsScroll).toBe(true);
+
+            // The reader returns to the live edge: follow is re-armed and the
+            // next growth correction lands the end again.
+            act(() => {
+                harness.result().onIsAtEndChange(true);
+            });
+            expect(harness.result().userOwnsScroll).toBe(false);
+            expect(harness.result().isPinned).toBe(true);
+
+            node.scrollTop = 3200;
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+            await flushFrames();
+            expect(node.scrollTop).toBe(3300);
+        } finally {
+            await harness.unmount();
         }
     });
 });
