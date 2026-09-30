@@ -91,6 +91,6 @@
     "./plugins/zz-dump-system-prompt.ts"
   ],
   "instructions": [
-    "C:/Users/99-ErofeenkoVA/.config/opencode/rules/*.md"
+    "~/.config/opencode/rules/*.md"
   ]
 }
