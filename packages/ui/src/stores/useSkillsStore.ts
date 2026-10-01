@@ -16,10 +16,9 @@ import { useProjectsStore } from "@/stores/useProjectsStore";
 import { opencodeClient } from '@/lib/opencode/client';
 import { filterSkillsByRuntimeFlags } from './skillVisibility';
 
-// Prefer the active project path so Settings/Skills discovery matches the
-// project selector (and Commands/Agents). Falling back only to the session
-// directory misses repository-local `.agents/skills` when the client directory
-// is unset or points elsewhere while an active project exists.
+// Prefer the session directory so Skills discovery follows the selected
+// session even when its project differs from the active workspace. Fall back to
+// the active project only when the client has no directory yet.
 /**
  * Directory a call operates on. Settings can browse another project without
  * moving the app, so every entry point takes one; omitting it means the project
@@ -35,16 +34,16 @@ const resolveDirectory = (directory?: string | null): string | null => {
 
 const getRequestDirectory = (): string | null => {
   try {
+    const clientDir = opencodeClient.getDirectory();
+    if (clientDir?.trim()) {
+      return clientDir.trim();
+    }
+
     const projectsStore = useProjectsStore.getState();
     const activeProject = projectsStore.getActiveProject?.();
 
     if (activeProject?.path?.trim()) {
       return activeProject.path.trim();
-    }
-
-    const clientDir = opencodeClient.getDirectory();
-    if (clientDir?.trim()) {
-      return clientDir.trim();
     }
   } catch (err) {
     console.warn('[SkillsStore] Error resolving config directory:', err);

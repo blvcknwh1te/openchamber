@@ -577,8 +577,8 @@ export async function handleConfigBridgeMessage(
     }
 
     case 'api:config/skills': {
-      const { method, name, body } = (payload || {}) as { method?: string; name?: string; body?: Record<string, unknown> };
-      const workingDirectory = ctx?.manager?.getWorkingDirectory() || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const { method, name, body, directory } = (payload || {}) as { method?: string; name?: string; body?: Record<string, unknown>; directory?: string };
+      const workingDirectory = resolveWorkingDirectory(ctx, directory);
       const normalizedMethod = typeof method === 'string' && method.trim() ? method.trim().toUpperCase() : 'GET';
 
       if (!name && normalizedMethod === 'GET') {
@@ -673,8 +673,8 @@ export async function handleConfigBridgeMessage(
     }
 
     case 'api:config/skills:catalog': {
-      const refresh = Boolean((payload as { refresh?: boolean } | undefined)?.refresh);
-      const workingDirectory = ctx?.manager?.getWorkingDirectory() || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const { refresh = false, directory } = (payload || {}) as { refresh?: boolean; directory?: string };
+      const workingDirectory = resolveWorkingDirectory(ctx, directory);
       const settings = deps.readSettings(ctx);
       const additionalSources = parseSkillsCatalogSources(settings);
       const installedSkills = await resolveDiscoveredSkills(deps, ctx, workingDirectory);
@@ -742,13 +742,14 @@ export async function handleConfigBridgeMessage(
     }
 
     case 'api:config/skills/files': {
-      const { method, name, filePath, content } = (payload || {}) as {
+      const { method, name, filePath, content, directory } = (payload || {}) as {
         method?: string;
         name?: string;
         filePath?: string;
         content?: string;
+        directory?: string;
       };
-      const workingDirectory = ctx?.manager?.getWorkingDirectory() || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const workingDirectory = resolveWorkingDirectory(ctx, directory);
 
       const skillName = typeof name === 'string' ? name.trim() : '';
       if (!skillName) {

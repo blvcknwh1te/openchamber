@@ -9,7 +9,7 @@ import {
 } from "@/lib/configUpdate";
 import { emitConfigChange, scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import { createDeferredSafeJSONStorage } from "./utils/safeStorage";
-import { useProjectsStore } from "@/stores/useProjectsStore";
+import { resolveAmbientConfigDirectory } from "./utils/configDirectory";
 import { runtimeFetch } from "@/lib/runtime-fetch";
 import { runBackgroundNetworkTask } from '@/lib/background-network';
 import { noteDeferredRestartFromPayload } from "@/lib/opencode/deferredRestart";
@@ -133,27 +133,12 @@ const resolveDirectory = (directory?: string | null): string | null => {
   return getRequestDirectory();
 };
 
-const getRequestDirectory = (): string | null => {
-  try {
-    const projectsStore = useProjectsStore.getState();
-    const activeProject = projectsStore.getActiveProject?.();
-    
-    // 1. Primary: Active project path from store
-    if (activeProject?.path?.trim()) {
-      return activeProject.path.trim();
-    }
-
-    // 2. Fallback: current OpenCode directory (session / runtime)
-    const clientDir = opencodeClient.getDirectory();
-    if (clientDir?.trim()) {
-      return clientDir.trim();
-    }
-  } catch (err) {
-    console.warn('[CommandsStore] Error resolving config directory:', err);
-  }
-
-  return null;
-};
+/**
+ * Ambient request directory. The session directory wins over the active
+ * project, so commands of the selected session's project are read even when the
+ * app is on another workspace. Resolution lives in the shared helper.
+ */
+const getRequestDirectory = (): string | null => resolveAmbientConfigDirectory();
 
 const MAX_HEALTH_WAIT_MS = 20000;
 const FAST_HEALTH_POLL_INTERVAL_MS = 300;

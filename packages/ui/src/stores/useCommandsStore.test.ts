@@ -8,10 +8,13 @@ function deferred<T>() {
 }
 
 let activeProjectPath = '/workspace/project';
+// The client session directory is the ambient config directory; the active
+// project is only the fallback when the client has none.
+let ambientDirectory = '/workspace/session-project';
 
 let listCommandsWithDetailsCalls = 0;
 let listCommandsWithDetailsImpl: (directory?: string | null) => Promise<Command[]> = async () => [];
-let getDirectoryImpl: () => string = () => '/fallback/project';
+let getDirectoryImpl: () => string | undefined = () => ambientDirectory;
 let runtimeFetchImpl: () => Promise<Response> = async () => new Response(JSON.stringify({ scope: 'project' }), {
   headers: { 'Content-Type': 'application/json' },
 });
@@ -60,11 +63,13 @@ const { useCommandsStore, invalidateCommandsLoadCache, selectCommandsForDirector
 describe('useCommandsStore', () => {
   beforeEach(() => {
     activeProjectPath = '/workspace/project';
+    ambientDirectory = '/workspace/session-project';
+    invalidateCommandsLoadCache(ambientDirectory);
     invalidateCommandsLoadCache(activeProjectPath);
     invalidateCommandsLoadCache('/workspace/other');
     listCommandsWithDetailsCalls = 0;
     listCommandsWithDetailsImpl = async () => [];
-    getDirectoryImpl = () => '/fallback/project';
+    getDirectoryImpl = () => ambientDirectory;
     runtimeFetchImpl = async () => new Response(JSON.stringify({ scope: 'project' }), {
       headers: { 'Content-Type': 'application/json' },
     });
@@ -78,9 +83,28 @@ describe('useCommandsStore', () => {
     });
   });
 
-  test('loading another project leaves the active project\'s commands alone', async () => {
+  test('ambient load uses the session client directory over the active project', async () => {
+    // A session can belong to a project other than the active workspace; the
+    // client directory carries that session's project, so it must win.
+    listCommandsWithDetailsImpl = async () => [{ name: 'session-only' }];
+
+    expect(await useCommandsStore.getState().loadCommands()).toBe(true);
+    expect(selectCommandsForDirectory(useCommandsStore.getState()).map((command) => command.name)).toEqual(['session-only']);
+    expect(useCommandsStore.getState().commandsByDirectory[ambientDirectory]).toBeDefined();
+    expect(useCommandsStore.getState().commandsByDirectory[activeProjectPath]).toBeUndefined();
+  });
+
+  test('ambient load falls back to the active project when the client has no directory', async () => {
+    getDirectoryImpl = () => undefined;
+    listCommandsWithDetailsImpl = async () => [{ name: 'active-only' }];
+
+    expect(await useCommandsStore.getState().loadCommands()).toBe(true);
+    expect(useCommandsStore.getState().commandsByDirectory[activeProjectPath]?.map((command) => command.name)).toEqual(['active-only']);
+  });
+
+  test('loading another project leaves the ambient project\'s commands alone', async () => {
     // Settings can browse a project the app is not on. Chat reads `commands`,
-    // so that list must keep describing the active project.
+    // so that list must keep describing the ambient (session) project.
     const activeCommands = [{
       name: 'active-only',
       description: 'Active project command',
@@ -89,7 +113,7 @@ describe('useCommandsStore', () => {
     }];
     useCommandsStore.setState({
       commands: activeCommands,
-      commandsByDirectory: { [activeProjectPath]: activeCommands },
+      commandsByDirectory: { [ambientDirectory]: activeCommands },
     });
     listCommandsWithDetailsImpl = async () => [
       { name: 'other-only', description: 'Other project command', template: 'run there' },
@@ -101,7 +125,7 @@ describe('useCommandsStore', () => {
     const state = useCommandsStore.getState();
     expect(state.commands).toEqual(activeCommands);
     expect(state.commandsByDirectory['/workspace/other']?.map((command) => command.name)).toEqual(['other-only']);
-    expect(state.commandsByDirectory[activeProjectPath]).toEqual(activeCommands);
+    expect(state.commandsByDirectory[ambientDirectory]).toEqual(activeCommands);
   });
 
   test('loadCommands preserves previous commands when the command list fails', async () => {
@@ -111,7 +135,7 @@ describe('useCommandsStore', () => {
       template: 'do the previous thing',
       scope: 'project' as const,
     }];
-    useCommandsStore.setState({ commands: previousCommands, commandsByDirectory: { [activeProjectPath]: previousCommands } });
+    useCommandsStore.setState({ commands: previousCommands, commandsByDirectory: { [ambientDirectory]: previousCommands } });
     listCommandsWithDetailsImpl = async () => {
       throw new Error('network down');
     };
@@ -133,7 +157,7 @@ describe('useCommandsStore', () => {
     listCommandsWithDetailsImpl = async () => commands;
 
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
-    expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath)).toEqual(commands);
+    expect(selectCommandsForDirectory(useCommandsStore.getState(), ambientDirectory)).toEqual(commands);
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
     expect(listCommandsWithDetailsCalls).toBe(1);
   });
@@ -155,16 +179,16 @@ describe('useCommandsStore', () => {
     listCommandsWithDetailsImpl = async () => [{ name: 'first' }];
     await useCommandsStore.getState().loadCommands();
     const firstCommands = useCommandsStore.getState().commands;
-    activeProjectPath = '/workspace/other';
+    ambientDirectory = '/workspace/other';
     listCommandsWithDetailsImpl = async () => [{ name: 'second' }];
     await useCommandsStore.getState().loadCommands();
-    activeProjectPath = '/workspace/project';
+    ambientDirectory = '/workspace/session-project';
 
     await useCommandsStore.getState().loadCommands();
     expect(useCommandsStore.getState().commands).toBe(firstCommands);
     expect(listCommandsWithDetailsCalls).toBe(2);
 
-    invalidateCommandsLoadCache(activeProjectPath);
+    invalidateCommandsLoadCache(ambientDirectory);
     listCommandsWithDetailsImpl = async () => [{ name: 'first' }];
     useCommandsStore.setState({ commands: [] });
     await useCommandsStore.getState().loadCommands();
@@ -175,13 +199,13 @@ describe('useCommandsStore', () => {
     const pending = deferred<Command[]>();
     const started = deferred<void>();
     listCommandsWithDetailsImpl = async (directory) => {
-      expect(directory).toBe('/workspace/project');
+      expect(directory).toBe(ambientDirectory);
       started.resolve();
       return pending.promise;
     };
     const firstLoad = useCommandsStore.getState().loadCommands();
     await started.promise;
-    activeProjectPath = '/workspace/other';
+    ambientDirectory = '/workspace/other';
     listCommandsWithDetailsImpl = async () => [{ name: 'second' }];
     await useCommandsStore.getState().loadCommands();
     const secondCommands = useCommandsStore.getState().commands;
@@ -189,16 +213,16 @@ describe('useCommandsStore', () => {
     await firstLoad;
 
     expect(useCommandsStore.getState().commands).toBe(secondCommands);
-    expect(selectCommandsForDirectory(useCommandsStore.getState(), '/workspace/project').map(c => c.name)).toEqual(['first']);
+    expect(selectCommandsForDirectory(useCommandsStore.getState(), '/workspace/session-project').map(c => c.name)).toEqual(['first']);
   });
 
   test('a successful empty answer clears the project list and is not cached', async () => {
     const commands = [{ name: 'old' }];
-    useCommandsStore.setState({ commands, commandsByDirectory: { [activeProjectPath]: commands } });
+    useCommandsStore.setState({ commands, commandsByDirectory: { [ambientDirectory]: commands } });
     listCommandsWithDetailsImpl = async () => [];
 
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
-    expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath)).toEqual([]);
+    expect(selectCommandsForDirectory(useCommandsStore.getState(), ambientDirectory)).toEqual([]);
     expect(useCommandsStore.getState().commands).toEqual([]);
     expect(listCommandsWithDetailsCalls).toBe(1);
 
@@ -207,7 +231,7 @@ describe('useCommandsStore', () => {
     listCommandsWithDetailsImpl = async () => [{ name: 'appeared' }];
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
     expect(listCommandsWithDetailsCalls).toBe(2);
-    expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath).map((command) => command.name)).toEqual(['appeared']);
+    expect(selectCommandsForDirectory(useCommandsStore.getState(), ambientDirectory).map((command) => command.name)).toEqual(['appeared']);
   });
 
 
@@ -217,19 +241,19 @@ describe('useCommandsStore', () => {
     listCommandsWithDetailsImpl = async () => { throw new Error('unavailable'); };
     expect(await useCommandsStore.getState().loadCommands()).toBe(false);
     expect(useCommandsStore.getState().commands).toEqual([]);
-    expect(useCommandsStore.getState().commandsByDirectory[activeProjectPath]).toBeUndefined();
+    expect(useCommandsStore.getState().commandsByDirectory[ambientDirectory]).toBeUndefined();
     expect(selectCommandsForDirectory(useCommandsStore.getState(), '/workspace/other')).toBe(otherCommands);
 
     listCommandsWithDetailsImpl = async () => [{ name: 'recovered' }];
     expect(await useCommandsStore.getState().loadCommands()).toBe(true);
-    expect(selectCommandsForDirectory(useCommandsStore.getState(), activeProjectPath).map(c => c.name)).toEqual(['recovered']);
+    expect(selectCommandsForDirectory(useCommandsStore.getState(), ambientDirectory).map(c => c.name)).toEqual(['recovered']);
   });
 
   test('an in-flight settings load becomes the active mirror if its project is selected', async () => {
     const pending = deferred<Command[]>();
     listCommandsWithDetailsImpl = () => pending.promise;
     const settingsLoad = useCommandsStore.getState().loadCommands('/workspace/other');
-    activeProjectPath = '/workspace/other';
+    ambientDirectory = '/workspace/other';
     const activeLoad = useCommandsStore.getState().loadCommands();
     pending.resolve([{ name: 'selected' }]);
     expect(await settingsLoad).toBe(true);

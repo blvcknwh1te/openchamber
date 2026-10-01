@@ -9,6 +9,12 @@ export type ProjectSection = {
     color?: string;
     iconImage?: { mime: string; updatedAt: number; source: 'custom' | 'auto' };
     iconBackground?: string;
+    /**
+     * Discovered from the shared OpenCode database instead of the local project
+     * registry. External sections are display-only: they never become the active
+     * project and disappear while they own no sessions.
+     */
+    external?: boolean;
   };
   groups: SessionGroup[];
 };

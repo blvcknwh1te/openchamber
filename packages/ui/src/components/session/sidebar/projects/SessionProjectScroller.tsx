@@ -196,6 +196,13 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
     model.singleProjectMode,
     model.singleProjectId,
   );
+  // Discovered projects are not registry entries, so a visual position cannot be
+  // mapped onto the manual order: while one is on screen, reordering would move
+  // a different project than the one the user dropped. Manual order stays
+  // available (and drag stays enabled) once the list holds registry projects
+  // only, which is the normal web/desktop case.
+  const hasExternalProjects = renderedSections.some((section) => section.project.external === true);
+  const dragDisabled = model.singleProjectMode || view.projectSortOrder !== 'manual' || hasExternalProjects;
   const hasProjectScroller = model.projectSections.length > 0 && renderedSections.length > 0;
   React.useLayoutEffect(() => {
     if (enableStickyFade && hasProjectScroller && scrollContainerRef.current) {
@@ -290,6 +297,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
              if (isInlineEditing) return;
             // Drag only allowed in manual sort mode - indices from visual order don't match store order in other modes
             if (view.projectSortOrder !== 'manual') return;
+            if (hasExternalProjects) return;
             const { active, over } = event;
             if (!over || active.id === over.id) return;
             const oldIndex = model.sectionsForRender.findIndex((section) => section.project.id === active.id);
@@ -311,7 +319,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
                 <SortableProjectItem
                   key={projectKey}
                   id={projectKey}
-                  disabled={model.singleProjectMode || view.projectSortOrder !== 'manual'}
+                  disabled={dragDisabled}
                   projectLabel={projectLabel}
                   projectDescription={projectDescription}
                   projectDirectory={project.normalizedPath}

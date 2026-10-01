@@ -14,8 +14,7 @@ import type {
 } from '@/lib/api/types';
 
 import { invalidateSkillsLoadCache, refreshSkillsAfterOpenCodeRestart, useSkillsStore } from '@/stores/useSkillsStore';
-import { opencodeClient } from '@/lib/opencode/client';
-import { useProjectsStore } from '@/stores/useProjectsStore';
+import { resolveAmbientConfigDirectory } from './utils/configDirectory';
 import { startConfigUpdate } from '@/lib/configUpdate';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { noteDeferredRestartFromPayload } from '@/lib/opencode/deferredRestart';
@@ -65,25 +64,12 @@ const getSkillsCatalogCacheKey = (directory: string | null): string => {
   return directory?.trim() || DEFAULT_SKILLS_CATALOG_CACHE_KEY;
 };
 
-const getRequestDirectory = (): string | null => {
-  try {
-    const projectsStore = useProjectsStore.getState();
-    const activeProject = projectsStore.getActiveProject?.();
-
-    if (activeProject?.path?.trim()) {
-      return activeProject.path.trim();
-    }
-
-    const clientDir = opencodeClient.getDirectory();
-    if (clientDir?.trim()) {
-      return clientDir.trim();
-    }
-  } catch (err) {
-    console.warn('[SkillsCatalogStore] Error resolving config directory:', err);
-  }
-
-  return null;
-};
+/**
+ * Ambient request directory. The session directory wins over the active
+ * project, so catalog sources of the selected session's project are read even
+ * when the app is on another workspace. Resolution lives in the shared helper.
+ */
+const getRequestDirectory = (): string | null => resolveAmbientConfigDirectory();
 
 export interface SkillsCatalogState {
   sources: SkillsCatalogSource[];

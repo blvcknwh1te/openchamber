@@ -46,8 +46,22 @@ display can be all projects or one selected project. The mobile sessions sheet
 (`apps/MobileSessionsSheet.tsx`) partitions the same way through
 `partitionSidebarSessions` and lists Chats as a collapsible section above the
 project tree, with no Recent projection. VS Code excludes worktrees and managed
-Chats, while retaining its workspace-scoped grouped list and inline archived
-buckets.
+Chats while keeping inline archived buckets.
+
+VS Code's project registry mirrors the workspace folders, so the sidebar would
+only ever list the folders currently open even though every session lives in the
+same shared OpenCode database. `useExternalSessionProjects` therefore extends the
+rendered project list with the projects `sdk.project.list()` reports and the
+registry lacks, and `knownDirectories` follows that same list so those sessions
+pass the directory filter and resolve an owner. A discovered project
+(`external: true`) is display-only: it appears only while the global sessions
+cache lists at least one session in its directory (archive included), it never
+becomes the active project (`setActiveProjectIdOnly` is a no-op in VS Code), and
+it stays out of Git enrichment so the sidebar does not read the status of every
+repository in the database. Web and desktop keep the registry as the single
+authority. Opening a session from a discovered section needs nothing extra: the
+row hands its own `directory` to `setCurrentSession`, and the new-session button
+passes that directory as `directoryOverride`.
 
 Directory demand always includes known project roots and worktrees. Visibility
 only changes priority. Row mounts must not start bootstrap work. Selection and

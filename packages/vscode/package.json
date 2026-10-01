@@ -2,7 +2,7 @@
   "name": "openchamber-bnw",
   "displayName": "OpenChamber BNW",
   "description": "%extension.description%",
-  "version": "1.23.0-bnw.39",
+  "version": "1.23.0-bnw.41",
   "publisher": "blacknwhite",
   "private": true,
   "repository": {

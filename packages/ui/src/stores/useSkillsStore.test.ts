@@ -130,6 +130,29 @@ describe('useSkillsStore directory resolution', () => {
     }]);
   });
 
+  test('loadSkills prefers the session client directory over the active project', async () => {
+    // A session can belong to a project other than the active workspace; the
+    // client directory carries that session's project, so it must win.
+    getDirectoryImpl = () => '/workspace/session-project';
+    invalidateSkillsLoadCache('/workspace/session-project');
+    runtimeFetchImpl = async () => new Response(JSON.stringify({
+      skills: [{
+        name: 'session-skill',
+        path: '/workspace/session-project/.agents/skills/session-skill/SKILL.md',
+        scope: 'project',
+        source: 'agents',
+        sources: { md: { description: 'Session local' } },
+      }],
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(await useSkillsStore.getState().loadSkills()).toBe(true);
+    expect(runtimeFetchCalls.length).toBe(1);
+    expect(runtimeFetchCalls[0]?.url).toContain(`directory=${encodeURIComponent('/workspace/session-project')}`);
+    expect(useSkillsStore.getState().skills.map((skill) => skill.name)).toEqual(['session-skill']);
+  });
+
   test('loadSkills maps authoritative renamable from the list response', async () => {
     runtimeFetchImpl = async () => new Response(JSON.stringify({
       skills: [
@@ -252,12 +275,13 @@ describe('useSkillsStore directory resolution', () => {
     expect(await useSkillsStore.getState().loadSkills()).toBe(true);
     expect(runtimeFetchCalls.length).toBe(1);
 
-    // Wrong key: client-directory-first null maps to __default__, not the active project.
+    // Wrong key: a null client directory is not the key loadSkills resolves to,
+    // so it maps to __default__ and leaves the resolved cache intact.
     invalidateSkillsLoadCache(null);
     expect(await useSkillsStore.getState().loadSkills()).toBe(true);
     expect(runtimeFetchCalls.length).toBe(1);
 
-    // Default resolution must match loadSkills (active project first).
+    // Default resolution must match loadSkills (session directory, then active project).
     invalidateSkillsLoadCache();
     expect(await useSkillsStore.getState().loadSkills()).toBe(true);
     expect(runtimeFetchCalls.length).toBe(2);

@@ -1,5 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import {
   buildPreferencesFields,
   flattenPreferences,
@@ -101,7 +102,11 @@ describe('scope helpers', () => {
   });
 
   test('preferences.json sits beside settings.json', () => {
-    assert.equal(preferencesFilePathFor('/home/u/.config/openchamber/settings.json'), '/home/u/.config/openchamber/preferences.json');
+    const settingsPath = path.join('/home/u/.config/openchamber', 'settings.json');
+    assert.equal(
+      preferencesFilePathFor(settingsPath),
+      path.join('/home/u/.config/openchamber', 'preferences.json'),
+    );
   });
 });
 

@@ -63,6 +63,7 @@ The webview build emits each worker as one self-contained file. VS Code webviews
 
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
+  - Every config handler resolves its working directory from the request itself: the webview forwards the `directory` query parameter or the `x-opencode-directory` header (`getRequestDirectoryHint` in `webview/main.tsx`) into the bridge payload, and `resolveWorkingDirectory` prefers it over the workspace directory. Skills discovery, the skills catalog, skill files, MCP, commands, plugins, and snippets follow the session's own directory, so a session from another project reads that project's configuration instead of the open workspace's. Only the fallback, used when the webview sends no directory, is the managed server's working directory or the first workspace folder.
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
   - OpenCode JSONC reads in `opencodeConfig.ts` fail closed on a partial or non-object `jsonc-parser` tree (`INVALID_JSONC`) so mutations cannot rewrite a `$schema`-only stub over an existing config. Comment-only files read as empty, while other content that yields no JSON value (YAML, plain text) fails closed. A broken layer is omitted from the merge and recorded on `layerErrors`; valid sibling layers still load, including plugin list/read via `getPluginConfigSources`. Writes still refuse to overwrite the broken file.
 

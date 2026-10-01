@@ -1,10 +1,9 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';
+import { resolveAmbientConfigDirectory } from './utils/configDirectory';
 import { startConfigUpdate } from '@/lib/configUpdate';
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
-import { useProjectsStore } from '@/stores/useProjectsStore';
-import { opencodeClient } from '@/lib/opencode/client';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { noteDeferredRestartFromPayload } from '@/lib/opencode/deferredRestart';
 
@@ -107,23 +106,12 @@ type PluginFileContent = {
   content: string;
 };
 
-const getConfigDirectory = (): string | null => {
-  try {
-    const projectsStore = useProjectsStore.getState();
-    const activeProject = projectsStore.getActiveProject?.();
-    if (activeProject?.path?.trim()) {
-      return activeProject.path.trim();
-    }
-
-    const clientDir = opencodeClient.getDirectory();
-    if (clientDir?.trim()) {
-      return clientDir.trim();
-    }
-  } catch (err) {
-    console.warn('[PluginsStore] Error resolving config directory:', err);
-  }
-  return null;
-};
+/**
+ * Ambient config directory. The session directory wins over the active
+ * project, so plugins of the selected session's project are read even when the
+ * app is on another workspace. Resolution lives in the shared helper.
+ */
+const getConfigDirectory = (): string | null => resolveAmbientConfigDirectory();
 
 const CLIENT_RELOAD_DELAY_MS = 800;
 const PLUGINS_LOAD_CACHE_TTL_MS = 5000;

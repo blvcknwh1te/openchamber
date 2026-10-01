@@ -34,15 +34,15 @@ const resolveDirectory = (directory?: string | null): string | null => {
 
 const getConfigDirectory = (): string | null => {
   try {
+    const clientDir = opencodeClient.getDirectory();
+    if (clientDir?.trim()) {
+      return clientDir.trim();
+    }
+
     const projectsStore = useProjectsStore.getState();
     const activeProject = projectsStore.getActiveProject?.();
     if (activeProject?.path?.trim()) {
       return activeProject.path.trim();
-    }
-
-    const clientDir = opencodeClient.getDirectory();
-    if (clientDir?.trim()) {
-      return clientDir.trim();
     }
   } catch (err) {
     console.warn('[McpConfigStore] Error resolving config directory:', err);

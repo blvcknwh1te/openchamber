@@ -55,6 +55,8 @@ type Project = {
   color?: string;
   iconImage?: { mime: string; updatedAt: number; source: 'custom' | 'auto' };
   iconBackground?: string;
+  /** Discovered from the shared database rather than the local registry. */
+  external?: boolean;
 };
 
 type SessionProjectCollectionProps = {

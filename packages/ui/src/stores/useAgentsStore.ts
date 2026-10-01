@@ -11,6 +11,7 @@ import {
 } from "@/lib/configUpdate";
 import { noteDeferredRestartFromPayload } from "@/lib/opencode/deferredRestart";
 import { createDeferredSafeJSONStorage } from "./utils/safeStorage";
+import { resolveAmbientConfigDirectory } from "./utils/configDirectory";
 import { useConfigStore } from "@/stores/useConfigStore";
 import { invalidateCommandsLoadCache, useCommandsStore } from "@/stores/useCommandsStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
@@ -53,27 +54,12 @@ const resolveDirectory = (directory?: string | null): string | null => {
   return getConfigDirectory();
 };
 
-export const getConfigDirectory = (): string | null => {
-  try {
-    const projectsStore = useProjectsStore.getState();
-    const activeProject = projectsStore.getActiveProject?.();
-    
-    // 1. Primary: Active project path from store
-    if (activeProject?.path?.trim()) {
-      return activeProject.path.trim();
-    }
-
-    // 2. Fallback: current OpenCode directory (session / runtime)
-    const clientDir = opencodeClient.getDirectory();
-    if (clientDir?.trim()) {
-      return clientDir.trim();
-    }
-  } catch (err) {
-    console.warn('[AgentsStore] Error resolving config directory:', err);
-  }
-
-  return null;
-};
+/**
+ * Ambient config directory. The session directory wins over the active
+ * project, so agents of the selected session's project are read even when the
+ * app is on another workspace. Resolution lives in the shared helper.
+ */
+export const getConfigDirectory = (): string | null => resolveAmbientConfigDirectory();
 
 const AGENTS_LOAD_CACHE_TTL_MS = 5000;
 const DEFAULT_AGENTS_CACHE_KEY = '__default__';

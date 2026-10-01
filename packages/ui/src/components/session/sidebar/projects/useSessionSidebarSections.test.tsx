@@ -180,3 +180,104 @@ describe('sidebar search over standalone groups', () => {
     expect(sections.searchMatchCount).toBe(0);
   });
 });
+
+type TestProject = {
+  id: string;
+  path: string;
+  normalizedPath: string;
+  label?: string;
+  external?: boolean;
+};
+
+const projectSession = (id: string, directory: string): Session => ({
+  id,
+  slug: id,
+  projectID: 'project',
+  title: id,
+  version: '1',
+  directory,
+  time: { created: 1, updated: 1 },
+});
+
+const renderProjects = (
+  projects: TestProject[],
+  activeSessionsByProject: Record<string, Session[]>,
+  archivedSessionsByProject: Record<string, Session[]> = {},
+): Sections => {
+  let captured: Sections | null = null;
+  const Harness = () => {
+    const grouping = useSessionGrouping({
+      homeDirectory: '/home/user',
+      worktreeMetadata: new Map(),
+      pinnedSessionIds: new Set(),
+      sessionOrderRanks: new Map(),
+      gitBranches: new Map(),
+      isVSCode: true,
+    });
+    captured = useSessionSidebarSections({
+      normalizedProjects: projects,
+      getSessionsForProject: (projectId) => activeSessionsByProject[projectId] ?? [],
+      getArchivedSessionsForProject: (projectId) => archivedSessionsByProject[projectId] ?? [],
+      availableWorktreesByProject: new Map(),
+      projectRepoStatus: new Map(),
+      projectRootBranches: new Map(),
+      gitBranches: new Map(),
+      lastRepoStatus: false,
+      buildGroupedSessions: grouping.buildGroupedSessions,
+      hasSessionSearchQuery: false,
+      normalizedSessionSearchQuery: '',
+      filterSessionNodesForSearch: grouping.filterSessionNodesForSearch,
+      buildGroupSearchText: grouping.buildGroupSearchText,
+      foldersMap: {},
+      standaloneGroups: [],
+    });
+    return null;
+  };
+
+  renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(Harness)));
+  if (!captured) throw new Error('sections hook was not mounted');
+  return captured;
+};
+
+// A project discovered in the shared database exists only because sessions do,
+// so an empty one would be a permanent header with nothing under it. Registered
+// projects keep the empty placeholder they always had.
+describe('project sections for discovered projects', () => {
+  const registered: TestProject = { id: 'registered', path: '/ws/main', normalizedPath: '/ws/main' };
+  const discovered: TestProject = {
+    id: 'path_other',
+    path: '/other/repo',
+    normalizedPath: '/other/repo',
+    label: 'repo',
+    external: true,
+  };
+
+  test('hides a discovered project that owns no sessions', () => {
+    const sections = renderProjects([registered, discovered], { registered: [] });
+
+    expect(sections.visibleProjectSections.map((section) => section.project.id)).toEqual(['registered']);
+    expect(sections.sectionsForRender.map((section) => section.project.id)).toEqual(['registered']);
+  });
+
+  test('keeps a discovered project that owns sessions', () => {
+    const sections = renderProjects([registered, discovered], {
+      registered: [],
+      path_other: [projectSession('ses_other', '/other/repo')],
+    });
+
+    expect(sections.visibleProjectSections.map((section) => section.project.id)).toEqual(['registered', 'path_other']);
+  });
+
+  test('keeps a discovered project whose only sessions are archived', () => {
+    const archived = { ...projectSession('ses_archived', '/other/repo'), time: { created: 1, updated: 1, archived: 2 } };
+    const sections = renderProjects([discovered], {}, { path_other: [archived] });
+
+    expect(sections.visibleProjectSections.map((section) => section.project.id)).toEqual(['path_other']);
+  });
+
+  test('keeps a registered project with no sessions', () => {
+    const sections = renderProjects([registered], {});
+
+    expect(sections.visibleProjectSections.map((section) => section.project.id)).toEqual(['registered']);
+  });
+});

@@ -302,8 +302,9 @@ These rules are important. Breaking them tends to reintroduce idle CPU churn, st
 
 ### Configuration stores and the Settings directory
 
-`useAgentsStore`, `useCommandsStore`, `useSkillsStore`, `useMcpConfigStore` and
-the provider half of `useConfigStore` describe **one project's configuration**.
+`useAgentsStore`, `useCommandsStore`, `usePluginsStore`, `useSkillsStore`,
+`useSkillsCatalogStore`, `useMcpConfigStore` and the provider half of
+`useConfigStore` describe **one project's configuration**.
 Two surfaces read them at once: the app (chat, autocompletes, pickers), which
 wants the active project, and Settings, whose own project selector may point
 somewhere else.
@@ -314,6 +315,14 @@ Each of them therefore keeps two things:
   `skillsByDirectory`, `serversByDirectory`, `directoryScoped`);
 - a flat mirror (`agents`, `commands`, `skills`, `mcpServers`, `providers`) that
   tracks the **active** project only.
+
+When a caller omits the directory, the ambient one is the directory the client
+is on (`opencodeClient.getDirectory()`), which follows the selected session; the
+active project is only the fallback for a caller that runs before the client has
+a directory. A session whose project is not the open workspace therefore reads
+its own config, and the flat mirror matches it. This rule lives in exactly one
+place, `stores/utils/configDirectory.ts` (`resolveAmbientConfigDirectory()`);
+every store above calls that helper instead of resolving the directory itself.
 
 Thinking variants keep the effective value in `currentVariant` so existing send
 paths capture a stable configuration. `currentVariantSelection` says where that

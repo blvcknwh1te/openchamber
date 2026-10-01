@@ -783,12 +783,14 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     const filePath = decodeURIComponent(skillsFilesMatch[2]);
     const verb = method;
     const body = await extractJsonBody(input, init, method);
+    const directory = getRequestDirectoryHint(url, input, init);
     try {
       const data = await sendBridgeMessage('api:config/skills/files', { 
         method: verb, 
         name, 
         filePath, 
-        content: body.content 
+        content: body.content,
+        directory
       });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
@@ -812,8 +814,9 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
   // Skills catalog: /api/config/skills/catalog
   if (pathname === '/api/config/skills/catalog') {
     const refresh = url.searchParams.get('refresh') === 'true';
+    const directory = getRequestDirectoryHint(url, input, init);
     try {
-      const data = await sendBridgeMessage('api:config/skills:catalog', { refresh });
+      const data = await sendBridgeMessage('api:config/skills:catalog', { refresh, directory });
       return new Response(JSON.stringify(data), { status: skillsCatalogStatusFromPayload(data), headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -847,8 +850,9 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
 
   // Skills CRUD: /api/config/skills/:name or /api/config/skills
   if (pathname === '/api/config/skills') {
+    const directory = getRequestDirectoryHint(url, input, init);
     try {
-      const data = await sendBridgeMessage('api:config/skills', { method: 'GET' });
+      const data = await sendBridgeMessage('api:config/skills', { method: 'GET', directory });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -861,8 +865,9 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     const name = decodeURIComponent(encodedName);
     const verb = method;
     const body = await extractJsonBody(input, init, method);
+    const directory = getRequestDirectoryHint(url, input, init);
     try {
-      const data = await sendBridgeMessage('api:config/skills', { method: verb, name, body });
+      const data = await sendBridgeMessage('api:config/skills', { method: verb, name, body, directory });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

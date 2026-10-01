@@ -41,6 +41,7 @@ import { getRuntimeKey } from '@/lib/runtime-switch';
 import { streamPerfCount, streamPerfMark } from '@/stores/utils/streamDebug';
 import { runBackgroundNetworkTask } from '@/lib/background-network';
 import { buildKnownSessionDirectories } from './sidebar/list/sessionListDirectories';
+import { useExternalSessionProjects } from './sidebar/list/useExternalSessionProjects';
 import { sortProjectsByOrder } from './sidebar/list/projectSort';
 import { z } from 'zod';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
@@ -156,14 +157,17 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
   const gitBranches = useGitAllBranches(isVisible);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+  // VS Code's registry mirrors the workspace folders, so the sidebar reads a
+  // list that also carries the projects the shared database knows about.
+  const displayProjects = useExternalSessionProjects(projects, isVSCode);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   // sessionAttentionStates removed — now using notification-store directly in SessionNodeItem
   const worktreeMetadata = useSessionUIStore((state) => state.worktreeMetadata);
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const knownSessionDirectories = React.useMemo(
-    () => buildKnownSessionDirectories(projects, availableWorktreesByProject, { includeWorktrees: !isVSCode }),
-    [availableWorktreesByProject, isVSCode, projects],
+    () => buildKnownSessionDirectories(displayProjects, availableWorktreesByProject, { includeWorktrees: !isVSCode }),
+    [availableWorktreesByProject, displayProjects, isVSCode],
   );
   // The sidebar tree's +-buttons (project / group / folder) open a draft but,
   // unlike selecting an existing session, don't navigate. VS Code's compact view
@@ -400,7 +404,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
 
 
   const normalizedProjects = React.useMemo(() => {
-    return projects.flatMap((project) => {
+    return displayProjects.flatMap((project) => {
       const normalizedPath = normalizePath(project.path);
       if (!normalizedPath) return [];
       return [{
@@ -415,19 +419,28 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
         addedAt: project.addedAt,
         lastOpenedAt: project.lastOpenedAt,
         sidebarCollapsed: project.sidebarCollapsed,
+        external: project.external,
       }];
     });
-  }, [projects]);
+  }, [displayProjects]);
+
+  // Git enrichment stays on the registered projects. Discovered projects can be
+  // dozens of unrelated repositories, and reading their status on every sidebar
+  // open would cost a git call each for sections the user is not working in.
+  const gitTrackedNormalizedProjects = React.useMemo(
+    () => normalizedProjects.filter((project) => project.external !== true),
+    [normalizedProjects],
+  );
 
   const normalizedProjectPaths = React.useMemo(
-    () => normalizedProjects.map((project) => project.normalizedPath),
-    [normalizedProjects],
+    () => gitTrackedNormalizedProjects.map((project) => project.normalizedPath),
+    [gitTrackedNormalizedProjects],
   );
 
   const gitRepoStatus = useGitRepoStatusMap(isVisible ? normalizedProjectPaths : EMPTY_STRING_ARRAY);
   useProjectRepoStatus({
     enabled: isVisible,
-    normalizedProjects,
+    normalizedProjects: gitTrackedNormalizedProjects,
     gitRepoStatus,
     setProjectRepoStatus,
     setProjectRootBranches,

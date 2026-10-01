@@ -16,6 +16,8 @@ type ProjectItem = {
   color?: string;
   iconImage?: { mime: string; updatedAt: number; source: 'custom' | 'auto' };
   iconBackground?: string;
+  /** Discovered from the shared database rather than the local registry. */
+  external?: boolean;
 };
 
 type ProjectSection = {
@@ -185,9 +187,16 @@ export const useSessionSidebarSections = (args: Args) => {
     gitBranches,
   ]);
 
-  const visibleProjectSections = React.useMemo(() => {
-    return projectSections;
-  }, [projectSections]);
+  // A discovered project exists only because the shared database listed it, so
+  // an empty one would be a permanent header with nothing under it. Registered
+  // projects keep the empty placeholder they always had. Archived sessions fill
+  // their own bucket, so a project with only archived sessions stays visible.
+  const visibleProjectSections = React.useMemo(() => (
+    projectSections.filter((section) => (
+      section.project.external !== true
+      || section.groups.some((group) => group.sessions.length > 0)
+    ))
+  ), [projectSections]);
 
   const groupSearchDataByGroup = React.useMemo(() => {
     const result = new WeakMap<SessionGroup, GroupSearchData>();

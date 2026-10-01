@@ -5,6 +5,10 @@ const originalFetch = globalThis.fetch;
 import type { PluginEntry, PluginFile, RegistryResult } from './usePluginsStore';
 
 const activeProjectPath = '/workspace/project';
+// The client session directory is the ambient config directory; the active
+// project is only the fallback when the client has none.
+const sessionDirectory = '/workspace/session-project';
+let clientDirectory: string | undefined = sessionDirectory;
 
 const refreshAfterOpenCodeRestartMock = mock(async () => undefined);
 const startConfigUpdateMock = mock(() => undefined);
@@ -20,7 +24,7 @@ mock.module('@/stores/useProjectsStore', () => ({
 
 mock.module('@/lib/opencode/client', () => ({
   opencodeClient: {
-    getDirectory: () => '/fallback/project',
+    getDirectory: () => clientDirectory,
   },
 }));
 
@@ -135,11 +139,30 @@ describe('usePluginsStore', () => {
     resetStore();
     fetchCalls.length = 0;
     queuedResponses = [];
+    clientDirectory = sessionDirectory;
     globalThis.fetch = fetchMock as unknown as typeof fetch;
   });
 
   afterAll(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  test('ambient load uses the session client directory over the active project', async () => {
+    // A session can belong to a project other than the active workspace; the
+    // client directory carries that session's project, so it must win.
+    queueFetchResponses([jsonResponse(pluginListPayload), jsonResponse({ results: [registryOk] })]);
+
+    expect(await usePluginsStore.getState().loadPlugins()).toBe(true);
+    await flushPluginFollowUps();
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fsession-project');
+  });
+
+  test('ambient load falls back to the active project when the client has no directory', async () => {
+    clientDirectory = undefined;
+    queueFetchResponses([jsonResponse(pluginListPayload), jsonResponse({ results: [registryOk] })]);
+
+    expect(await usePluginsStore.getState().loadPlugins()).toBe(true);
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fproject');
   });
 
   test('loadPlugins calls config plugins endpoint once and populates entries/files', async () => {
@@ -150,7 +173,7 @@ describe('usePluginsStore', () => {
 
     expect(result).toBe(true);
     expect(fetchCalls).toHaveLength(2);
-    expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fsession-project');
     expect(usePluginsStore.getState().entries).toEqual([entry]);
     expect(usePluginsStore.getState().files).toEqual([file]);
     expect(usePluginsStore.getState().isLoading).toBe(false);
@@ -181,7 +204,7 @@ describe('usePluginsStore', () => {
     const result = await usePluginsStore.getState().createEntry({ spec: 'a', scope: 'user' });
 
     expect(result.ok).toBe(true);
-    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/entry?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/entry?directory=%2Fworkspace%2Fsession-project');
     expect(fetchCalls[0]?.init?.method).toBe('POST');
     expect(requestBody(0)).toEqual({ spec: 'a', scope: 'user' });
   });
@@ -200,7 +223,7 @@ describe('usePluginsStore', () => {
     const result = await usePluginsStore.getState().updateEntry('entry-id', { spec: 'b' });
 
     expect(result.ok).toBe(true);
-    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/entry/entry-id?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/entry/entry-id?directory=%2Fworkspace%2Fsession-project');
     expect(fetchCalls[0]?.init?.method).toBe('PATCH');
     expect(requestBody(0)).toEqual({ spec: 'b' });
   });
@@ -213,9 +236,9 @@ describe('usePluginsStore', () => {
     const result = await usePluginsStore.getState().deleteEntry(entry.id);
 
     expect(result.ok).toBe(true);
-    expect(fetchCalls[2]?.input).toBe(`/api/config/plugins/entry/${encodeURIComponent(entry.id)}?directory=%2Fworkspace%2Fproject`);
+    expect(fetchCalls[2]?.input).toBe(`/api/config/plugins/entry/${encodeURIComponent(entry.id)}?directory=%2Fworkspace%2Fsession-project`);
     expect(fetchCalls[2]?.init?.method).toBe('DELETE');
-    expect(fetchCalls[3]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[3]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fsession-project');
     expect(usePluginsStore.getState().entries).toEqual([]);
     expect(usePluginsStore.getState().selectedId).toBeNull();
   });
@@ -226,7 +249,7 @@ describe('usePluginsStore', () => {
     const result = await usePluginsStore.getState().createFile({ fileName: 'plugin.ts', content: 'export {}', scope: 'user' });
 
     expect(result.ok).toBe(true);
-    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/file?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/file?directory=%2Fworkspace%2Fsession-project');
     expect(fetchCalls[0]?.init?.method).toBe('POST');
     expect(requestBody(0)).toEqual({ fileName: 'plugin.ts', content: 'export {}', scope: 'user' });
   });
@@ -254,7 +277,7 @@ describe('usePluginsStore', () => {
 
     const result = await usePluginsStore.getState().readFile(file.id);
 
-    expect(fetchCalls[0]?.input).toBe(`/api/config/plugins/file/${encodeURIComponent(file.id)}?directory=%2Fworkspace%2Fproject`);
+    expect(fetchCalls[0]?.input).toBe(`/api/config/plugins/file/${encodeURIComponent(file.id)}?directory=%2Fworkspace%2Fsession-project`);
     expect(result).toEqual({ fileName: 'plugin.ts', scope: 'user', content: 'export {}' });
   });
 
@@ -317,7 +340,7 @@ describe('usePluginsStore', () => {
     await flushPluginFollowUps();
 
     expect(result).toBe(true);
-    expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins?directory=%2Fworkspace%2Fsession-project');
     expect(registryCalls()).toHaveLength(1);
   });
 
@@ -379,7 +402,7 @@ describe('usePluginsStore', () => {
     const result = await usePluginsStore.getState().updateToLatest('X');
 
     expect(result.ok).toBe(true);
-    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/entry/X?directory=%2Fworkspace%2Fproject');
+    expect(fetchCalls[0]?.input).toBe('/api/config/plugins/entry/X?directory=%2Fworkspace%2Fsession-project');
     expect(requestBody(0)).toEqual({ spec: 'foo@2' });
   });
 
