@@ -1,15 +1,11 @@
 import React from 'react';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useSessionCollapseStore } from '@/stores/useSessionCollapseStore';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
 import { z } from 'zod';
 import { useGroupOrdering } from './useGroupOrdering';
 
-const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
-// Set once the user collapses or expands something themselves. Without it an
-// empty `oc.sessions.projectCollapse` cannot be told apart from "no choice yet",
-// and the first-run default would come back over a deliberate "expand all".
-const PROJECT_COLLAPSE_CHOSEN_STORAGE_KEY = 'oc.sessions.projectCollapseChosen';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
 const GROUP_COLLAPSE_STORAGE_KEY = 'oc.sessions.groupCollapse';
 
@@ -57,13 +53,19 @@ export const useSessionProjectViewState = ({
   activeProjectId = null,
 }: SessionProjectViewStateArgs) => {
   const safeStorage = React.useMemo(() => getDeferredSafeStorage(), []);
-  const collapseChosenRef = React.useRef<boolean | null>(null);
-  if (collapseChosenRef.current === null) {
-    collapseChosenRef.current = safeStorage.getItem(PROJECT_COLLAPSE_CHOSEN_STORAGE_KEY) === 'true';
-  }
-  const [collapsedProjects, setCollapsedProjects] = React.useState<Set<string>>(() => (
-    parseStringSet(safeStorage.getItem(PROJECT_COLLAPSE_STORAGE_KEY))
-  ));
+  // Collapsed projects and the "user chose" marker live in a shared store so
+  // the VS Code header can drive the same state as the sidebar.
+  const collapsedProjectIds = useSessionCollapseStore((store) => store.collapsedProjectIds);
+  const collapseChosen = useSessionCollapseStore((store) => store.collapseChosen);
+  const setCollapsedProjectIds = useSessionCollapseStore((store) => store.setCollapsedProjectIds);
+  const markCollapseChosenInStore = useSessionCollapseStore((store) => store.markCollapseChosen);
+  const registerKnownProjectIds = useSessionCollapseStore((store) => store.registerKnownProjectIds);
+  const collapseAllInStore = useSessionCollapseStore((store) => store.collapseAll);
+  const expandAllInStore = useSessionCollapseStore((store) => store.expandAll);
+  const collapsedProjects = React.useMemo(
+    () => new Set(collapsedProjectIds),
+    [collapsedProjectIds],
+  );
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(() => (
     parseStringSet(safeStorage.getItem(GROUP_COLLAPSE_STORAGE_KEY))
   ));
@@ -83,14 +85,8 @@ export const useSessionProjectViewState = ({
   // Records that the collapse state is now the user's own choice, so neither the
   // first-run default nor a stale stored value can overwrite it.
   const markCollapseChosen = React.useCallback(() => {
-    if (collapseChosenRef.current === true) return;
-    collapseChosenRef.current = true;
-    try {
-      safeStorage.setItem(PROJECT_COLLAPSE_CHOSEN_STORAGE_KEY, 'true');
-    } catch {
-      // ignored
-    }
-  }, [safeStorage]);
+    markCollapseChosenInStore();
+  }, [markCollapseChosenInStore]);
 
   const flushCollapsedProjectsPersist = React.useCallback(() => {
     if (isVSCode) return;
@@ -128,27 +124,28 @@ export const useSessionProjectViewState = ({
     };
   }, []);
 
+  // Publishes the rendered project list so `collapseAll` from the VS Code
+  // header reaches every project without reading the sidebar's own list.
+  React.useEffect(() => {
+    registerKnownProjectIds(projects.map((project) => project.id));
+  }, [projects, registerKnownProjectIds]);
+
   // First run keeps the active project open and folds every other one: with a
   // session list spanning several projects the open one is what the user wants
   // to see, and a collapsed header still shows the project name. A user who
   // collapsed or expanded anything themselves keeps that choice, including
   // "expand all".
   React.useEffect(() => {
-    if (defaultCollapseApplied.current || collapseChosenRef.current === true) return;
+    if (defaultCollapseApplied.current || collapseChosen) return;
     if (projects.length === 0) return;
 
     defaultCollapseApplied.current = true;
     const next = new Set(
       projects.filter((project) => project.id !== activeProjectId).map((project) => project.id),
     );
-    setCollapsedProjects((previous) => (setsEqual(previous, next) ? previous : next));
-    try {
-      safeStorage.setItem(PROJECT_COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(next)));
-    } catch {
-      // ignored
-    }
+    setCollapsedProjectIds([...next]);
     scheduleCollapsedProjectsPersist(next);
-  }, [activeProjectId, projects, safeStorage, scheduleCollapsedProjectsPersist]);
+  }, [activeProjectId, collapseChosen, projects, setCollapsedProjectIds, scheduleCollapsedProjectsPersist]);
 
   React.useEffect(() => {
     if (!groupOrderDirty.current) return;
@@ -173,69 +170,42 @@ export const useSessionProjectViewState = ({
     ignoreIntersectionUntil.current = Date.now() + 150;
     groupCollapseDirty.current = true;
     setCollapsedGroups(new Set());
-    setCollapsedProjects(() => {
-      const allIds = new Set(projects.map((project) => project.id));
-      try {
-        safeStorage.setItem(PROJECT_COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(allIds)));
-      } catch {
-        // ignored
-      }
-      scheduleCollapsedProjectsPersist(allIds);
-      return allIds;
-    });
-  }, [markCollapseChosen, projects, safeStorage, scheduleCollapsedProjectsPersist]);
+    registerKnownProjectIds(projects.map((project) => project.id));
+    collapseAllInStore();
+    scheduleCollapsedProjectsPersist(new Set(projects.map((project) => project.id)));
+  }, [collapseAllInStore, markCollapseChosen, projects, registerKnownProjectIds, scheduleCollapsedProjectsPersist]);
 
   const expandAllProjects = React.useCallback(() => {
     markCollapseChosen();
     ignoreIntersectionUntil.current = Date.now() + 150;
     groupCollapseDirty.current = true;
     setCollapsedGroups(new Set());
-    setCollapsedProjects(() => {
-      const empty = new Set<string>();
-      try {
-        safeStorage.setItem(PROJECT_COLLAPSE_STORAGE_KEY, JSON.stringify([]));
-      } catch {
-        // ignored
-      }
-      scheduleCollapsedProjectsPersist(empty);
-      return empty;
-    });
-  }, [markCollapseChosen, safeStorage, scheduleCollapsedProjectsPersist]);
+    expandAllInStore();
+    scheduleCollapsedProjectsPersist(new Set());
+  }, [expandAllInStore, markCollapseChosen, scheduleCollapsedProjectsPersist]);
 
   // Collapsing or expanding a single project is a choice too, and it also pins
   // the state: a project the user just opened on purpose must survive a restart
   // even though the default would have folded it.
   const updateCollapsedProjects = React.useCallback<React.Dispatch<React.SetStateAction<Set<string>>>>((update) => {
     markCollapseChosen();
-    setCollapsedProjects((previous) => {
-      const next = typeof update === 'function' ? update(previous) : update;
-      if (setsEqual(previous, next)) return previous;
-      try {
-        safeStorage.setItem(PROJECT_COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(next)));
-      } catch {
-        // ignored
-      }
-      scheduleCollapsedProjectsPersist(next);
-      return next;
-    });
-  }, [markCollapseChosen, safeStorage, scheduleCollapsedProjectsPersist]);
+    const previous = new Set(collapsedProjectIds);
+    const next = typeof update === 'function' ? update(previous) : update;
+    if (setsEqual(previous, next)) return;
+    setCollapsedProjectIds([...next]);
+    scheduleCollapsedProjectsPersist(next);
+  }, [collapsedProjectIds, markCollapseChosen, scheduleCollapsedProjectsPersist, setCollapsedProjectIds]);
 
   const toggleProject = React.useCallback((projectId: string) => {
     markCollapseChosen();
     ignoreIntersectionUntil.current = Date.now() + 150;
-    setCollapsedProjects((previous) => {
-      const next = new Set(previous);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      try {
-        safeStorage.setItem(PROJECT_COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(next)));
-      } catch {
-        // ignored
-      }
-      scheduleCollapsedProjectsPersist(next);
-      return next;
-    });
-  }, [markCollapseChosen, safeStorage, scheduleCollapsedProjectsPersist]);
+    const previous = new Set(collapsedProjectIds);
+    const next = new Set(previous);
+    if (next.has(projectId)) next.delete(projectId);
+    else next.add(projectId);
+    setCollapsedProjectIds([...next]);
+    scheduleCollapsedProjectsPersist(next);
+  }, [collapsedProjectIds, markCollapseChosen, scheduleCollapsedProjectsPersist, setCollapsedProjectIds]);
 
   const toggleGroup = React.useCallback((key: string) => {
     groupCollapseDirty.current = true;

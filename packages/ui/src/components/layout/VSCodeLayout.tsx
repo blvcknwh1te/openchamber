@@ -17,6 +17,7 @@ import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDro
 import { SessionsTabTitle } from '@/components/session/SessionsTabTitle';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
+import { VSCodeProjectCollapseControls } from '@/components/layout/VSCodeProjectCollapseControls';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -571,6 +572,13 @@ export const VSCodeLayout: React.FC = () => {
             className={cn('relative h-full border-r border-border overflow-hidden flex-shrink-0', isResizingExpandedSidebar && 'select-none')}
             style={{ width: expandedSidebarWidth, minWidth: expandedSidebarWidth, maxWidth: expandedSidebarWidth }}
           >
+            {/* The sidebar toolbar is hidden in VS Code, so this expanded
+                column renders its own header to keep the collapse-all /
+                expand-all controls reachable in both layouts. */}
+            <div className="flex h-8 flex-shrink-0 items-center justify-between gap-2 border-b border-border px-2.5">
+              <SessionsTabTitle title={t('vscodeLayout.title.sessions')} />
+              <VSCodeProjectCollapseControls />
+            </div>
             <SessionSidebar
               mobileVariant
               allowReselect
@@ -849,6 +857,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
         <SessionsTabTitle title={title} />
       )}
       <div className="min-w-0 flex-1" />
+      {onArchiveAll && <VSCodeProjectCollapseControls />}
       {onArchiveAll && (
         <button
           type="button"

@@ -93,6 +93,19 @@ mode, where the only project cannot be folded away. The buttons are deliberately
 independent of `showProjectDisplayControls` (which stays false in VS Code),
 because the compact VS Code sidebar renders no display-mode menu at all.
 
+The compact VS Code sidebar hides `SidebarHeader` entirely, so
+`VSCodeProjectCollapseControls` (in `components/layout/VSCodeLayout.tsx`) renders
+the same two buttons in the `VSCodeHeader` sessions view. It calls `collapseAll`/
+`expandAll` on the shared `useSessionCollapseStore` directly, which is the same
+state the `SessionProjectCollection` list renders from. The buttons appear only
+once the sidebar has registered at least one project.
+
+Collapsed projects are owned by `useSessionCollapseStore`, not by the hook's
+component state, so both the sidebar and the VS Code header read and write the
+same set. The hook (`useSessionProjectViewState`) keeps the group collapse/order
+state, applies the first-run default, and registers the rendered project ids with
+the store so `collapseAll` works from the header.
+
 On a first run the sidebar opens with every project folded except the active one,
 so a list spanning several projects starts on the one being worked in;
 `useSessionProjectViewState` applies that default once per mount, after the
@@ -100,7 +113,8 @@ project list arrives, and never again when the active project changes. A
 separate `oc.sessions.projectCollapseChosen` marker records that the user has
 since collapsed or expanded something themselves, including "expand all": an
 empty `oc.sessions.projectCollapse` is otherwise indistinguishable from "no
-choice yet", and the default would fold every project again on the next run.
+choice yet", and the default would fold every project again on the next run. The
+store keeps both keys byte-compatible with the previous local-state format.
 
 Session menus share `SessionAiRenameMenuItem` with header tabs and the
 single-session header. AI renaming uses the same leading spinner as a worktree
@@ -136,7 +150,7 @@ matching and ordering. Search does not fetch sessions or broaden list membership
 - Session selection does not invalidate the sidebar orchestration component. Each mounted row selects only whether its own session ID is active, while parent expansion, project selection memory, and neighbor prefetch run in small effect-only subscribers.
 - Parent expansion is exclusively manual. Selecting or navigating to a subsession never expands its parent automatically. Project/worktree and `recent` trees use independent persisted context keys and receive separate stable projections, so expansion changes in one context neither invalidate nor change the other. The persisted storage key remains `v3`; older state mixed contexts and is not migrated into this contract.
 - Folder membership may contain both a parent session and its descendants. Rendering treats only the highest assigned ancestors as folder roots because their normal session trees already include assigned descendants; persisted membership remains unchanged for cleanup and move semantics.
-- Sidebar selection holds the clicked row's viewport position across navigation-driven sidebar updates. Wheel or touch input cancels the hold immediately, so programmatic compensation never fights intentional scrolling.
+- Sidebar selection holds the clicked row's viewport position across navigation-driven sidebar updates. Wheel or touch input anywhere in the window cancels the hold immediately (`sessions/sessionRowScrollAnchor.ts` listens in the capture phase, so a row tooltip portal, the overlay scrollbar, or a sticky header cannot swallow the cancellation), and programmatic compensation never fights intentional scrolling.
 - Global session subscriptions are structural: create/delete, title, share, archive, directory, parent, and slug changes invalidate the tree. Recency-only `time.updated` changes do not trigger a rebuild. The separate lifecycle rank invalidates ordering only on `settled ↔ active` transitions, with root sessions ranked among roots and child sessions only among siblings of the same parent.
 - Row metadata that changes without a structural rebuild comes from a session-keyed index. The inline model badge (left of the date, and in the hover-revealed metadata of every non-touch layout) reads `sync/session-last-model.ts`, which projects the last used model from the global session cache; the row node's own `model` is only the fallback for sessions that cache does not list yet. The same slot carries the compact spend chip (`sessions/SessionUsageCostBadge.tsx`) that prints the row's already-projected `cost` through the shared `lib/money.ts`, so the row metadata reads `Model · $4.74 · date`: the chip joins the model badge through a middle-dot divider instead of taking a column of its own, and a divider is skipped whenever nothing precedes it. The chip is hidden, never zeroed or dashed, when the row reports no cost; the token figure survives in the hover tooltip only. Every row hover tooltip, including VS Code, lists project, branch, PR, model, cost, and total tokens; those two totals come from `sessions/sessionUsageTotals.ts`, which projects each session's `cost` and `tokens` out of the same cache, adds every descendant node of the row (a sub-session is a session of its own, so its spend is not in its parent's totals), and falls back to the row's record for sessions the cache does not list yet. A projection that carries no totals is not stored, so a later partial payload cannot erase spend the row already showed.
 - A worktree Git still registers but whose directory is gone (`prunable` in `git worktree list`) stays in the topology with `worktreeStatus: 'missing'` and a warning icon on its group header. Its sessions remain accessible for manual movement or archiving through worktree deletion. Opening a session does not move it. The ordinary worktree delete action accepts a missing directory. Topology discovery remains event-driven, including `session-created` and server `worktree-changed` control events, with no idle polling. The server sends `worktree-changed` after its own worktree create/remove and when a status or listing request notices that a repository's worktree set changed (see `packages/web/server/lib/git/DOCUMENTATION.md`); the event names every directory of that repository the server has seen, and the sidebar refreshes each registered project among them once, bypassing the 30-second list cache. A worktree this client created and is still bootstrapping keeps its `pending`/`invalid` status through that refresh. Hosted mobile and the desktop mini chat handle the same control event through `lib/worktrees/worktreeTopologyRefresh.ts`; VS Code intentionally excludes worktree topology.

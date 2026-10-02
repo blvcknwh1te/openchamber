@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
+import { useSessionCollapseStore } from '@/stores/useSessionCollapseStore';
 import type { SessionGroup } from '../types';
 import { useSessionProjectViewState } from './useSessionProjectViewState';
 
@@ -78,6 +79,14 @@ describe('useSessionProjectViewState', () => {
     // first-run default must keep out of their way. The first-run tests clear
     // this key themselves.
     storage.setItem('oc.sessions.projectCollapseChosen', 'true');
+    // Collapse state now lives in a module-level store; reset it to match the
+    // cleared storage so tests stay independent. Tests that seed storage call
+    // `persist.rehydrate()` to load it.
+    useSessionCollapseStore.setState({
+      collapsedProjectIds: [],
+      collapseChosen: true,
+      knownProjectIds: [],
+    });
   });
 
   test('keeps stable state/actions and ignores selection-store updates', async () => {
@@ -191,6 +200,7 @@ describe('useSessionProjectViewState', () => {
     storage.setItem('oc.sessions.projectCollapse', JSON.stringify(['project-a']));
     storage.setItem('oc.sessions.groupCollapse', JSON.stringify(['project-a:group-a']));
     storage.setItem('oc.sessions.groupOrder', JSON.stringify({ 'project-a': ['group-b', 'group-a'] }));
+    await useSessionCollapseStore.persist.rehydrate();
     const dom = installMinimalDom();
     const root = createRoot(dom.container);
     const capture: HookCapture = { renderCount: 0 };
@@ -229,9 +239,14 @@ describe('useSessionProjectViewState', () => {
       /** false models a later run, where the marker of the user's choice survived. */
       firstRun?: boolean;
     }) => {
+      const storage = getDeferredSafeStorage();
       if (args.firstRun !== false) {
-        getDeferredSafeStorage().removeItem('oc.sessions.projectCollapseChosen');
+        storage.removeItem('oc.sessions.projectCollapse');
+        storage.removeItem('oc.sessions.projectCollapseChosen');
       }
+      // Collapse state now lives in a module-level store; load whatever prior
+      // storage mutations left so each mount starts from the stored state.
+      await useSessionCollapseStore.persist.rehydrate();
       const dom = installMinimalDom();
       const root = createRoot(dom.container);
       const capture: HookCapture = { renderCount: 0 };

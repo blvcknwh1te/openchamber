@@ -34,6 +34,7 @@ import { DraggableSessionRow } from '../folders/sessionFolderDnd';
 import { canShowSessionWorktreeMenu, getSessionWorktreeMenuDisabled, nodeContainsSessionId, nodeHasPinnedMembershipChange, selectQuestionBadgeSessionScopes, selectRowBadgeVisibilityClass } from './sessionNodeItemUtils';
 import { useSessionNodeUsageTotals } from './sessionUsageTotals';
 import { SessionUsageCostBadge } from './SessionUsageCostBadge';
+import { holdSessionRowPosition } from './sessionRowScrollAnchor';
 import type { SessionNode } from '../types';
 import { formatProjectLabel, formatSessionCompactDateLabel, formatSessionDateLabel, normalizePath, renderHighlightedText } from '../utils';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -163,51 +164,6 @@ const areNodeWorktreeRenderSemanticsEqual = (prev: SessionNode, next: SessionNod
 const ROW_GUTTER_LEFT_PX = 6;
 const ROW_DEPTH_STEP_PX = 14;
 const ROW_TEXT_LEFT_PX = ROW_GUTTER_LEFT_PX + 14 + 6;
-
-const cancelScrollAnchorByContainer = new WeakMap<HTMLElement, () => void>();
-
-const holdSessionRowPosition = (target: HTMLElement): void => {
-  const row = target.closest<HTMLElement>('[data-session-row]');
-  const container = row?.closest<HTMLElement>('.overlay-scrollbar-container');
-  if (!row || !container) return;
-
-  cancelScrollAnchorByContainer.get(container)?.();
-
-  const initialTop = row.getBoundingClientRect().top;
-  let remainingFrames = 3;
-  let cancelled = false;
-  let frameId: number | null = null;
-  const cancel = () => {
-    cancelled = true;
-    if (frameId !== null) window.cancelAnimationFrame(frameId);
-    frameId = null;
-    cancelScrollAnchorByContainer.delete(container);
-    container.removeEventListener('wheel', cancel);
-    container.removeEventListener('touchstart', cancel);
-  };
-  const restore = () => {
-    if (cancelled || !row.isConnected || !container.isConnected) {
-      cancel();
-      return;
-    }
-    const delta = row.getBoundingClientRect().top - initialTop;
-    if (Math.abs(delta) > 0.5) {
-      container.scrollTop += delta;
-      streamPerfCount('ui.sidebar.selection_scroll_anchor_adjustment');
-    }
-    remainingFrames -= 1;
-    if (remainingFrames <= 0) {
-      cancel();
-      return;
-    }
-    frameId = window.requestAnimationFrame(restore);
-  };
-
-  container.addEventListener('wheel', cancel, { passive: true });
-  container.addEventListener('touchstart', cancel, { passive: true });
-  cancelScrollAnchorByContainer.set(container, cancel);
-  frameId = window.requestAnimationFrame(restore);
-};
 
 type QuickSessionActionProps = {
   archiveLabel: string;
@@ -1575,7 +1531,10 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                     </div>
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="right" sideOffset={8} className="max-w-xs text-left">
+                {/* Informational only: a row tooltip must never swallow the
+                    pointer, or hovering it would take wheel scrolling away
+                    from the list (it overlays the rows on the right). */}
+                <TooltipContent side="right" sideOffset={8} className="pointer-events-none max-w-xs text-left">
                   <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
                     <div className="flex items-center justify-between gap-3">
                       <span className="min-w-0 truncate font-medium text-foreground">{sessionTitle}</span>
