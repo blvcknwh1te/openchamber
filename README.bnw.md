@@ -50,6 +50,7 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - The Sessions sidebar lists every project that has sessions in the shared OpenCode database, not only the folders open in the window. A session from another project opens and continues normally, and a new session can be created in that project.
 - Projects without sessions stay hidden, archived sessions count as sessions, and discovered projects are deduplicated by path. The project of the open window is marked with an accent bar and accent label; projects outside the window never look active.
 - Sessions of subagents appear nested under the session that spawned them, indented below their parent.
+- The sidebar toolbar has collapse-all and expand-all buttons for the project list, next to search and selection; the display-mode menu keeps the same two actions. Opening the sidebar for the first time folds every project except the open one, and once you collapse or expand anything yourself, that choice is what gets restored.
 - Back from a session that belongs to another project returns to the full session list and stays there: the list does not silently reopen a session of the open window's project.
 - Configuration panels — skills, MCP servers, agents, commands, plugins, and the skills catalog — read the directory of the selected session, so a session from another project shows that project's own configuration.
 

@@ -83,6 +83,25 @@ only changes priority. Row mounts must not start bootstrap work. Selection and
 activity subscriptions stay session-scoped so a structural list update does not
 make every row observe unrelated streaming updates.
 
+Folding the whole project list is a toolbar action, not a menu-only one: the
+collapse-all and expand-all buttons render in `SidebarHeader` at the start of the
+right-hand control group, next to search and selection. The display-mode
+dropdown keeps its own menu items for the same two actions, and both paths call
+`collapseAllProjects`/`expandAllProjects` from `useSessionProjectViewState`, so
+there is one way to change the state. Neither button appears in single-project
+mode, where the only project cannot be folded away. The buttons are deliberately
+independent of `showProjectDisplayControls` (which stays false in VS Code),
+because the compact VS Code sidebar renders no display-mode menu at all.
+
+On a first run the sidebar opens with every project folded except the active one,
+so a list spanning several projects starts on the one being worked in;
+`useSessionProjectViewState` applies that default once per mount, after the
+project list arrives, and never again when the active project changes. A
+separate `oc.sessions.projectCollapseChosen` marker records that the user has
+since collapsed or expanded something themselves, including "expand all": an
+empty `oc.sessions.projectCollapse` is otherwise indistinguishable from "no
+choice yet", and the default would fold every project again on the next run.
+
 Session menus share `SessionAiRenameMenuItem` with header tabs and the
 single-session header. AI renaming uses the same leading spinner as a worktree
 move; the pending operation survives closing the menu or selecting another

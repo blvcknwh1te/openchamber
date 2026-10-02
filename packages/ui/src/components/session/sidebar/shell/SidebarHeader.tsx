@@ -149,6 +149,43 @@ export function SidebarHeader(props: Props): React.ReactNode {
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Both collapse controls sit in the toolbar, not only in the
+                display-mode menu: folding a long project list is a frequent
+                action, and the compact VS Code sidebar hides that menu
+                entirely. They stay out of the single-project mode, where the
+                one project cannot be folded away. */}
+            {!isSingleProjectMode ? (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={collapseAllProjects}
+                      className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                      aria-label={t('sessions.sidebar.header.displayMode.collapseAll')}
+                    >
+                      <Icon name="contract-up-down" className={headerActionIconClass} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.displayMode.collapseAll')}</p></TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={expandAllProjects}
+                      className={cn(headerActionButtonClass, 'text-muted-foreground hover:text-foreground hover:bg-transparent')}
+                      aria-label={t('sessions.sidebar.header.displayMode.expandAll')}
+                    >
+                      <Icon name="expand-up-down" className={headerActionIconClass} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.displayMode.expandAll')}</p></TooltipContent>
+                </Tooltip>
+              </>
+            ) : null}
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <button

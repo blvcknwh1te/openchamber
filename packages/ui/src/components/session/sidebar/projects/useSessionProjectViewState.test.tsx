@@ -74,6 +74,10 @@ describe('useSessionProjectViewState', () => {
     storage.removeItem('oc.sessions.projectCollapse');
     storage.removeItem('oc.sessions.groupCollapse');
     storage.removeItem('oc.sessions.groupOrder');
+    // Most tests below describe a user who already made a choice, so the
+    // first-run default must keep out of their way. The first-run tests clear
+    // this key themselves.
+    storage.setItem('oc.sessions.projectCollapseChosen', 'true');
   });
 
   test('keeps stable state/actions and ignores selection-store updates', async () => {
@@ -216,5 +220,132 @@ describe('useSessionProjectViewState', () => {
       await act(async () => root.unmount());
       dom.restore();
     }
+  });
+
+  describe('first run', () => {
+    const mountViewState = async (args: {
+      projects: readonly { id: string }[];
+      activeProjectId?: string | null;
+      /** false models a later run, where the marker of the user's choice survived. */
+      firstRun?: boolean;
+    }) => {
+      if (args.firstRun !== false) {
+        getDeferredSafeStorage().removeItem('oc.sessions.projectCollapseChosen');
+      }
+      const dom = installMinimalDom();
+      const root = createRoot(dom.container);
+      const capture: HookCapture = { renderCount: 0 };
+      const Harness = () => {
+        capture.renderCount += 1;
+        const value = useSessionProjectViewState({
+          isVSCode: true,
+          projects: args.projects,
+          activeProjectId: args.activeProjectId ?? null,
+        });
+        capture.state = value.state;
+        capture.actions = value.actions;
+        return null;
+      };
+      await act(async () => root.render(React.createElement(Harness)));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return { capture, root, dom };
+    };
+
+    test('collapses every project except the active one', async () => {
+      const { capture, root, dom } = await mountViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }, { id: 'project-c' }],
+        activeProjectId: 'project-b',
+      });
+
+      try {
+        expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-c']));
+      } finally {
+        await act(async () => root.unmount());
+        dom.restore();
+      }
+    });
+
+    test('leaves a single-project list alone', async () => {
+      const { capture, root, dom } = await mountViewState({
+        projects: [{ id: 'project-a' }],
+        activeProjectId: 'project-a',
+      });
+
+      try {
+        expect(capture.state?.collapsedProjects).toEqual(new Set());
+      } finally {
+        await act(async () => root.unmount());
+        dom.restore();
+      }
+    });
+
+    test('collapses everything when no project is active', async () => {
+      const { capture, root, dom } = await mountViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      });
+
+      try {
+        expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-b']));
+      } finally {
+        await act(async () => root.unmount());
+        dom.restore();
+      }
+    });
+
+    // The whole point of the marker: "expand all" stores an empty list, which is
+    // otherwise indistinguishable from "no choice yet", and the default would
+    // fold every project again on the next run.
+    test('does not undo the user choice on the next run', async () => {
+      const first = await mountViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+        activeProjectId: 'project-a',
+      });
+      try {
+        expect(first.capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+        await act(async () => first.capture.actions!.expandAllProjects());
+        expect(first.capture.state?.collapsedProjects).toEqual(new Set());
+      } finally {
+        await act(async () => first.root.unmount());
+        first.dom.restore();
+      }
+
+      const second = await mountViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+        activeProjectId: 'project-a',
+        firstRun: false,
+      });
+      try {
+        expect(second.capture.state?.collapsedProjects).toEqual(new Set());
+      } finally {
+        await act(async () => second.root.unmount());
+        second.dom.restore();
+      }
+    });
+
+    test('keeps a project the user expanded by hand across a remount', async () => {
+      const first = await mountViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+        activeProjectId: 'project-a',
+      });
+      try {
+        await act(async () => first.capture.actions!.toggleProject('project-b'));
+        expect(first.capture.state?.collapsedProjects).toEqual(new Set());
+      } finally {
+        await act(async () => first.root.unmount());
+        first.dom.restore();
+      }
+
+      const second = await mountViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+        activeProjectId: 'project-a',
+        firstRun: false,
+      });
+      try {
+        expect(second.capture.state?.collapsedProjects).toEqual(new Set());
+      } finally {
+        await act(async () => second.root.unmount());
+        second.dom.restore();
+      }
+    });
   });
 });
