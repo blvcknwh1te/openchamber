@@ -1,8 +1,8 @@
 import * as React from 'react';
 
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { canPanViewport, fitScaleToWidth, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
-import { isOnText, shouldStartPan } from './tableViewerPan';
+import { fitScaleToWidth, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
+import { panAreaOf, shouldStartPan } from './tableViewerPan';
 
 interface TableViewerViewProps {
   markdown: string | null;
@@ -18,12 +18,14 @@ type PanState = {
 
 /**
  * Full-bleed surface for a single markdown table: the table is scaled so its
- * whole width fits the panel width on open, panned by dragging the empty
- * surround (or anywhere while Ctrl is held) and zoomed with the wheel, the way
- * an image preview behaves. The table keeps native text selection unless Ctrl
- * turns the press into a pan. The surface behind the table uses the muted
- * background so the elevated table (its own `surface-elevated` wrapper) stays
- * clearly separated instead of blending into the panel; no scrollbars appear.
+ * whole width fits the panel width on open, panned by dragging the surround (or
+ * anywhere while Ctrl is held, or with the middle button) and zoomed with the
+ * wheel, the way an image preview behaves. The table keeps native text selection
+ * unless Ctrl turns the press into a pan, so the grab cursor belongs to the
+ * surround and a fitted table is no less draggable than a wide one. The surface
+ * behind the table uses the muted background so the elevated table (its own
+ * `surface-elevated` wrapper) stays clearly separated instead of blending into
+ * the panel; no scrollbars appear.
  */
 export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) => {
   const viewportRef = React.useRef<HTMLDivElement>(null);
@@ -35,27 +37,15 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   const [scale, setScale] = React.useState(1);
   const [pan, setPan] = React.useState({ x: 0, y: 0 });
   const [dragging, setDragging] = React.useState(false);
-  // Ctrl turns every press into a pan; without it only the empty area pans and
-  // the table itself keeps native text selection.
+  // Ctrl turns every press into a pan; the same is offered by the middle button.
+  // Without them only the surround pans and the table keeps native text
+  // selection.
   const [panArmed, setPanArmed] = React.useState(false);
-  // Natural (unscaled) content box and the viewport box, re-read when the
-  // markdown or the panel resizes. They feed `canPan`, so the grab cursor is
-  // only offered where a drag can actually move the table.
-  const [geometry, setGeometry] = React.useState({
-    contentWidth: 0,
-    contentHeight: 0,
-    viewportWidth: 0,
-    viewportHeight: 0,
-  });
-
-  // A fitted table shorter than the panel has nowhere to pan, so its viewport
-  // keeps the browser's default cursor and a press stays a text selection.
-  const canPan = canPanViewport({ ...geometry, scale });
 
   // Writes a scale that was already resolved by its owner — `fitScaleToWidth`
   // for the opening fit, `zoomTableAtPointer` for the wheel — so the value is
-  // applied as computed. The epsilon guard keeps the ResizeObserver's repeated
-  // measurements from re-rendering for no visible change.
+  // applied as computed. The epsilon guard keeps a repeated fit from re-rendering
+  // for no visible change.
   const applyScale = React.useCallback((next: number) => {
     if (Math.abs(next - scaleRef.current) < TABLE_VIEWER_SCALE.epsilon) return;
     scaleRef.current = next;
@@ -66,7 +56,9 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   // child component, so on the first pass the content box is still empty; the
   // observer therefore watches the content itself and refits once it has size.
   // Pan returns to zero, which is what keeps the fitted table centered until the
-  // first drag.
+  // first drag. The observer stops at the first successful measurement: the
+  // cursor and the pan rule read the element under the pointer instead of the
+  // measured boxes, so nothing downstream needs the geometry to stay current.
   React.useEffect(() => {
     const viewport = viewportRef.current;
     const content = contentRef.current;
@@ -77,31 +69,8 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
     panRef.current = { x: 0, y: 0 };
     setPan({ x: 0, y: 0 });
 
-    // Re-reads both boxes so `canPan` sees current dimensions; a resize of the
-    // panel or the table (e.g. a reflow after the fonts load) re-evaluates it.
-    const measure = () => {
-      const rect = content.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const next = {
-        contentWidth: rect.width,
-        contentHeight: rect.height,
-        viewportWidth: viewport.clientWidth,
-        viewportHeight: viewport.clientHeight,
-      };
-      setGeometry((previous) =>
-        previous.contentWidth === next.contentWidth &&
-        previous.contentHeight === next.contentHeight &&
-        previous.viewportWidth === next.viewportWidth &&
-        previous.viewportHeight === next.viewportHeight
-          ? previous
-          : next,
-      );
-    };
+    let observer: ResizeObserver | null = null;
 
-    // Fits once per markdown change. The child renderer may paint its table a
-    // tick later, so the observer keeps watching until the first successful
-    // measurement; after that a resize must not undo a user's zoom.
-    let fitted = false;
     const fit = () => {
       const rect = content.getBoundingClientRect();
       const naturalWidth = rect.width;
@@ -109,18 +78,18 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
 
       // Fit across the width only, so the whole table is visible side to side.
       applyScale(fitScaleToWidth(viewport.clientWidth, naturalWidth, window.devicePixelRatio || 1));
-      fitted = true;
-      measure();
+
+      // Reflow after a resize must not undo the user's zoom, so the watch ends
+      // here.
+      observer?.disconnect();
+      observer = null;
     };
 
-    const observer = new ResizeObserver(() => {
-      if (!fitted) fit();
-      else measure();
-    });
+    observer = new ResizeObserver(() => fit());
     observer.observe(content);
     observer.observe(viewport);
     fit();
-    return () => observer.disconnect();
+    return () => observer?.disconnect();
   }, [markdown, applyScale]);
 
   React.useEffect(() => {
@@ -142,7 +111,7 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
         button: event.button,
         ctrlKey: event.ctrlKey,
         metaKey: event.metaKey,
-        overText: isOnText(event.clientX, event.clientY),
+        area: panAreaOf(event.target),
       })
     ) {
       return;
@@ -221,7 +190,7 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
     <div
       ref={viewportRef}
       className={`bg-surface-muted h-full w-full overflow-hidden touch-none ${
-        dragging ? 'cursor-grabbing' : canPan ? 'cursor-grab' : ''
+        dragging ? 'cursor-grabbing' : 'cursor-grab'
       } ${panArmed ? 'select-none' : 'select-auto'}`}
       onPointerDown={beginPan}
       onPointerMove={movePan}
@@ -249,7 +218,7 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
           transformOrigin: 'center',
         }}
         className={`absolute left-1/2 top-1/2 w-max ${
-          panArmed && canPan ? 'cursor-grab select-none' : ''
+          panArmed ? 'cursor-grab select-none' : 'cursor-auto select-auto'
         }`}
       >
         <SimpleMarkdownRenderer content={markdown} enableFileReferences={false} />

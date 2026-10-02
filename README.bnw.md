@@ -84,9 +84,9 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 
 ### Table panel
 
-- The panel that opens from the expand action on a chat table scales the table so its whole width fits the panel width on open, whatever the table height: a tall table keeps its full width instead of being shrunk to fit vertically, and a wide one is scaled down until nothing is cut off side to side. Wheel zoom and Ctrl-drag pan work as before.
+- The panel that opens from the expand action on a chat table scales the table so its whole width fits the panel width on open, whatever the table height: a tall table keeps its full width instead of being shrunk to fit vertically, and a wide one is scaled down until nothing is cut off side to side. Wheel zoom and drag-to-pan work as before, with the middle button as well as Ctrl and a plain drag on the surround.
 - The panel paints the muted surface behind the table, so the table's own elevated background and border read as a distinct sheet instead of blending into the panel.
-- The grab cursor appears only when the table actually overflows the panel at the current scale. A table that fits keeps the default cursor and its text stays selectable, instead of promising a drag that would not move anything.
+- The grab cursor marks the surface around the table, which always pans, whatever the table size. Over the table itself the cursor stays the system default, so the text selects as text, and a drag moves the table only while Ctrl or Cmd is held or with the middle button. The cursor no longer depends on a measured size, so it stops flipping between grabs and arrows as the panel resizes.
 
 ### Permission descriptions
 

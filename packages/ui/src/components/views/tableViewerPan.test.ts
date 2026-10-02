@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 
-const { isOnText, shouldStartPan } = await import('./tableViewerPan');
+const { panAreaOf, shouldStartPan } = await import('./tableViewerPan');
 
-describe('isOnText', () => {
+describe('panAreaOf', () => {
   let windowInstance: Window;
 
   beforeEach(() => {
@@ -20,41 +20,45 @@ describe('isOnText', () => {
     await windowInstance.happyDOM.close();
   });
 
-  // happy-dom has no caret probe, so the API is injected to exercise the check.
-  const withCaretNode = (node: Node | null, run: () => void) => {
-    const doc = document as Document & { caretRangeFromPoint?: unknown };
-    doc.caretRangeFromPoint = () =>
-      (node ? ({ startContainer: node } as unknown as Range) : null);
-    try {
-      run();
-    } finally {
-      Object.assign(doc, { caretRangeFromPoint: undefined });
-    }
-  };
-
-  test('reports text inside a cell', () => {
+  const buildTable = () => {
+    const table = document.createElement('table');
+    const body = document.createElement('tbody');
+    const row = document.createElement('tr');
     const cell = document.createElement('td');
     const text = document.createTextNode('some value');
     cell.append(text);
+    row.append(cell);
+    body.append(row);
+    table.append(body);
+    document.body.append(table);
+    return { table, cell, text };
+  };
 
-    withCaretNode(text, () => expect(isOnText(10, 10)).toBe(true));
+  test('reports the table for a node inside a cell', () => {
+    const { text } = buildTable();
+
+    expect(panAreaOf(text)).toBe('table');
   });
 
-  test('ignores a point outside any cell', () => {
-    const paragraph = document.createElement('p');
-    const text = document.createTextNode('outside');
-    paragraph.append(text);
+  // The cell box and the table frame both belong to the table: a press on the
+  // padding of a cell must behave like a press on its words.
+  test('reports the table for the box itself, not only for its words', () => {
+    const { cell, table } = buildTable();
 
-    withCaretNode(text, () => expect(isOnText(10, 10)).toBe(false));
+    expect(panAreaOf(cell)).toBe('table');
+    expect(panAreaOf(table)).toBe('table');
   });
 
-  test('ignores blank nodes and empty hits', () => {
-    const cell = document.createElement('td');
-    const blank = document.createTextNode('   ');
-    cell.append(blank);
+  test('reports the surround outside the table', () => {
+    const outside = document.createElement('p');
+    document.body.append(outside);
 
-    withCaretNode(blank, () => expect(isOnText(10, 10)).toBe(false));
-    withCaretNode(null, () => expect(isOnText(10, 10)).toBe(false));
+    expect(panAreaOf(outside)).toBe('surround');
+  });
+
+  test('treats a missing target as the surround', () => {
+    expect(panAreaOf(null)).toBe('surround');
+    expect(panAreaOf(document.body)).toBe('surround');
   });
 });
 
@@ -63,29 +67,29 @@ describe('shouldStartPan', () => {
     button: 0,
     ctrlKey: false,
     metaKey: false,
-    overText: false,
+    area: 'surround' as const,
     ...overrides,
   });
 
   test('pans with the middle button even over cell text', () => {
-    expect(shouldStartPan(press({ button: 1, overText: true }))).toBe(true);
+    expect(shouldStartPan(press({ button: 1, area: 'table' }))).toBe(true);
   });
 
   test('pans with Ctrl or Cmd and the left button over cell text', () => {
-    expect(shouldStartPan(press({ overText: true, ctrlKey: true }))).toBe(true);
-    expect(shouldStartPan(press({ overText: true, metaKey: true }))).toBe(true);
+    expect(shouldStartPan(press({ area: 'table', ctrlKey: true }))).toBe(true);
+    expect(shouldStartPan(press({ area: 'table', metaKey: true }))).toBe(true);
   });
 
-  test('leaves a plain left press on cell text to the browser', () => {
-    expect(shouldStartPan(press({ overText: true }))).toBe(false);
+  test('leaves a plain left press on the table to the browser', () => {
+    expect(shouldStartPan(press({ area: 'table' }))).toBe(false);
   });
 
-  test('pans with a plain left press on the padding', () => {
-    expect(shouldStartPan(press({ overText: false }))).toBe(true);
+  test('pans with a plain left press on the surround', () => {
+    expect(shouldStartPan(press({ area: 'surround' }))).toBe(true);
   });
 
   test('ignores the right button', () => {
     expect(shouldStartPan(press({ button: 2 }))).toBe(false);
-    expect(shouldStartPan(press({ button: 2, overText: true }))).toBe(false);
+    expect(shouldStartPan(press({ button: 2, area: 'table', ctrlKey: true }))).toBe(false);
   });
 });
