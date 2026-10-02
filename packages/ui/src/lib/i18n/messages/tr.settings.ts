@@ -525,6 +525,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '{version} sürümüne güncelle',
   'settings.openchamber.about.actions.checkForUpdates': 'Güncellemeleri kontrol et',
   'settings.openchamber.about.toast.latestVersion': 'En son sürümü kullanıyorsunuz',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber guncellendi. Bitirmek icin pencereyi yeniden yukleyin.',
+  'settings.openchamber.about.toast.installManual': 'Otomatik guncelleme kullanilamiyor. Surum sayfasi acildi; .vsix dosyasini elle kurun.',
   'settings.agents.sidebar.title': 'Agent\'lar',
   'settings.agents.sidebar.total': 'Toplam {count}',
   'settings.agents.sidebar.empty.title': 'Yapılandırılmış agent yok',

@@ -20,6 +20,13 @@ type Args = {
   handleSessionSelect: (sessionId: string, sessionDirectory: string | null) => void;
   newSessionDraftOpen: boolean;
   mobileVariant: boolean;
+  /**
+   * VS Code's compact list re-renders on a view switch and would otherwise
+   * substitute a remembered session of the active project for the session the
+   * user is looking at. The runtime flag keeps the list from stealing focus
+   * back; web/desktop keep the auto-substitution they rely on.
+   */
+  isVSCodeRuntime: boolean;
   openNewSessionDraft: (options?: { selectedProjectId?: string | null; directoryOverride?: string | null }) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
 };
@@ -38,6 +45,12 @@ export type MissingProjectSessionSelection =
  * already appears under another project's rendered map is treated as foreign,
  * while a session missing from every rendered map is preserved so stale
  * worktree metadata can catch up.
+ *
+ * VS Code renders one compact list and treats a view switch as "show me the
+ * list". A session already present under any rendered project (even a foreign
+ * one) is authoritative there: substituting the active project's remembered
+ * session would reopen the chat the user just left, so the selection is
+ * preserved instead. Web/desktop keep the substitution they rely on.
  */
 export function resolveMissingProjectSessionSelection<T>({
   activeProjectId,
@@ -47,6 +60,7 @@ export function resolveMissingProjectSessionSelection<T>({
   metaByProject,
   rememberedSessionId,
   fallbackSessionId,
+  isVSCodeRuntime,
 }: {
   activeProjectId: string;
   currentSessionId: string | null;
@@ -55,21 +69,34 @@ export function resolveMissingProjectSessionSelection<T>({
   metaByProject: ReadonlyMap<string, ReadonlyMap<string, T>>;
   rememberedSessionId: string | undefined;
   fallbackSessionId: string | null;
+  isVSCodeRuntime: boolean;
 }): MissingProjectSessionSelection {
   if (currentSessionId && currentSessionOwnerProjectId === activeProjectId) {
     return { kind: 'preserve-current' };
   }
 
+  // A session rendered under a different project's map, whether ownership is
+  // confirmed or still unknown.
+  const currentSessionBelongsToAnotherProject = Boolean(
+    currentSessionId
+    && Array.from(metaByProject.entries()).some(
+      ([projectId, sessions]) => projectId !== activeProjectId && sessions.has(currentSessionId),
+    ),
+  );
+
   if (currentSessionOwnerProjectId == null) {
-    const currentSessionBelongsToAnotherProject = Boolean(
-      currentSessionId
-      && Array.from(metaByProject.entries()).some(
-        ([projectId, sessions]) => projectId !== activeProjectId && sessions.has(currentSessionId),
-      ),
-    );
     if (currentSessionId && projectMap && !currentSessionBelongsToAnotherProject) {
       return { kind: 'preserve-current' };
     }
+  }
+
+  // The current session is rendered under another project. Selecting the active
+  // project's remembered session here would pull the user back out of the list
+  // into a different chat, so VS Code keeps the list. Single-project mode
+  // renders only the active project, so this never fires there.
+  if (isVSCodeRuntime && currentSessionId && currentSessionOwnerProjectId !== activeProjectId
+    && (currentSessionOwnerProjectId != null || currentSessionBelongsToAnotherProject)) {
+    return { kind: 'preserve-current' };
   }
 
   if (!projectMap || projectMap.size === 0) {
@@ -98,6 +125,7 @@ export const useProjectSessionSelection = (args: Args): void => {
     handleSessionSelect,
     newSessionDraftOpen,
     mobileVariant,
+    isVSCodeRuntime,
     openNewSessionDraft,
     setSessionSwitcherOpen,
   } = args;
@@ -188,6 +216,7 @@ export const useProjectSessionSelection = (args: Args): void => {
       metaByProject: projectSessionMeta.metaByProject,
       rememberedSessionId: activeSessionByProject.get(activeProjectId),
       fallbackSessionId: projectSessionMeta.firstSessionByProject.get(activeProjectId)?.id ?? null,
+      isVSCodeRuntime,
     });
 
     // Keep the project unprocessed while ownership/maps may still catch up,
@@ -225,6 +254,7 @@ export const useProjectSessionSelection = (args: Args): void => {
     handleSessionSelect,
     newSessionDraftOpen,
     mobileVariant,
+    isVSCodeRuntime,
     openNewSessionDraft,
     projectSections,
     projectSessionMeta,

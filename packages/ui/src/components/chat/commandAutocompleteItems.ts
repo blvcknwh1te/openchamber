@@ -1,11 +1,32 @@
 import { fuzzyMatch } from '@/lib/utils';
 
+/**
+ * The kinds of entry the `/` picker can show. They are one explicit union
+ * rather than a pair of booleans, so a new discovery source (rules) is added in
+ * one place instead of every `isSkill` check drifting apart.
+ */
+export const COMMAND_AUTOCOMPLETE_KINDS = ['command', 'skill', 'rule'] as const;
+
+export type CommandAutocompleteKind = typeof COMMAND_AUTOCOMPLETE_KINDS[number];
+
+/** Section order in the picker: commands, then skills, then rules. */
+export const COMMAND_AUTOCOMPLETE_KIND_ORDER: readonly CommandAutocompleteKind[] = COMMAND_AUTOCOMPLETE_KINDS;
+
 export interface CommandAutocompleteSearchItem {
   name: string;
   description?: string;
   searchAliases?: string[];
   isBuiltIn?: boolean;
+  /** The entry's kind. Absent means the default, `command`. */
+  kind?: CommandAutocompleteKind;
+  /** Legacy alias for `kind === 'skill'`; kept while callers migrate. */
   isSkill?: boolean;
+}
+
+/** Resolves an entry's kind, accepting the legacy `isSkill` flag. */
+export function commandAutocompleteKindOf(item: CommandAutocompleteSearchItem): CommandAutocompleteKind {
+  if (item.kind) return item.kind;
+  return item.isSkill ? 'skill' : 'command';
 }
 
 function addSearchAliases<T extends CommandAutocompleteSearchItem>(winner: T, duplicate: T): T {
@@ -22,31 +43,42 @@ function addSearchAliases<T extends CommandAutocompleteSearchItem>(winner: T, du
   return unchanged ? winner : { ...winner, searchAliases: aliases };
 }
 
-/**
- * Order for the unified `/` picker: commands first, skills below. Section
- * headers are worth showing only when the query matched both kinds; a
- * single-kind result keeps its own order, where a lone header says nothing.
- */
-export function groupCommandAutocompleteItems<T extends CommandAutocompleteSearchItem>(
-  items: T[],
-): { items: T[]; sections: boolean } {
-  const commandItems = items.filter((item) => !item.isSkill);
-  const skillItems = items.filter((item) => item.isSkill);
-  if (commandItems.length === 0 || skillItems.length === 0) {
-    return { items, sections: false };
-  }
-
-  return { items: [...commandItems, ...skillItems], sections: true };
+/** A filtered list plus whether its kinds should be broken up by headers. */
+export interface CommandAutocompleteGrouping<T> {
+  items: T[];
+  sections: boolean;
 }
 
 /**
- * Precedence is local command, discovered skill, OpenCode skill-command, then
- * custom/plugin command. Identity matches session.command's case-sensitive lookup.
+ * Order for the unified `/` picker: commands first, then skills, then rules.
+ * Section headers are worth showing only when the query matched more than one
+ * kind; a single-kind result keeps its own order, where a lone header says
+ * nothing.
+ */
+export function groupCommandAutocompleteItems<T extends CommandAutocompleteSearchItem>(
+  items: T[],
+): CommandAutocompleteGrouping<T> {
+  const groups = COMMAND_AUTOCOMPLETE_KIND_ORDER.map((kind) =>
+    items.filter((item) => commandAutocompleteKindOf(item) === kind),
+  );
+  const filledGroups = groups.filter((group) => group.length > 0);
+  if (filledGroups.length <= 1) {
+    return { items, sections: false };
+  }
+
+  return { items: filledGroups.flat(), sections: true };
+}
+
+/**
+ * Precedence is local command, discovered skill, OpenCode skill-command,
+ * discovered rule, then custom/plugin command. Identity matches
+ * session.command's case-sensitive lookup.
  */
 export function mergeCommandAutocompleteItems<T extends CommandAutocompleteSearchItem>(
   builtIns: T[],
   commands: T[],
   skills: T[],
+  rules: T[] = [],
 ): T[] {
   const merged: T[] = [];
   const byName = new Map<string, { index: number; item: T; precedence: number }>();
@@ -77,30 +109,32 @@ export function mergeCommandAutocompleteItems<T extends CommandAutocompleteSearc
   addItems(builtIns, () => 3);
   addItems(commands, (item) => item.isBuiltIn ? 3 : item.isSkill ? 1 : 0);
   addItems(skills, () => 2);
+  addItems(rules, () => 2);
   return merged;
 }
 
 /**
- * The two independent discovery passes behind the palette. They answer
- * separately: commands come from the commands store, skills from the skills
- * store, and neither request knows about the other.
+ * The independent discovery passes behind the palette. They answer separately:
+ * commands come from the commands store, skills from the skills store, rules
+ * from the rules store, and no request knows about the others.
  */
-const COMMAND_AUTOCOMPLETE_SOURCES = ['commands', 'skills'] as const;
+const COMMAND_AUTOCOMPLETE_SOURCES = ['commands', 'skills', 'rules'] as const;
 
 export type CommandAutocompleteSource = typeof COMMAND_AUTOCOMPLETE_SOURCES[number];
 
 /** `pending` means "not answered yet", so the palette has no full list to show. */
 export type CommandAutocompleteSourceStatus = 'pending' | 'ready' | 'failed';
 
+/** How each discovery pass answered, keyed by source. */
 export interface CommandAutocompleteReadiness {
   commands: CommandAutocompleteSourceStatus;
   skills: CommandAutocompleteSourceStatus;
+  rules: CommandAutocompleteSourceStatus;
 }
 
-export function createCommandAutocompleteReadiness() {
-  return { commands: 'pending', skills: 'pending' } satisfies CommandAutocompleteReadiness;
+export function createCommandAutocompleteReadiness(): CommandAutocompleteReadiness {
+  return { commands: 'pending', skills: 'pending', rules: 'pending' };
 }
-
 /** Keeps the previous object when the answer repeats, so renders stay stable. */
 export function applyCommandAutocompleteSourceResult(
   readiness: CommandAutocompleteReadiness,
@@ -112,12 +146,12 @@ export function applyCommandAutocompleteSourceResult(
 }
 
 /**
- * True once both sources have answered, including answering with a failure:
- * a failed source also settles the list, it does not keep the palette waiting
+ * True once every source has answered, including answering with a failure: a
+ * failed source also settles the list, it does not keep the palette waiting
  * forever.
  */
 export function isCommandAutocompleteReady(readiness: CommandAutocompleteReadiness): boolean {
-  return readiness.commands !== 'pending' && readiness.skills !== 'pending';
+  return COMMAND_AUTOCOMPLETE_SOURCES.every((source) => readiness[source] !== 'pending');
 }
 
 /**
@@ -144,23 +178,27 @@ export interface CommandAutocompleteSourceLoaders {
   loadCommands: () => Promise<boolean>;
   /** Loads the skills discovered for the palette's directory. */
   loadSkills: () => Promise<boolean>;
+  /** Loads the rules active for the palette's directory. */
+  loadRules: () => Promise<boolean>;
 }
 
 /**
- * Runs both discovery passes and reports how each one answered.
+ * Runs every discovery pass and reports how each one answered.
  *
- * The palette needs the whole set of commands and skills, and the two requests
- * are independent — rendering whichever finished first is what made the list
- * look empty or partial. A source that answers with a failure is asked once
- * more, so one transient error cannot leave the list partial for as long as the
- * palette stays open. Both loaders report failure as `false`, so this never
- * rejects.
+ * The palette needs the whole set of commands, skills and rules, and the
+ * requests are independent — rendering whichever finished first is what made
+ * the list look empty or partial. A source that answers with a failure is asked
+ * once more, so one transient error cannot leave the list partial for as long
+ * as the palette stays open. All loaders report failure as `false`, so this
+ * never rejects.
  */
 export async function loadCommandAutocompleteSources(
   loaders: CommandAutocompleteSourceLoaders,
 ): Promise<CommandAutocompleteReadiness> {
   const load = (source: CommandAutocompleteSource): Promise<boolean> =>
-    source === 'commands' ? loaders.loadCommands() : loaders.loadSkills();
+    source === 'commands' ? loaders.loadCommands()
+      : source === 'skills' ? loaders.loadSkills()
+        : loaders.loadRules();
   const answers = await Promise.all(
     COMMAND_AUTOCOMPLETE_SOURCES.map(async (source): Promise<[CommandAutocompleteSource, boolean]> =>
       [source, await load(source)],

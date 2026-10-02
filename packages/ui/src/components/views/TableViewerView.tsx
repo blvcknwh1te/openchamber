@@ -1,7 +1,7 @@
 import * as React from 'react';
 
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
-import { fitScaleToWidth, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
+import { canPanViewport, fitScaleToWidth, TABLE_VIEWER_SCALE, zoomTableAtPointer } from './tableViewerConstants';
 import { isOnText, shouldStartPan } from './tableViewerPan';
 
 interface TableViewerViewProps {
@@ -38,6 +38,19 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   // Ctrl turns every press into a pan; without it only the empty area pans and
   // the table itself keeps native text selection.
   const [panArmed, setPanArmed] = React.useState(false);
+  // Natural (unscaled) content box and the viewport box, re-read when the
+  // markdown or the panel resizes. They feed `canPan`, so the grab cursor is
+  // only offered where a drag can actually move the table.
+  const [geometry, setGeometry] = React.useState({
+    contentWidth: 0,
+    contentHeight: 0,
+    viewportWidth: 0,
+    viewportHeight: 0,
+  });
+
+  // A fitted table shorter than the panel has nowhere to pan, so its viewport
+  // keeps the browser's default cursor and a press stays a text selection.
+  const canPan = canPanViewport({ ...geometry, scale });
 
   // Writes a scale that was already resolved by its owner — `fitScaleToWidth`
   // for the opening fit, `zoomTableAtPointer` for the wheel — so the value is
@@ -64,6 +77,27 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
     panRef.current = { x: 0, y: 0 };
     setPan({ x: 0, y: 0 });
 
+    // Re-reads both boxes so `canPan` sees current dimensions; a resize of the
+    // panel or the table (e.g. a reflow after the fonts load) re-evaluates it.
+    const measure = () => {
+      const rect = content.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const next = {
+        contentWidth: rect.width,
+        contentHeight: rect.height,
+        viewportWidth: viewport.clientWidth,
+        viewportHeight: viewport.clientHeight,
+      };
+      setGeometry((previous) =>
+        previous.contentWidth === next.contentWidth &&
+        previous.contentHeight === next.contentHeight &&
+        previous.viewportWidth === next.viewportWidth &&
+        previous.viewportHeight === next.viewportHeight
+          ? previous
+          : next,
+      );
+    };
+
     // Fits once per markdown change. The child renderer may paint its table a
     // tick later, so the observer keeps watching until the first successful
     // measurement; after that a resize must not undo a user's zoom.
@@ -76,12 +110,15 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
       // Fit across the width only, so the whole table is visible side to side.
       applyScale(fitScaleToWidth(viewport.clientWidth, naturalWidth, window.devicePixelRatio || 1));
       fitted = true;
+      measure();
     };
 
     const observer = new ResizeObserver(() => {
       if (!fitted) fit();
+      else measure();
     });
     observer.observe(content);
+    observer.observe(viewport);
     fit();
     return () => observer.disconnect();
   }, [markdown, applyScale]);
@@ -183,8 +220,8 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
   return (
     <div
       ref={viewportRef}
-      className={`bg-surface-muted h-full w-full cursor-grab overflow-hidden touch-none ${
-        dragging ? 'cursor-grabbing' : ''
+      className={`bg-surface-muted h-full w-full overflow-hidden touch-none ${
+        dragging ? 'cursor-grabbing' : canPan ? 'cursor-grab' : ''
       } ${panArmed ? 'select-none' : 'select-auto'}`}
       onPointerDown={beginPan}
       onPointerMove={movePan}
@@ -212,7 +249,7 @@ export const TableViewerView: React.FC<TableViewerViewProps> = ({ markdown }) =>
           transformOrigin: 'center',
         }}
         className={`absolute left-1/2 top-1/2 w-max ${
-          panArmed ? 'cursor-grab select-none' : ''
+          panArmed && canPan ? 'cursor-grab select-none' : ''
         }`}
       >
         <SimpleMarkdownRenderer content={markdown} enableFileReferences={false} />

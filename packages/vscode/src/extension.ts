@@ -13,6 +13,7 @@ import { pathsEqualWithNormalizedDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders } from './workspaceResolver';
 import { InlineCommentThreads, SIDEBAR_SURFACE_ID } from './InlineCommentThreads';
 import { applyConnectAttemptTimeout } from './networkDefaults';
+import { checkForkUpdate, checkForkUpdateAndNotify, handleForkUpdateNotification } from './updateCheck';
 
 let chatViewProvider: ChatViewProvider | undefined;
 
@@ -709,6 +710,22 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
+    vscode.commands.registerCommand('openchamberBnw.checkForUpdates', async () => {
+      const currentVersion = String(context.extension?.packageJSON?.version || '');
+      const result = await checkForkUpdate(currentVersion);
+      if (result.state === 'error') {
+        void vscode.window.showWarningMessage(vscode.l10n.t('OpenChamber: update check failed - {0}', result.error));
+        return;
+      }
+      if (result.state === 'current') {
+        void vscode.window.showInformationMessage(vscode.l10n.t('OpenChamber is up to date'));
+        return;
+      }
+      await handleForkUpdateNotification(result.info, { force: true });
+    })
+  );
+
+  context.subscriptions.push(
     vscode.commands.registerCommand('openchamberBnw.showOpenCodeStatus', async () => {
       const config = vscode.workspace.getConfiguration('openchamber');
       const configuredApiUrl = (config.get<string>('apiUrl') || '').trim();
@@ -941,6 +958,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // Start OpenCode API without blocking activation.
   // Blocking here delays webview resolution and causes a blank panel until startup completes.
   void openCodeManager.start();
+
+  // Fork update check: notify once per session when a newer release exists.
+  // It never blocks activation and stays silent on network failure.
+  void checkForkUpdateAndNotify(context);
 }
 
 export async function deactivate() {

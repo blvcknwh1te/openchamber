@@ -59,6 +59,17 @@ export const COMPOSER_EDITOR_THEME_SPEC = {
         fontSize: 'inherit',
         lineHeight: 'inherit',
         overflowX: 'hidden',
+        // `overflowX: hidden` computes `overflowY` to `auto`, so this scroller
+        // IS the composer's vertical scroll container. A classic scrollbar that
+        // appears only while the content overflows takes its own width out of
+        // the lines, which re-wraps them and changes the grown height — and the
+        // ResizeObserver that writes `scrollDOM.style.maxHeight` feeds that
+        // straight back, so the box toggles between "fits, no scrollbar" and
+        // "scrollbar, one more line" on every keystroke near the limit. That is
+        // the up/down jiggle. Reserving the gutter keeps the line width fixed
+        // whether the scrollbar is painted or not, the same treatment the
+        // transcript already gets from `.chat-scroll` in `index.css`.
+        scrollbarGutter: 'stable',
     },
     // Kebab-case: the theme emits `--surface-muted-foreground`. A camelCased
     // name here is not a missing colour but an invalid declaration, and since

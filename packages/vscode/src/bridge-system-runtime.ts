@@ -1,8 +1,6 @@
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { randomUUID } from 'crypto';
 import { removeProviderConfig, getProviderSources, upsertProviderConfig } from './opencodeConfig';
 import { getProviderAuth, removeProviderAuth } from './opencodeAuth';
 import { fetchQuotaForProvider, listConfiguredQuotaProviders } from './quotaProviders';
@@ -12,6 +10,7 @@ import { getOpenCodeUpgradeStatus, upgradeManagedOpenCode } from './opencode-upg
 import { buildDeferredRestartResponse } from './config-mutation-response';
 import { normalizeWindowsDriveLetter, pathsEqualWithNormalizedDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders } from './workspaceResolver';
+import { checkForkUpdate, handleForkUpdateNotification, installForkUpdate, type ForkCheckRequest } from './updateCheck';
 import type { BridgeContext, BridgeResponse } from './bridge';
 
 type BridgeMessageInput = {
@@ -23,7 +22,6 @@ type BridgeMessageInput = {
 type SystemRuntimeDeps = {
   resolveUserPath: (value: string, baseDirectory: string) => string;
   fetchModelsMetadata: () => Promise<unknown>;
-  updateCheckUrl: string;
   clientReloadDelayMs: number;
 };
 
@@ -45,54 +43,6 @@ const claimNotification = (key: string): boolean => {
 
   notificationClaims.set(key, now);
   return true;
-};
-
-
-const getOpenChamberConfigDir = (): string => {
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA;
-    if (appData) return path.join(appData, 'openchamber');
-  }
-  return path.join(os.homedir(), '.config', 'openchamber');
-};
-
-const sanitizeInstallScope = (scope: string): 'vscode' | 'web' => {
-  if (scope === 'vscode' || scope === 'web') return scope;
-  return 'web';
-};
-
-const getOrCreateInstallId = (scope: string): string => {
-  const configDir = getOpenChamberConfigDir();
-  const normalizedScope = sanitizeInstallScope(scope);
-  const idPath = path.join(configDir, `install-id-${normalizedScope}`);
-
-  try {
-    const existing = fs.readFileSync(idPath, 'utf8').trim();
-    if (existing) return existing;
-  } catch {
-    // Generate new id.
-  }
-
-  const installId = randomUUID();
-  fs.mkdirSync(configDir, { recursive: true });
-  fs.writeFileSync(idPath, `${installId}\n`, { encoding: 'utf8', mode: 0o600 });
-  return installId;
-};
-
-const mapNodePlatformToApiPlatform = (value: string): 'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'web' => {
-  // The webview already sends API-shaped values; Node's os.platform() is the fallback source.
-  if (value === 'macos' || value === 'windows' || value === 'linux' || value === 'android' || value === 'ios' || value === 'web') {
-    return value;
-  }
-  if (value === 'darwin') return 'macos';
-  if (value === 'win32') return 'windows';
-  return 'web';
-};
-
-const mapNodeArchToApiArch = (value: string): 'arm64' | 'x64' | 'unknown' => {
-  if (value === 'arm64' || value === 'aarch64') return 'arm64';
-  if (value === 'x64' || value === 'amd64') return 'x64';
-  return 'unknown';
 };
 
 type ParsedDiffHunk = {
@@ -301,58 +251,35 @@ export async function handleSystemBridgeMessage(
     }
 
     case 'api:openchamber:update-check': {
-      try {
-        const body = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
-        const currentVersion = typeof body.currentVersion === 'string' && body.currentVersion.trim().length > 0
-          ? body.currentVersion.trim()
-          : String(ctx?.context?.extension?.packageJSON?.version || 'unknown');
-        const instanceMode = typeof body.instanceMode === 'string' && body.instanceMode.trim().length > 0
-          ? body.instanceMode.trim()
-          : 'local';
-        const deviceClass = typeof body.deviceClass === 'string' && body.deviceClass.trim().length > 0
-          ? body.deviceClass.trim()
-          : 'desktop';
-        const platformRaw = typeof body.platform === 'string' && body.platform.trim().length > 0
-          ? body.platform.trim()
-          : os.platform();
-        const archRaw = typeof body.arch === 'string' && body.arch.trim().length > 0
-          ? body.arch.trim()
-          : os.arch();
-        const reportUsage = body.reportUsage !== false;
+      // SAFETY: the webview posts a JSON object; `ForkCheckRequest` names the
+      // optional hints this handler reads, and absent hints fall back below.
+      const request = (payload ?? {}) as ForkCheckRequest;
+      const requestedVersion = request.currentVersion?.trim();
+      const currentVersion = requestedVersion && requestedVersion.length > 0
+        ? requestedVersion
+        : String(ctx?.context?.extension?.packageJSON?.version || 'unknown');
 
-        const requestBody = {
-          appType: 'vscode',
-          deviceClass,
-          platform: mapNodePlatformToApiPlatform(platformRaw),
-          arch: mapNodeArchToApiArch(archRaw),
-          channel: 'stable',
-          currentVersion,
-          ...(reportUsage ? { installId: getOrCreateInstallId('vscode') } : {}),
-          instanceMode,
-          reportUsage,
-        };
-
-        const response = await fetch(deps.updateCheckUrl, {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(10_000),
-        });
-
-        if (!response.ok) {
-          const text = await response.text().catch(() => 'update check failed');
-          return { id, type, success: false, error: text || `Update check failed with ${response.status}` };
-        }
-
-        const data = await response.json();
-        return { id, type, success: true, data };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return { id, type, success: false, error: errorMessage };
+      const result = await checkForkUpdate(currentVersion);
+      if (result.state === 'error') {
+        return { id, type, success: false, error: result.error };
       }
+      if (result.state === 'available' && request.notify !== false) {
+        await handleForkUpdateNotification(result.info, { force: request.force === true });
+      }
+      return { id, type, success: true, data: result.info };
+    }
+
+    case 'api:openchamber:update-install': {
+      const currentVersion = String(ctx?.context?.extension?.packageJSON?.version || '');
+      const result = await checkForkUpdate(currentVersion);
+      if (result.state === 'error') {
+        return { id, type, success: false, error: result.error };
+      }
+      if (result.state !== 'available') {
+        return { id, type, success: true, data: { status: 'current' } };
+      }
+      const outcome = await installForkUpdate(result.info);
+      return { id, type, success: true, data: outcome };
     }
 
     case 'editor:openFile': {

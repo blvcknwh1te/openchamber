@@ -58,7 +58,6 @@ export interface BridgeContext {
 const CLIENT_RELOAD_DELAY_MS = 800;
 const projectSetupStore = createProjectSetupStore();
 
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://api.openchamber.dev/v1/update/check';
 const GITHUB_BACKEND_DISABLED_ERROR = 'OpenChamber VS Code backend GitHub integration is disabled. Use native VS Code GitHub integrations.';
 
 
@@ -133,7 +132,6 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
       {
         resolveUserPath,
         fetchModelsMetadata,
-        updateCheckUrl: UPDATE_CHECK_URL,
         clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
       },
     );

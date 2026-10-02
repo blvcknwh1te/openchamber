@@ -2244,6 +2244,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.badge.command': 'コマンド',
   'chat.commandAutocomplete.section.commands': 'コマンド',
   'chat.commandAutocomplete.section.skills': 'スキル',
+  'chat.commandAutocomplete.badge.rule': 'ルール',
+  'chat.commandAutocomplete.section.rules': 'ルール',
   'chat.commandAutocomplete.badge.system': 'システム',
   'chat.commandAutocomplete.empty': 'コマンドが見つかりません',
   'chat.agentMentionAutocomplete.badge.system': 'システム',

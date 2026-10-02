@@ -1,8 +1,9 @@
 import React from 'react';
-import { useUpdateStore } from '@/stores/useUpdateStore';
+import { installVSCodeUpdate, useUpdateStore } from '@/stores/useUpdateStore';
 import { useShallow } from 'zustand/react/shallow';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
 import { useDeviceInfo } from '@/lib/device';
+import { isVSCodeRuntime } from '@/lib/desktop';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Icon } from "@/components/icon/Icon";
@@ -46,8 +47,29 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     restartToUpdate: s.restartToUpdate,
   })));
   const { isMobile } = useDeviceInfo();
+  const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
+  const [vscodeInstalling, setVscodeInstalling] = React.useState(false);
 
   const currentVersion = openChamberVersion || updateStore.info?.currentVersion || 'unknown';
+
+  // VS Code owns the install (downloads the release .vsix and calls the
+  // extension install command), so this button relays the request to the host
+  // instead of opening the desktop UpdateDialog.
+  const handleVSCodeUpdate = React.useCallback(async () => {
+    setVscodeInstalling(true);
+    try {
+      const result = await installVSCodeUpdate();
+      if (result.status === 'installed') {
+        toast.success(t('settings.openchamber.about.toast.updateInstalled'));
+      } else if (result.status === 'manual') {
+        toast.info(t('settings.openchamber.about.toast.installManual'));
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setVscodeInstalling(false);
+    }
+  }, [t]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -253,9 +275,12 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             {!updateStore.checking && updateStore.available && (
               <Button size="sm"
                 variant="default"
-                onClick={() => setUpdateDialogOpen(true)}
+                onClick={() => { if (isVSCode) void handleVSCodeUpdate(); else setUpdateDialogOpen(true); }}
+                disabled={vscodeInstalling}
               >
-                <Icon name="download" className="h-4 w-4 mr-1" />
+                {vscodeInstalling
+                  ? <Icon name="loader" className="h-4 w-4 mr-1 animate-spin" />
+                  : <Icon name="download" className="h-4 w-4 mr-1" />}
                 {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
               </Button>
             )}

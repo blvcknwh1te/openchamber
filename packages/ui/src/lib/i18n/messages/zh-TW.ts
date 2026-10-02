@@ -2218,6 +2218,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.badge.command': '命令',
   'chat.commandAutocomplete.section.commands': '命令',
   'chat.commandAutocomplete.section.skills': '技能',
+  'chat.commandAutocomplete.badge.rule': '規則',
+  'chat.commandAutocomplete.section.rules': '規則',
   'chat.commandAutocomplete.badge.system': '系統',
   'chat.commandAutocomplete.empty': '找不到命令',
   'chat.agentMentionAutocomplete.badge.system': '系統',

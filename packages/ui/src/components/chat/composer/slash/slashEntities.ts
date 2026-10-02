@@ -1,16 +1,17 @@
 /**
- * The composer's slash entities: `/command` and `/skill` as one list.
+ * The composer's slash entities: `/command`, `/skill` and `/rule` as one list.
  *
- * Commands and skills were two registries with two pickers, two scanners and
- * two insert rules, although to the user they are one construct: a slash name
+ * Commands, skills and rules were separate registries with separate scanners
+ * and insert rules, although to the user they are one construct: a slash name
  * that resolves to a definition file. They are joined here, once, for both the
  * picker and the send-time context.
  */
 
 import type { Command } from '@/stores/useCommandsStore';
 import type { DiscoveredSkill } from '@/stores/useSkillsStore';
+import type { RuleInfo } from '@/stores/useRulesStore';
 
-export type SlashEntityKind = 'command' | 'skill';
+export type SlashEntityKind = 'command' | 'skill' | 'rule';
 
 export interface SlashEntity {
     kind: SlashEntityKind;
@@ -26,14 +27,15 @@ export interface SlashEntity {
 export interface SlashEntitySources {
     skills: readonly DiscoveredSkill[];
     commands: readonly Command[];
+    rules?: readonly RuleInfo[];
 }
 
 /**
- * A name claimed by both kinds stays a command: the command palette has always
- * outranked the inline skill picker, and a `/name` that is both must not change
- * meaning depending on which picker opened.
+ * A name claimed by an earlier kind keeps it: the command palette has always
+ * outranked the inline skill picker, and a `/name` shared by kinds must not
+ * change meaning depending on which picker opened.
  */
-export const buildSlashEntities = ({ skills, commands }: SlashEntitySources): SlashEntity[] => {
+export const buildSlashEntities = ({ skills, commands, rules = [] }: SlashEntitySources): SlashEntity[] => {
     const entities: SlashEntity[] = [];
     const claimed = new Set<string>();
 
@@ -60,6 +62,18 @@ export const buildSlashEntities = ({ skills, commands }: SlashEntitySources): Sl
             filePath: skill.path,
             source: skill.source,
             scope: skill.scope,
+        });
+    }
+
+    for (const rule of rules) {
+        if (claimed.has(rule.name)) continue;
+        claimed.add(rule.name);
+        entities.push({
+            kind: 'rule',
+            name: rule.name,
+            description: rule.description,
+            filePath: rule.path,
+            scope: rule.scope,
         });
     }
 

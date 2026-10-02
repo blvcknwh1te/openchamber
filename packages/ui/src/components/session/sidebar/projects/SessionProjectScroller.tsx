@@ -333,6 +333,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
                   hideDirectoryControls={view.hideDirectoryControls}
                   mobileVariant={view.mobileVariant}
                   alwaysShowActions={view.alwaysShowActions}
+                  isActiveProject={projectKey === model.activeProjectId}
                    statusIndicator={isCollapsed ? actions.renderProjectStatusIndicator?.(projectKey, section.groups) : null}
                     openSidebarMenuKey={model.state.openSidebarMenuKey}
                   setOpenSidebarMenuKey={model.state.setOpenSidebarMenuKey}
@@ -427,6 +428,7 @@ function SessionProjectScrollerComponent(props: Props): React.ReactNode {
                 projectColor={leadingProject.color}
                 projectIconImage={leadingProject.iconImage}
                 projectIconBackground={leadingProject.iconBackground}
+                isActiveProject={leadingProject.id === model.activeProjectId}
               />
               <DirectoryActionIndicator directory={leadingProject.normalizedPath} className="ml-auto" />
             </>

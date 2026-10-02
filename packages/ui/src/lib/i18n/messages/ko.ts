@@ -2250,6 +2250,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.badge.command': '명령',
   'chat.commandAutocomplete.section.commands': '명령',
   'chat.commandAutocomplete.section.skills': '스킬',
+  'chat.commandAutocomplete.badge.rule': '규칙',
+  'chat.commandAutocomplete.section.rules': '규칙',
   'chat.commandAutocomplete.badge.system': 'system',
   'chat.commandAutocomplete.empty': '명령 없음',
   'chat.agentMentionAutocomplete.badge.system': 'system',

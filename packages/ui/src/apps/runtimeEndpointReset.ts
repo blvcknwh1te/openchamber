@@ -17,6 +17,7 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useQuotaStore } from '@/stores/useQuotaStore';
 import { useMcpStore } from '@/stores/useMcpStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
+import { useRulesStore } from '@/stores/useRulesStore';
 import { useAgentMemoryStore } from '@/stores/useAgentMemoryStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
@@ -89,6 +90,7 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
   useQuotaStore.getState().resetForRuntimeSwitch();
   useMcpStore.getState().resetForRuntimeSwitch();
   useSkillsStore.getState().resetForRuntimeSwitch();
+  useRulesStore.getState().resetForRuntimeSwitch();
   useAgentMemoryStore.getState().reset();
   // The Linear team filter names a team in one workspace. Carried across, it
   // filters the new instance's issue list down to nothing.

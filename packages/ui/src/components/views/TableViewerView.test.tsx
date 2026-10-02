@@ -138,6 +138,24 @@ describe('TableViewerView', () => {
     expect(viewport?.className).toContain('bg-surface-muted');
   });
 
+  test('leaves the cursor to the system when the fitted table has nowhere to pan', async () => {
+    // The table fits the panel in both axes, so a drag could not move it; an
+    // explicit grab cursor here would promise a pan that never happens.
+    await renderFitted(WIDE_TABLE, 800, { width: 400, height: 100 });
+
+    const viewport = getContent().parentElement;
+    expect(viewport?.className).not.toContain('cursor-grab');
+  });
+
+  test('offers the grab cursor when the table overflows the panel', async () => {
+    // Fit by width leaves the table taller than the panel, so a vertical drag
+    // is meaningful and the grab cursor is honest.
+    await renderFitted(WIDE_TABLE, 400, { width: 1200, height: 1600 });
+
+    const viewport = getContent().parentElement;
+    expect(viewport?.className).toContain('cursor-grab');
+  });
+
   test('scales layout with zoom so text stays sharp', async () => {
     await renderFitted(WIDE_TABLE, 800, { width: 400, height: 100 });
 

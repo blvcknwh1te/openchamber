@@ -628,6 +628,7 @@ const VisibleSessionProjects: React.FC<SessionProjectCollectionProps> = ({ topol
       initialActiveSessionByProject={actions.initialActiveSessionByProject}
       persistActiveSessionByProject={actions.persistActiveSessionByProject}
       mobileVariant={view.mobileVariant}
+      isVSCodeRuntime={topology.isVSCode}
       openNewSessionDraft={actions.openNewSessionDraft}
       setSessionSwitcherOpen={actions.setSessionSwitcherOpen}
       sessionOwnerBySessionId={ownership.bySessionId}

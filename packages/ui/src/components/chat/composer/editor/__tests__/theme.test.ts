@@ -112,6 +112,25 @@ describe('composerEditorTheme', () => {
     test('the common theme does not re-show the native selection', () => {
         expect(selectors.some((selector) => selector.includes('::selection'))).toBe(false);
     });
+
+    /**
+     * The scroller is the composer's vertical scroll container (see the
+     * `overflowX: 'hidden'` rule) and the grow-with-content effect writes its
+     * `maxHeight` from a ResizeObserver. Without a reserved gutter, the
+     * scrollbar that appears at the line limit narrows the lines, re-wraps
+     * them, changes the height and hides the scrollbar again — the composer
+     * visibly jiggles while typing. A test, not a comment, because deleting the
+     * declaration is otherwise invisible: the composer still works, it just
+     * shakes.
+     */
+    test('the scroller reserves the scrollbar gutter', () => {
+        const scrollerRule = (COMPOSER_EDITOR_THEME_SPEC as Record<string, Record<string, string>>)['.cm-scroller'];
+        expect(scrollerRule).toBeDefined();
+        expect(scrollerRule.scrollbarGutter).toBe('stable');
+        // The reservation is only meaningful while the scroller can overflow
+        // vertically, which is what `overflowX: hidden` computes to.
+        expect(scrollerRule.overflowX).toBe('hidden');
+    });
 });
 
 describe('composerNativeSelectionTheme', () => {

@@ -1093,11 +1093,24 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
         platform,
         arch,
         reportUsage,
+        // The VS Code host still runs its own startup check and notification;
+        // a check driven from the UI must not raise a second host popup.
+        notify: false,
       });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return new Response(JSON.stringify({ available: false, error: message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/openchamber/update-install' && method === 'POST') {
+    try {
+      const data = await sendBridgeMessage('api:openchamber:update-install');
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
   }
 

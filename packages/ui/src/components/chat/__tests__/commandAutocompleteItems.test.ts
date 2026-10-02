@@ -3,11 +3,12 @@ import { commandMatchesSearch, filterAndSortCommandItems, mergeCommandAutocomple
 
 interface Item {
   name: string;
-  source: 'openchamber' | 'opencode' | 'skill';
+  source: 'openchamber' | 'opencode' | 'skill' | 'rule';
   description?: string;
   searchAliases?: string[];
   isBuiltIn?: boolean;
   isSkill?: boolean;
+  isRule?: boolean;
 }
 
 describe('mergeCommandAutocompleteItems', () => {
@@ -87,6 +88,30 @@ describe('mergeCommandAutocompleteItems', () => {
     expect(mergeCommandAutocompleteItems([builtIn], [command], [])[0]).toBe(builtIn);
     expect(mergeCommandAutocompleteItems([builtIn], [], [skill])[0]).toBe(builtIn);
     expect(mergeCommandAutocompleteItems([], [command], [skill])[0]).toBe(skill);
+  });
+
+  test('rules rank with skills: above custom commands, below commands that own the name', () => {
+    const command: Item = { name: 'assume-then-act', source: 'opencode', description: 'Custom command' };
+    const skill: Item = { name: 'assume-then-act', source: 'skill', description: 'Skill', isSkill: true };
+    const rule: Item = { name: 'assume-then-act', source: 'rule', description: 'Rule', isRule: true };
+
+    // A rule beats a plain custom command and keeps its description as an alias.
+    expect(mergeCommandAutocompleteItems([], [command], [], [rule])).toEqual([{
+      ...rule,
+      searchAliases: ['Custom command'],
+    }]);
+    // A skill outranks a rule when both claim the name.
+    expect(mergeCommandAutocompleteItems([], [], [skill], [rule])).toEqual([{
+      ...skill,
+      searchAliases: ['Rule'],
+    }]);
+  });
+
+  test('keeps every rule in the list, rules do not merge with each other', () => {
+    const first: Item = { name: 'code-comments', source: 'rule', isRule: true };
+    const second: Item = { name: 'single-source-of-truth', source: 'rule', isRule: true };
+
+    expect(mergeCommandAutocompleteItems([], [], [], [first, second])).toEqual([first, second]);
   });
 
   test('OpenCode skill-commands win custom commands and yield to discovered skills', () => {

@@ -45,9 +45,25 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 - Changing `opencode.json` or `opencode.jsonc` (global or project) restarts the managed OpenCode server, deferred until no turn is active.
 - Plugins are declared through the `plugin` array in the global config, because OpenCode 1.18.x does not scan the global `plugins/` folder.
 
+### Sessions sidebar
+
+- The Sessions sidebar lists every project that has sessions in the shared OpenCode database, not only the folders open in the window. A session from another project opens and continues normally, and a new session can be created in that project.
+- Projects without sessions stay hidden, archived sessions count as sessions, and discovered projects are deduplicated by path. The project of the open window is marked with an accent bar and accent label; projects outside the window never look active.
+- Sessions of subagents appear nested under the session that spawned them, indented below their parent.
+- Back from a session that belongs to another project returns to the full session list and stays there: the list does not silently reopen a session of the open window's project.
+- Configuration panels — skills, MCP servers, agents, commands, plugins, and the skills catalog — read the directory of the selected session, so a session from another project shows that project's own configuration.
+
+### Extension updates
+
+- About in Settings has a Check for Updates action. It compares the installed version against the latest release of this fork on GitHub.
+- The extension checks for updates on startup and shows a notification with Update and Later actions when a newer release exists. A release is announced once per session.
+- Update downloads the release `.vsix` and asks VS Code to install it. Builds that do not allow programmatic installs fall back to opening the release page, and the notification says so.
+- The same action is available from the command palette (`OpenChamber BNW: Check for Updates`).
+
 ### Chat behavior
 
 - Thinking is expanded by default. An explicit off setting keeps it collapsed, including during streaming.
+- Undo in the chat input follows the user's own edits: inserting a mention, a command, or a snippet is one undo step, and restoring a draft or recalling input history is not undoable at all, so Ctrl+Z no longer swallows a whole paragraph or appears to do nothing.
 - The Reload command is localized for French and Turkish.
 - Links and paths in messages are underlined and clickable. A file opens in the editor at the referenced line and column; a directory reveals in the file explorer.
 - Paths written as plain text, not only inline code, become links. Windows paths with backslashes and spaces are recognized. A path becomes a link only when it exists.
@@ -70,6 +86,7 @@ The extension id is `blacknwhite.openchamber-bnw`. It installs alongside the ori
 
 - The panel that opens from the expand action on a chat table scales the table so its whole width fits the panel width on open, whatever the table height: a tall table keeps its full width instead of being shrunk to fit vertically, and a wide one is scaled down until nothing is cut off side to side. Wheel zoom and Ctrl-drag pan work as before.
 - The panel paints the muted surface behind the table, so the table's own elevated background and border read as a distinct sheet instead of blending into the panel.
+- The grab cursor appears only when the table actually overflows the panel at the current scale. A table that fits keeps the default cursor and its text stays selectable, instead of promising a drag that would not move anything.
 
 ### Permission descriptions
 

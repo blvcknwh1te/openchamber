@@ -27,5 +27,11 @@
   "New Session": "Yeni Oturum",
   "Session": "Oturum",
   "Agent Manager": "Agent Yoneticisi",
-  "Table": "Tablo"
+  "Table": "Tablo",
+  "Update": "Guncelle",
+  "Later": "Daha sonra",
+  "OpenChamber {0} is available": "OpenChamber {0} kullanilabilir",
+  "OpenChamber is up to date": "OpenChamber guncel",
+  "OpenChamber: update check failed - {0}": "OpenChamber: guncelleme kontrolu basarisiz - {0}",
+  "OpenChamber could not update automatically. The release page is open; install the .vsix manually.": "OpenChamber otomatik guncellenemedi. Surum sayfasi acildi; .vsix dosyasini elle kurun."
 }

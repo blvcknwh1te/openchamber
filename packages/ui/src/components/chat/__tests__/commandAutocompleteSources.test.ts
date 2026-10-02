@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   applyCommandAutocompleteSourceResult,
+  commandAutocompleteKindOf,
   createCommandAutocompleteReadiness,
   groupCommandAutocompleteItems,
   isCommandAutocompleteLoading,
@@ -18,16 +19,19 @@ function deferred<T>() {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('groupCommandAutocompleteItems', () => {
-  test('puts commands above skills and asks for section headers', () => {
+  test('puts commands above skills and rules, and asks for section headers', () => {
     const grouped = groupCommandAutocompleteItems([
       { name: 'ship', isSkill: true },
       { name: 'review' },
       { name: 'explore', isSkill: true },
       { name: 'undo' },
+      { name: 'assume-then-act', kind: 'rule' },
     ]);
 
     expect(grouped.sections).toBe(true);
-    expect(grouped.items.map((item) => item.name)).toEqual(['review', 'undo', 'ship', 'explore']);
+    expect(grouped.items.map((item) => item.name)).toEqual([
+      'review', 'undo', 'ship', 'explore', 'assume-then-act',
+    ]);
   });
 
   test('keeps the original list when the query matched a single kind', () => {
@@ -37,33 +41,57 @@ describe('groupCommandAutocompleteItems', () => {
     expect(grouped.sections).toBe(false);
     expect(grouped.items).toBe(items);
   });
+
+  test('treats skills and rules as different kinds, not one non-command group', () => {
+    const grouped = groupCommandAutocompleteItems([
+      { name: 'ship', isSkill: true },
+      { name: 'assume-then-act', kind: 'rule' },
+    ]);
+
+    expect(grouped.sections).toBe(true);
+    expect(grouped.items.map((item) => item.name)).toEqual(['ship', 'assume-then-act']);
+  });
+});
+
+describe('commandAutocompleteKindOf', () => {
+  test('reads an explicit kind first and falls back to the legacy flag', () => {
+    expect(commandAutocompleteKindOf({ name: 'a' })).toBe('command');
+    expect(commandAutocompleteKindOf({ name: 'a', isSkill: true })).toBe('skill');
+    expect(commandAutocompleteKindOf({ name: 'a', kind: 'rule' })).toBe('rule');
+    // An explicit kind wins over the stale legacy flag on the same item.
+    expect(commandAutocompleteKindOf({ name: 'a', kind: 'rule', isSkill: true })).toBe('rule');
+  });
 });
 
 describe('loadCommandAutocompleteSources', () => {
-  test('waits for both sources instead of reporting whichever answered first', async () => {
+  test('waits for all three sources instead of reporting whichever answered first', async () => {
     const commands = deferred<boolean>();
     const skills = deferred<boolean>();
+    const rules = deferred<boolean>();
     let settled: CommandAutocompleteReadiness | null = null;
 
     const loading = loadCommandAutocompleteSources({
       loadCommands: () => commands.promise,
       loadSkills: () => skills.promise,
+      loadRules: () => rules.promise,
     }).then((readiness) => {
       settled = readiness;
       return readiness;
     });
 
     skills.resolve(true);
+    rules.resolve(true);
     await flush();
     expect(settled).toBeNull();
 
     commands.resolve(true);
-    expect(await loading).toEqual({ commands: 'ready', skills: 'ready' });
+    expect(await loading).toEqual({ commands: 'ready', skills: 'ready', rules: 'ready' });
   });
 
-  test('starts both discovery passes before either one answers', async () => {
+  test('starts every discovery pass before either one answers', async () => {
     const commands = deferred<boolean>();
     const skills = deferred<boolean>();
+    const rules = deferred<boolean>();
     const calls: string[] = [];
 
     const loading = loadCommandAutocompleteSources({
@@ -75,18 +103,24 @@ describe('loadCommandAutocompleteSources', () => {
         calls.push('skills');
         return skills.promise;
       },
+      loadRules: () => {
+        calls.push('rules');
+        return rules.promise;
+      },
     });
 
-    expect(calls.sort()).toEqual(['commands', 'skills']);
+    expect(calls.sort()).toEqual(['commands', 'rules', 'skills']);
 
     commands.resolve(true);
     skills.resolve(true);
-    expect(await loading).toEqual({ commands: 'ready', skills: 'ready' });
+    rules.resolve(true);
+    expect(await loading).toEqual({ commands: 'ready', skills: 'ready', rules: 'ready' });
   });
 
-  test('re-requests a failed source once and leaves the healthy one alone', async () => {
+  test('re-requests a failed source once and leaves the healthy ones alone', async () => {
     let commandCalls = 0;
     let skillCalls = 0;
+    let ruleCalls = 0;
 
     const readiness = await loadCommandAutocompleteSources({
       loadCommands: async () => {
@@ -97,11 +131,16 @@ describe('loadCommandAutocompleteSources', () => {
         skillCalls += 1;
         return skillCalls > 1;
       },
+      loadRules: async () => {
+        ruleCalls += 1;
+        return true;
+      },
     });
 
-    expect(readiness).toEqual({ commands: 'ready', skills: 'ready' });
+    expect(readiness).toEqual({ commands: 'ready', skills: 'ready', rules: 'ready' });
     expect(commandCalls).toBe(1);
     expect(skillCalls).toBe(2);
+    expect(ruleCalls).toBe(1);
   });
 
   test('settles a source as failed when the re-request fails too', async () => {
@@ -113,15 +152,16 @@ describe('loadCommandAutocompleteSources', () => {
         skillCalls += 1;
         return false;
       },
+      loadRules: async () => true,
     });
 
-    expect(readiness).toEqual({ commands: 'ready', skills: 'failed' });
+    expect(readiness).toEqual({ commands: 'ready', skills: 'failed', rules: 'ready' });
     expect(skillCalls).toBe(2);
   });
 });
 
 describe('palette source readiness', () => {
-  test('is only ready once both sources have answered', () => {
+  test('is only ready once every source has answered', () => {
     const commandsAnswered = applyCommandAutocompleteSourceResult(
       createCommandAutocompleteReadiness(),
       'commands',
@@ -129,7 +169,9 @@ describe('palette source readiness', () => {
     );
 
     expect(isCommandAutocompleteReady(commandsAnswered)).toBe(false);
-    expect(isCommandAutocompleteReady(applyCommandAutocompleteSourceResult(commandsAnswered, 'skills', false))).toBe(true);
+    const skillsAnswered = applyCommandAutocompleteSourceResult(commandsAnswered, 'skills', false);
+    expect(isCommandAutocompleteReady(skillsAnswered)).toBe(false);
+    expect(isCommandAutocompleteReady(applyCommandAutocompleteSourceResult(skillsAnswered, 'rules', true))).toBe(true);
   });
 
   test('shows progress only while the palette has nothing to show', () => {
@@ -140,8 +182,13 @@ describe('palette source readiness', () => {
     const answered = applyCommandAutocompleteSourceResult(pending, 'commands', true);
     expect(isCommandAutocompleteLoading(answered, 0)).toBe(true);
 
-    expect(isCommandAutocompleteLoading(applyCommandAutocompleteSourceResult(answered, 'skills', true), 0)).toBe(false);
-    expect(isCommandAutocompleteLoading(applyCommandAutocompleteSourceResult(answered, 'skills', false), 0)).toBe(false);
+    expect(isCommandAutocompleteLoading(applyCommandAutocompleteSourceResult(answered, 'skills', true), 0)).toBe(true);
+    const settled = applyCommandAutocompleteSourceResult(
+      applyCommandAutocompleteSourceResult(answered, 'skills', true),
+      'rules',
+      false,
+    );
+    expect(isCommandAutocompleteLoading(settled, 0)).toBe(false);
   });
 
   test('keeps the same object when an answer repeats', () => {

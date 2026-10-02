@@ -2248,6 +2248,8 @@ export const dict = {
   'chat.commandAutocomplete.badge.command': 'command',
   'chat.commandAutocomplete.section.commands': 'Commands',
   'chat.commandAutocomplete.section.skills': 'Skills',
+  'chat.commandAutocomplete.badge.rule': 'rule',
+  'chat.commandAutocomplete.section.rules': 'Rules',
   'chat.commandAutocomplete.badge.system': 'system',
   'chat.commandAutocomplete.empty': 'No commands found',
   'chat.agentMentionAutocomplete.badge.system': 'system',

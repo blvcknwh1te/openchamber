@@ -1975,6 +1975,8 @@ export const dict = {
   'chat.commandAutocomplete.badge.command': 'commande',
   'chat.commandAutocomplete.section.commands': 'Commandes',
   'chat.commandAutocomplete.section.skills': 'Compétences',
+  'chat.commandAutocomplete.badge.rule': 'règle',
+  'chat.commandAutocomplete.section.rules': 'Règles',
   'chat.commandAutocomplete.badge.system': 'système',
   'chat.commandAutocomplete.empty': 'Aucune commande trouvée',
   'chat.agentMentionAutocomplete.badge.system': 'système',

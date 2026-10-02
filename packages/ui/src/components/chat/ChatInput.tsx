@@ -80,6 +80,7 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { useGitStore, useIsGitRepo } from '@/stores/useGitStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { selectSkillsForDirectory, useSkillsStore } from '@/stores/useSkillsStore';
+import { selectRulesForDirectory, useRulesStore } from '@/stores/useRulesStore';
 import { selectCommandsForDirectory, useCommandsStore } from '@/stores/useCommandsStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
@@ -758,6 +759,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
     // matching /tokens in the composer, the same way confirmed @files are.
     const availableCommands = useCommandsStore((s) => selectCommandsForDirectory(s, currentDirectory));
     const availableSkills = useSkillsStore((s) => selectSkillsForDirectory(s, currentDirectory));
+    const availableRules = useRulesStore((s) => selectRulesForDirectory(s, currentDirectory));
     const knownSlashNames = React.useMemo(() => {
         const names = new Set<string>([
             'init', 'review', 'undo', 'redo', 'timeline', 'compact', 'btw', 'summary', 'workspace-review', 'plan-feature', 'craft-goal', 'schedule-task', 'catch-up', 'debug', 'weigh', 'explore',
@@ -765,24 +767,25 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         if (!isMobile && !isVSCodeRuntime()) names.add('handoff-review');
         for (const command of availableCommands) names.add(command.name.toLowerCase());
         for (const skill of availableSkills) names.add(skill.name.toLowerCase());
+        for (const rule of availableRules) names.add(rule.name.toLowerCase());
         return names;
-    }, [availableCommands, availableSkills, isMobile]);
+    }, [availableCommands, availableSkills, availableRules, isMobile]);
 
     const availableSnippets = useSnippetsStore((s) => s.snippets);
 
     /**
      * Instructions naming the slash entities a message references. The unified
-     * path resolves both `/command` and `/skill` to their definition file; the
-     * legacy path keeps the previous skills-only instruction.
+     * path resolves a `/command`, `/skill` and `/rule` to their definition file;
+     * the legacy path keeps the previous skills-only instruction.
      */
     const buildSlashContext = React.useCallback((text: string): string | null => {
         if (!unifiedSlashEntities) {
             const skillNames = new Set(availableSkills.map((skill) => skill.name));
             return buildSkillMentionInstruction(collectInlineSkillMentions(text, skillNames));
         }
-        const entities = buildSlashEntities({ skills: availableSkills, commands: availableCommands });
+        const entities = buildSlashEntities({ skills: availableSkills, commands: availableCommands, rules: availableRules });
         return buildSlashMentionsContext(collectSlashMentions(text, entities));
-    }, [unifiedSlashEntities, availableSkills, availableCommands]);
+    }, [unifiedSlashEntities, availableSkills, availableCommands, availableRules]);
 
     const knownSnippetTriggers = React.useMemo(() => {
         const triggers = new Set<string>();
@@ -2273,6 +2276,27 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         updateAutocompleteState(nextValue, cursorPosition, inputSource, text);
     }, [updateAutocompleteState]);
 
+    /**
+     * Runs a picked token (mention, agent, skill or snippet) through the editor
+     * when one is mounted, so it lands as a single isolated undo step, and
+     * falls back to the controlled state for the collapsed mobile pill.
+     * Returns the resulting document for the autocomplete update.
+     */
+    const insertTokenIntoComposer = React.useCallback((
+        from: number,
+        to: number,
+        insert: string,
+        fallbackValue: string,
+    ): string => {
+        const editor = composerRef.current;
+        if (!editor) {
+            setMessage(fallbackValue);
+            return fallbackValue;
+        }
+        editor.replaceRange(from, to, insert);
+        return editor.getValue();
+    }, []);
+
     const clearDropTextSuppression = React.useCallback(() => {
         suppressNextFileDropTextInsertRef.current = false;
         pendingDroppedAbsolutePathsRef.current = [];
@@ -2596,33 +2620,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
 
         confirmedMentionsRef.current.add(mentionPath);
 
-        if (lastAtSymbol !== -1) {
-            const newMessage =
-                message.substring(0, lastAtSymbol) +
-                `@${mentionPath} ` +
-                message.substring(cursorPosition);
-            setMessage(newMessage);
-            const nextCursor = lastAtSymbol + mentionPath.length + 2;
-            requestAnimationFrame(() => {
-                if (composerRef.current) {
-                    composerRef.current.setSelection(nextCursor);
-                }
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        } else if (composerRef.current) {
-            const newMessage =
-                message.substring(0, cursorPosition) +
-                `@${mentionPath} ` +
-                message.substring(cursorPosition);
-            setMessage(newMessage);
-            const nextCursor = cursorPosition + mentionPath.length + 2;
-            requestAnimationFrame(() => {
-                if (composerRef.current) {
-                    composerRef.current.setSelection(nextCursor);
-                }
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        }
+        const replaceFrom = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
+        const nextCursor = replaceFrom + mentionPath.length + 2;
+        const newMessage =
+            message.substring(0, replaceFrom) +
+            `@${mentionPath} ` +
+            message.substring(cursorPosition);
+        const nextMessage = insertTokenIntoComposer(
+            replaceFrom,
+            cursorPosition,
+            `@${mentionPath} `,
+            newMessage,
+        );
+        requestAnimationFrame(() => {
+            updateAutocompleteState(nextMessage, nextCursor);
+        });
 
         closeAutocomplete();
 
@@ -2635,35 +2647,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastAtSymbol = textBeforeCursor.lastIndexOf('@');
 
-        if (lastAtSymbol !== -1) {
-            const newMessage =
-                message.substring(0, lastAtSymbol) +
-                `@${agentName} ` +
-                message.substring(cursorPosition);
-            setMessage(newMessage);
-
-            const nextCursor = lastAtSymbol + agentName.length + 2;
-            requestAnimationFrame(() => {
-                if (composerRef.current) {
-                    composerRef.current.setSelection(nextCursor);
-                }
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        } else if (composerRef.current) {
-            const newMessage =
-                message.substring(0, cursorPosition) +
-                `@${agentName} ` +
-                message.substring(cursorPosition);
-            setMessage(newMessage);
-
-            const nextCursor = cursorPosition + agentName.length + 2;
-            requestAnimationFrame(() => {
-                if (composerRef.current) {
-                    composerRef.current.setSelection(nextCursor);
-                }
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        }
+        const replaceFrom = lastAtSymbol !== -1 ? lastAtSymbol : cursorPosition;
+        const nextCursor = replaceFrom + agentName.length + 2;
+        const newMessage =
+            message.substring(0, replaceFrom) +
+            `@${agentName} ` +
+            message.substring(cursorPosition);
+        const nextMessage = insertTokenIntoComposer(
+            replaceFrom,
+            cursorPosition,
+            `@${agentName} `,
+            newMessage,
+        );
+        requestAnimationFrame(() => {
+            updateAutocompleteState(nextMessage, nextCursor);
+        });
 
         closeAutocomplete();
 
@@ -2676,21 +2674,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const textBeforeCursor = message.substring(0, cursorPosition);
         const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
 
-        if (lastSlashSymbol !== -1) {
-            const newMessage =
-                message.substring(0, lastSlashSymbol) +
-                `/${skillName} ` +
-                message.substring(cursorPosition);
-            setMessage(newMessage);
-
-            const nextCursor = lastSlashSymbol + skillName.length + 2;
-            requestAnimationFrame(() => {
-                if (composerRef.current) {
-                    composerRef.current.setSelection(nextCursor);
-                }
-                updateAutocompleteState(newMessage, nextCursor);
-            });
-        }
+        const replaceFrom = lastSlashSymbol !== -1 ? lastSlashSymbol : cursorPosition;
+        const nextCursor = replaceFrom + skillName.length + 2;
+        const newMessage =
+            message.substring(0, replaceFrom) +
+            `/${skillName} ` +
+            message.substring(cursorPosition);
+        const nextMessage = insertTokenIntoComposer(
+            replaceFrom,
+            cursorPosition,
+            `/${skillName} `,
+            newMessage,
+        );
+        requestAnimationFrame(() => {
+            updateAutocompleteState(nextMessage, nextCursor);
+        });
 
         closeAutocomplete();
 
@@ -2720,13 +2718,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
         const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
         const startIndex = lastHashSymbol !== -1 ? lastHashSymbol : cursorPosition;
         const newMessage = `${message.substring(0, startIndex)}#${trigger} ${message.substring(cursorPosition)}`;
-        setMessage(newMessage);
         const nextCursor = startIndex + trigger.length + 2;
+        const nextMessage = insertTokenIntoComposer(
+            startIndex,
+            cursorPosition,
+            `#${trigger} `,
+            newMessage,
+        );
         requestAnimationFrame(() => {
-            if (composerRef.current) {
-                composerRef.current.setSelection(nextCursor);
-            }
-            updateAutocompleteState(newMessage, nextCursor);
+            updateAutocompleteState(nextMessage, nextCursor);
         });
         closeAutocomplete();
         composerRef.current?.focus();
@@ -2738,7 +2738,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({
             void handleSubmitRef.current({ presetText: '/btw' });
             return;
         }
-        setMessage(`/${command.name} `);
+        const commandText = `/${command.name} `;
+        const editor = composerRef.current;
+        if (editor) {
+            editor.replaceRange(0, editor.getValue().length, commandText);
+        } else {
+            setMessage(commandText);
+        }
 
         closeAutocomplete();
 

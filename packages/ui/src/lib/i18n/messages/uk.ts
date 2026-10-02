@@ -2226,6 +2226,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.commandAutocomplete.badge.command": "команда",
   "chat.commandAutocomplete.section.commands": "Команди",
   "chat.commandAutocomplete.section.skills": "Навички",
+  "chat.commandAutocomplete.badge.rule": "правило",
+  "chat.commandAutocomplete.section.rules": "Правила",
   "chat.commandAutocomplete.badge.system": "система",
   "chat.commandAutocomplete.empty": "Команди не знайдено",
   "chat.agentMentionAutocomplete.badge.system": "система",

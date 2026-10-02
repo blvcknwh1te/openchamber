@@ -497,6 +497,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '更新到 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '检查更新',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber 已更新。请重新加载窗口以完成。',
+  'settings.openchamber.about.toast.installManual': '无法自动更新。已打开发布页面；请手动安装 .vsix。',
   'settings.agents.sidebar.title': '智能体',
   'settings.agents.sidebar.total': '总计 {count}',
   'settings.agents.sidebar.empty.title': '未配置智能体',

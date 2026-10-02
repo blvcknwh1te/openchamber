@@ -55,6 +55,34 @@ export const fitScaleToWidth = (
   return Math.min(TABLE_VIEWER_SCALE.max, snapped > 0 ? Math.min(fit, snapped) : fit);
 };
 
+/**
+ * Sub-pixel slack when the scaled table is compared against the viewport. A
+ * fitted table lands exactly on the panel width, and rounding could leave it a
+ * fraction of a pixel over, which must not count as an overflow.
+ */
+export const TABLE_VIEWER_PAN_EPSILON_PX = 0.5;
+
+/**
+ * True when the table, at its current scale, is larger than the viewport in at
+ * least one axis, so a pan would actually move it. The content dimensions are
+ * the natural (unscaled) box measured on open; width is fit to the panel, so in
+ * practice this reports whether the table is taller than the panel (or the user
+ * zoomed past the panel width).
+ */
+export const canPanViewport = (input: {
+  contentWidth: number;
+  contentHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  scale: number;
+}): boolean => {
+  const { contentWidth, contentHeight, viewportWidth, viewportHeight, scale } = input;
+  return (
+    contentWidth * scale > viewportWidth + TABLE_VIEWER_PAN_EPSILON_PX ||
+    contentHeight * scale > viewportHeight + TABLE_VIEWER_PAN_EPSILON_PX
+  );
+};
+
 /** Zoom applied by one wheel notch, expressed as a multiplier around 1. */
 export const TABLE_VIEWER_WHEEL_FACTOR = 1 + TABLE_VIEWER_SCALE.wheelStep;
 

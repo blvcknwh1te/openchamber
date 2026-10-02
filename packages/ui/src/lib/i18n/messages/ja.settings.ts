@@ -530,6 +530,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '{version} にアップデート',
   'settings.openchamber.about.actions.checkForUpdates': 'アップデートを確認',
   'settings.openchamber.about.toast.latestVersion': '最新バージョンです',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber を更新しました。完了するにはウィンドウを再読み込みしてください。',
+  'settings.openchamber.about.toast.installManual': '自動更新を利用できません。リリースページを開きました。.vsix を手動でインストールしてください。',
   'settings.agents.sidebar.title': 'エージェント',
   'settings.agents.sidebar.total': '合計 {count}',
   'settings.agents.sidebar.empty.title': 'Agent が設定されていません',

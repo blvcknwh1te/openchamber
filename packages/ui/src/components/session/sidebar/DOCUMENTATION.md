@@ -63,6 +63,21 @@ authority. Opening a session from a discovered section needs nothing extra: the
 row hands its own `directory` to `setCurrentSession`, and the new-session button
 passes that directory as `directoryOverride`.
 
+The active project (`useProjectsStore.activeProjectId`) is marked in the project
+header by `ProjectHeaderIdentity` (`projects/sortableItems.tsx`): a left accent
+bar (`bg-primary`) plus the label switching to `text-primary`. Discovered
+projects are never active, so they keep the plain header. The sticky leading
+overlay reuses the same identity and applies the same marker.
+
+In VS Code the compact list is one surface across every project, so a view
+switch back to the list must not reopen a chat by itself.
+`resolveMissingProjectSessionSelection` therefore preserves the selection when
+the open session is rendered under any project other than the active one, while
+web/desktop keep auto-substituting the active project's remembered session. The
+runtime gate is `topology.isVSCode`, threaded from `SessionProjectCollection`
+into `ProjectSessionSelectionEffect`; single-project mode renders only the
+active project, so the gate never fires there.
+
 Directory demand always includes known project roots and worktrees. Visibility
 only changes priority. Row mounts must not start bootstrap work. Selection and
 activity subscriptions stay session-scoped so a structural list update does not

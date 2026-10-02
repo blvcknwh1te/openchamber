@@ -742,6 +742,8 @@ export const settingsDict = {
   'settings.openchamber.about.state.unknown': 'nieznane',
   'settings.openchamber.about.title': 'O OpenChamber',
   'settings.openchamber.about.toast.latestVersion': 'Używasz najnowszej wersji',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber zaktualizowano. Przeladuj okno, aby zakonczyc.',
+  'settings.openchamber.about.toast.installManual': 'Automatyczna aktualizacja niedostepna. Otwarto strone wydania; zainstaluj plik .vsix recznie.',
   'settings.openchamber.defaults.field.defaultAgent': 'Domyślny Agent',
   'settings.openchamber.defaults.field.defaultModel': 'Domyślny Model',
   'settings.openchamber.defaults.field.defaultThinking': 'Domyślne Myślenie',

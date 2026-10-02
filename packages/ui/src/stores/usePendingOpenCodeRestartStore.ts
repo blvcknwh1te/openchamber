@@ -7,6 +7,7 @@ export type PendingOpenCodeRestartScope =
   | 'mcp'
   | 'plugins'
   | 'skills'
+  | 'rules'
   | 'behavior'
   | 'cli'
   | 'all';

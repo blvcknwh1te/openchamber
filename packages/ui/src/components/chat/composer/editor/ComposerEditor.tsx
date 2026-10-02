@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils';
 import type { ComposerLanguageContext } from '../language/tokenize';
 import type { ComposerAutoCorrect } from './autocorrect';
 import { composerLanguage, setLanguageContext } from './composerLanguage';
-import { replaceWithCaret } from './documentEdits';
+import { externalSyncTransaction, programmaticEditTransaction } from './documentEdits';
 import type { ComposerEditorViewStore } from './viewStore';
 import { composerEditorTheme, composerSelectionExtension } from './theme';
 import { handleComposerHostMouseDown } from './hostMouseDown';
@@ -366,7 +366,14 @@ export const ComposerEditor = React.forwardRef<ComposerEditorHandle, ComposerEdi
             // keeping the old caret instead left it stranded before the
             // inserted text, and the next insertion or keystroke landed inside
             // the previous one.
-            view.dispatch(replaceWithCaret(view.state, 0, current.length, value));
+            //
+            // The rewrite is not a keystroke: `externalSyncTransaction`
+            // dispatches only the real difference and excludes itself from the
+            // undo history, so undo keeps reverting the user's own edits
+            // instead of a bulk "replace the whole document" step.
+            const sync = externalSyncTransaction(view.state, value);
+            if (!sync) return;
+            view.dispatch(sync);
             // A large insert can push the caret below the fold, and a
             // transaction-time `scrollIntoView` cannot reach it: wrapped-line
             // heights are still estimates during the update, and the
@@ -519,10 +526,7 @@ export const ComposerEditor = React.forwardRef<ComposerEditorHandle, ComposerEdi
                 const view = viewRef.current;
                 if (!view || !text) return;
                 const { from, to } = view.state.selection.main;
-                view.dispatch({
-                    ...replaceWithCaret(view.state, from, to, text),
-                    userEvent: 'input.type',
-                });
+                view.dispatch(programmaticEditTransaction(view.state, { from, to, insert: text }));
             },
             replaceRange(from, to, text, selectionStart, selectionEnd = selectionStart) {
                 const view = viewRef.current;
@@ -530,10 +534,7 @@ export const ComposerEditor = React.forwardRef<ComposerEditorHandle, ComposerEdi
                 const caret = selectionStart === undefined
                     ? undefined
                     : { anchor: selectionStart, head: selectionEnd ?? selectionStart };
-                view.dispatch({
-                    ...replaceWithCaret(view.state, from, to, text, caret),
-                    userEvent: 'input.type',
-                });
+                view.dispatch(programmaticEditTransaction(view.state, { from, to, insert: text, caret }));
             },
             caretCoords(position) {
                 const view = viewRef.current;

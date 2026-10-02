@@ -2041,6 +2041,8 @@ export const dict = {
   'chat.commandAutocomplete.badge.command': 'Befehl',
   'chat.commandAutocomplete.section.commands': 'Befehle',
   'chat.commandAutocomplete.section.skills': 'Fähigkeiten',
+  'chat.commandAutocomplete.badge.rule': 'Regel',
+  'chat.commandAutocomplete.section.rules': 'Regeln',
   'chat.commandAutocomplete.badge.system': 'System',
   'chat.commandAutocomplete.empty': 'Keine Befehle gefunden',
   'chat.agentMentionAutocomplete.badge.system': 'System',

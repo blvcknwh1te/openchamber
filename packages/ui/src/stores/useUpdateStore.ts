@@ -121,12 +121,6 @@ function mapRuntimeParams(runtime: ClientRuntime): URLSearchParams {
     return params;
   }
 
-  if (runtime === 'vscode') {
-    params.set('appType', 'vscode');
-    params.set('instanceMode', 'local');
-    return params;
-  }
-
   if (runtime === 'mobile') {
     params.set('appType', 'mobile-capacitor');
     params.set('instanceMode', 'remote');
@@ -141,11 +135,7 @@ function mapRuntimeParams(runtime: ClientRuntime): URLSearchParams {
 async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: string): Promise<UpdateInfo | null> {
   try {
     const params = mapRuntimeParams(runtime);
-    const vscodeVersion = typeof window !== 'undefined'
-      ? (window as { __VSCODE_CONFIG__?: { extensionVersion?: string } }).__VSCODE_CONFIG__?.extensionVersion
-      : undefined;
     if (currentVersion) params.set('currentVersion', currentVersion);
-    else if (runtime === 'vscode' && vscodeVersion) params.set('currentVersion', vscodeVersion);
     const response = await runtimeFetch(`/api/openchamber/update-check?${params.toString()}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
@@ -176,6 +166,52 @@ async function checkForWebUpdates(runtime: ClientRuntime, currentVersion?: strin
     console.warn('Failed to check for updates:', error);
     return null;
   }
+}
+
+async function checkForVSCodeUpdates(): Promise<UpdateInfo | null> {
+  // The host resolves the running version from `extension.packageJSON`, so the
+  // webview does not need to read `window.__VSCODE_CONFIG__` for it.
+  const params = new URLSearchParams();
+  // The host performs its own startup check and notification; a check driven
+  // from the UI must not raise a duplicate host popup.
+  params.set('notify', 'false');
+
+  const response = await runtimeFetch(`/api/openchamber/update-check?${params.toString()}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    priority: 'low',
+  });
+
+  // Let the failure reach checkForUpdates so the store reports "check failed"
+  // instead of silently claiming the extension is up to date.
+  if (!response.ok) {
+    throw new Error(`Server responded with ${response.status}`);
+  }
+
+  const data = await response.json();
+  return {
+    available: data.available ?? false,
+    version: data.version,
+    currentVersion: data.currentVersion ?? 'unknown',
+    body: data.body,
+    releaseUrl: data.releaseUrl,
+    downloadUrl: data.downloadUrl,
+  };
+}
+
+// The VS Code host owns the actual install (temp .vsix download plus
+// `workbench.extensions.installExtension`), so the webview only relays the
+// request and reports whether the host installed it or fell back to a manual
+// download page.
+export async function installVSCodeUpdate(): Promise<{ status: 'installed' | 'manual' | 'current'; releaseUrl?: string; error?: string }> {
+  const response = await runtimeFetch('/api/openchamber/update-install', {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error(`Server responded with ${response.status}`);
+  }
+  return response.json();
 }
 
 function detectRuntimeType(): 'desktop' | 'web' | 'vscode' | 'mobile' | null {
@@ -239,8 +275,8 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         info = await checkForWebUpdates('web');
         suggestedSec = info?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'vscode') {
-        const vscodeInfo = await checkForWebUpdates('vscode');
-        suggestedSec = vscodeInfo?.nextSuggestedCheckInSec ?? null;
+        info = await checkForVSCodeUpdates();
+        suggestedSec = info?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'mobile') {
         const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : undefined;
         info = await checkForWebUpdates('mobile', appVersion);
@@ -249,8 +285,8 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
 
       set({
         checking: false,
-        available: runtime === 'vscode' ? false : (info?.available ?? false),
-        info: runtime === 'vscode' ? null : info,
+        available: info?.available ?? false,
+        info,
         lastChecked: Date.now(),
         nextCheckInSec: suggestedSec,
       });

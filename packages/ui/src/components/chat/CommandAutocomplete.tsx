@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { selectCommandsForDirectory, useCommandsStore } from '@/stores/useCommandsStore';
 import { selectSkillsForDirectory, useSkillsStore } from '@/stores/useSkillsStore';
+import { selectRulesForDirectory, useRulesStore } from '@/stores/useRulesStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
@@ -21,7 +22,7 @@ import {
 import type { CommandAutocompleteReadiness } from './commandAutocompleteItems';
 import { AutocompleteRowTooltip } from './composer/ui/AutocompleteRowTooltip';
 
-type CommandSource = 'openchamber' | 'opencode' | 'skill';
+type CommandSource = 'openchamber' | 'opencode' | 'skill' | 'rule';
 
 /** Single literal for the source every OpenChamber-owned command carries. */
 const OPENCHAMBER_SOURCE: CommandSource = 'openchamber';
@@ -37,12 +38,23 @@ export interface CommandInfo {
   isBuiltIn?: boolean;
   isOpenChamber?: boolean;
   isSkill?: boolean;
+  isRule?: boolean;
   scope?: string;
 }
 
 export interface CommandAutocompleteHandle {
   handleKeyDown: (key: string) => void;
 }
+
+/**
+ * Section an entry belongs to. One switch feeds both the grouping and the
+ * header label, so the two cannot disagree about where a kind is listed.
+ */
+const sectionKeyOf = (command: CommandInfo | undefined): 'commands' | 'skills' | 'rules' => {
+  if (command?.isSkill || command?.source === 'skill') return 'skills';
+  if (command?.isRule || command?.source === 'rule') return 'rules';
+  return 'commands';
+};
 
 const BASE_BADGE_CLASS = "text-[10px] leading-none uppercase font-bold tracking-tight px-1.5 py-1 rounded border flex-shrink-0";
 const TYPE_BADGE_CLASS = cn(
@@ -173,6 +185,8 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const loadCommandsForDirectory = useCommandsStore((s) => s.loadCommands);
   const skills = useSkillsStore((s) => selectSkillsForDirectory(s, effectiveDirectory));
   const loadSkillsForDirectory = useSkillsStore((s) => s.loadSkills);
+  const rules = useRulesStore((s) => selectRulesForDirectory(s, effectiveDirectory));
+  const loadRulesForDirectory = useRulesStore((s) => s.loadRules);
   const [readiness, setReadiness] = React.useState<CommandAutocompleteReadiness>(createCommandAutocompleteReadiness);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
@@ -229,9 +243,17 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
         isSkill: true,
         scope: skill.scope,
       }));
+      const ruleCommands: CommandInfo[] = rules.map((rule, index) => ({
+        id: `rule:${rule.scope}:${rule.path}:${index}`,
+        name: rule.name,
+        source: 'rule',
+        description: rule.description,
+        isRule: true,
+        scope: rule.scope,
+      }));
 
       return filterAndSortCommandItems(
-        mergeCommandAutocompleteItems(builtInCommands, customCommands, skillCommands),
+        mergeCommandAutocompleteItems(builtInCommands, customCommands, skillCommands, ruleCommands),
         searchQuery,
       );
     } catch (error) {
@@ -240,7 +262,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
       console.error('[CommandAutocomplete] Failed to build the command list:', error);
       return filterAndSortCommandItems(builtInCommands, searchQuery);
     }
-  }, [builtInCommands, commandsWithMetadata, searchQuery, skills]);
+  }, [builtInCommands, commandsWithMetadata, searchQuery, skills, rules]);
 
   // The unified picker keeps one filtered list but orders commands above
   // skills, with section headers once the query matched both kinds.
@@ -261,6 +283,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     void loadCommandAutocompleteSources({
       loadCommands: () => loadCommandsForDirectory(effectiveDirectory),
       loadSkills: () => loadSkillsForDirectory(effectiveDirectory),
+      loadRules: () => loadRulesForDirectory(effectiveDirectory),
     }).then((next) => {
       if (!cancelled) {
         setReadiness(next);
@@ -269,7 +292,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     return () => {
       cancelled = true;
     };
-  }, [effectiveDirectory, loadCommandsForDirectory, loadSkillsForDirectory]);
+  }, [effectiveDirectory, loadCommandsForDirectory, loadSkillsForDirectory, loadRulesForDirectory]);
 
   React.useEffect(() => {
     setSelectedIndex(0);
@@ -339,6 +362,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
       case 'run':
         return <Icon name="terminal-box" className="h-3.5 w-3.5 text-cyan-500" />;
       default:
+        if (command.isRule || command.source === 'rule') {
+          return <Icon name="book-open" className="h-3.5 w-3.5 text-emerald-500" />;
+        }
         if (command.isBuiltIn) {
           return <Icon name="flashlight" className="h-3.5 w-3.5 text-yellow-500" />;
         }
@@ -364,14 +390,12 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               const isOpenChamberBadge = command.isOpenChamber;
               const previousItem = paletteItems[index - 1];
               const startsSection = showSectionHeaders
-                && (index === 0 || Boolean(previousItem?.isSkill) !== Boolean(command.isSkill));
+                && (index === 0 || sectionKeyOf(previousItem) !== sectionKeyOf(command));
               return (
                 <React.Fragment key={command.id}>
                 {startsSection && (
                   <div className="px-3 pt-2 pb-1 typography-ui-label uppercase tracking-tight text-muted-foreground">
-                    {command.isSkill
-                      ? t('chat.commandAutocomplete.section.skills')
-                      : t('chat.commandAutocomplete.section.commands')}
+                    {t(`chat.commandAutocomplete.section.${sectionKeyOf(command)}`)}
                   </div>
                 )}
                 <AutocompleteRowTooltip description={command.description} active={!isMobile && index === selectedIndex}>
@@ -441,9 +465,13 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="typography-ui-label font-medium">/{command.name}</span>
-                      {command.isSkill ? (
+                      {command.isSkill || command.source === 'skill' ? (
                         <span className={TYPE_BADGE_CLASS}>
                           {t('chat.commandAutocomplete.badge.skill')}
+                        </span>
+                      ) : command.isRule || command.source === 'rule' ? (
+                        <span className={TYPE_BADGE_CLASS}>
+                          {t('chat.commandAutocomplete.badge.rule')}
                         </span>
                       ) : (
                         <span className={TYPE_BADGE_CLASS}>

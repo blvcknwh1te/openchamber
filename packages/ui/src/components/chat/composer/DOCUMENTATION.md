@@ -115,6 +115,16 @@ state to crash again on the next restore. Every edit that moves the caret goes
 through `replaceWithCaret` (`editor/documentEdits.ts`), which measures the
 change instead of the string.
 
+The editor is controlled, but an external value change (draft restore, history
+recall, a value arriving from a store) is not a keystroke and must not be
+undoable. `externalSyncTransaction` dispatches only the real difference and is
+annotated `addToHistory: false`; a full-document rewrite would be wrong even
+then, because CodeMirror maps the history through it and undoing one keystroke
+would restore the whole pre-rewrite document. Picked mentions, snippets and
+slash tokens go through `programmaticEditTransaction`, tagged `input.type` and
+isolated with `isolateHistory.of('full')`, so each is a single undo step: Ctrl+Z
+removes exactly the picked token and leaves the typed text.
+
 The composer previously painted a transparent `<textarea>` over a mirror
 `<div>`. That restricted highlighting to styles which do not change glyph
 advance width — colour, background, underline — because anything else made the
@@ -122,6 +132,20 @@ mirror drift out from under the caret. Bold and italic were impossible, and the
 overlay was disabled outright on mobile, where wrapped text drifted anyway.
 **Those constraints are gone**; adding a width-affecting style is now a
 question of design, not of feasibility.
+
+The editor grows with its content and then scrolls inside a measured cap:
+`ComposerEditor.tsx` writes `maxHeight` on `.cm-scroller` (the `scrollDOM`)
+from a `ResizeObserver`, at `lineHeight * maxLines` or the bound's available
+height when there is one, whichever is smaller. That scroller is the composer's
+real overflow container — `overflowX: 'hidden'` computes its `overflowY` to
+`auto` — so a classic scrollbar appearing at the cap takes its own width out of
+the lines, re-wraps them, changes the height and hides itself again on the next
+frame. On a line sitting near the wrap boundary that loop runs on every
+keystroke and the composer visibly jiggles. The theme therefore reserves the
+gutter (`scrollbarGutter: 'stable'`), the same treatment `index.css` already
+gives the transcript through `.chat-scroll`. Keep the reservation whenever the
+cap or the scroller changes: without it the composer shakes rather than fails,
+which no other check would catch.
 
 Selection rendering: every device runs CodeMirror's `drawSelection()` — it
 keeps typing on the drawn-selection code path, and removing it makes
@@ -312,7 +336,12 @@ hardware.
 The package has no DOM test environment, so coverage stops at the state and
 logic layers: the language, the submit assembly, path and drop handling, text
 splicing, large-paste detection, paste-offer invalidation, input-history
-traversal, and the CodeMirror language extension at the `EditorState` level.
+traversal, the CodeMirror language extension at the `EditorState` level, and the
+undo-history behavior of document edits (`externalSyncTransaction`,
+`programmaticEditTransaction`, `diffDocumentRange` in
+`editor/__tests__/historySync.test.ts`). Undo is exercised on a bare
+`EditorState` with `history()` and the `undo`/`redo` commands, not on a mounted
+`EditorView`.
 
 Rendering, focus, keyboard behavior, IME and WKWebView are **not covered by
 tests** and are verified by hand. That includes ArrowUp and ArrowDown recall,

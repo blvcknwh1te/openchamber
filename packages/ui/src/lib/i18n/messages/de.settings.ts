@@ -508,6 +508,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': 'Auf {version} aktualisieren',
   'settings.openchamber.about.actions.checkForUpdates': 'Nach Updates suchen',
   'settings.openchamber.about.toast.latestVersion': 'Sie verwenden die neueste Version',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber wurde aktualisiert. Fenster neu laden, um abzuschliessen.',
+  'settings.openchamber.about.toast.installManual': 'Automatisches Update nicht verfuegbar. Die Release-Seite wurde geoeffnet; die .vsix manuell installieren.',
   'settings.agents.sidebar.title': 'Agents',
   'settings.agents.sidebar.total': 'Gesamt {count}',
   'settings.agents.sidebar.empty.title': 'Keine Agents konfiguriert',

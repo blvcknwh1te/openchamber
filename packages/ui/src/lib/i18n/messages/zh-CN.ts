@@ -2214,6 +2214,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.commandAutocomplete.badge.command': '命令',
   'chat.commandAutocomplete.section.commands': '命令',
   'chat.commandAutocomplete.section.skills': '技能',
+  'chat.commandAutocomplete.badge.rule': '规则',
+  'chat.commandAutocomplete.section.rules': '规则',
   'chat.commandAutocomplete.badge.system': '系统',
   'chat.commandAutocomplete.empty': '未找到命令',
   'chat.agentMentionAutocomplete.badge.system': '系统',

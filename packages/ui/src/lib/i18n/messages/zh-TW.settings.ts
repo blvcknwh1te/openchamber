@@ -494,6 +494,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '更新到 {version}',
   'settings.openchamber.about.actions.checkForUpdates': '檢查更新',
   'settings.openchamber.about.toast.latestVersion': '你已是最新版本',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber 已更新。請重新載入視窗以完成。',
+  'settings.openchamber.about.toast.installManual': '無法自動更新。已開啟發行頁面；請手動安裝 .vsix。',
   'settings.agents.sidebar.title': 'Agents',
   'settings.agents.sidebar.total': '總計 {count}',
   'settings.agents.sidebar.empty.title': '未設定 agents',

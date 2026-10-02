@@ -497,6 +497,8 @@ export const settingsDict = {
   "settings.openchamber.about.actions.updateToVersion": "Оновити до {version}",
   "settings.openchamber.about.actions.checkForUpdates": "Перевірити наявність оновлень",
   "settings.openchamber.about.toast.latestVersion": "Ви використовуєте останню версію",
+  "settings.openchamber.about.toast.updateInstalled": "OpenChamber оновлено. Перезавантажте вікно, щоб завершити.",
+  "settings.openchamber.about.toast.installManual": "Автоматичне оновлення недоступне. Відкрито сторінку випуску; встановіть .vsix вручну.",
   "settings.agents.sidebar.title": "Агенти",
   "settings.agents.sidebar.total": "Усього {count}",
   "settings.agents.sidebar.empty.title": "Агентів не налаштовано",

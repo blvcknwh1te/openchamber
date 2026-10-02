@@ -34,6 +34,8 @@ type ProjectIdentityProps = {
 type ProjectHeaderIdentityProps = ProjectIdentityProps & {
   isCollapsed?: boolean;
   alwaysShowActions?: boolean;
+  /** The project that owns the open workspace; gets the accent treatment. */
+  isActiveProject?: boolean;
 };
 
 type ProjectPickerOption = ProjectIdentityProps & { projectDescription: string };
@@ -47,6 +49,7 @@ export const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
   projectIconBackground,
   isCollapsed,
   alwaysShowActions = false,
+  isActiveProject = false,
 }) => {
   const { currentTheme } = useThemeSystem();
   const projectIconName = projectIcon ? PROJECT_ICON_MAP[projectIcon] : null;
@@ -58,6 +61,13 @@ export const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
 
   return (
     <>
+      {isActiveProject ? (
+        <span
+          data-active-project-marker="true"
+          aria-hidden="true"
+          className="h-3.5 w-1 flex-shrink-0 rounded-full bg-primary"
+        />
+      ) : null}
       <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center">
         {hasCollapseControl ? (
           <span className={cn(
@@ -96,7 +106,15 @@ export const ProjectHeaderIdentity: React.FC<ProjectHeaderIdentityProps> = ({
           <Icon name="folder" className={cn('h-3.5 w-3.5 text-muted-foreground/80', iconVisibilityClassName)} style={iconColor ? { color: iconColor } : undefined} />
         )}
       </span>
-      <span className="truncate typography-ui-label font-semibold lowercase text-foreground">{projectLabel}</span>
+      <span
+        data-active-project={isActiveProject ? 'true' : undefined}
+        className={cn(
+          'truncate typography-ui-label font-semibold lowercase',
+          isActiveProject ? 'text-primary' : 'text-foreground',
+        )}
+      >
+        {projectLabel}
+      </span>
     </>
   );
 };
@@ -111,6 +129,8 @@ export interface SortableProjectItemProps extends ProjectIdentityProps {
   hideDirectoryControls: boolean;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
+  /** Marks the project owning the open workspace. */
+  isActiveProject: boolean;
   onToggle: () => void;
   onNewSession: () => void;
   onNewWorktreeSession?: () => void;
@@ -144,6 +164,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   isDesktopShell,
   hideDirectoryControls,
   alwaysShowActions,
+  isActiveProject,
   onToggle,
   onNewSession,
   onNewWorktreeSession,
@@ -298,7 +319,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       )}
                       aria-label={t('sessions.sidebar.project.selectAria', { project: projectLabel })}
                     >
-                      <ProjectHeaderIdentity id={id} projectLabel={projectLabel} projectIcon={projectIcon} projectColor={projectColor} projectIconImage={projectIconImage} projectIconBackground={projectIconBackground} />
+                      <ProjectHeaderIdentity id={id} projectLabel={projectLabel} projectIcon={projectIcon} projectColor={projectColor} projectIconImage={projectIconImage} projectIconBackground={projectIconBackground} isActiveProject={isActiveProject} />
                       <Icon name="arrow-down-s" className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                       {projectDirectory ? <DirectoryActionIndicator directory={projectDirectory} className="ml-auto" /> : null}
                     </button>
@@ -337,6 +358,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       projectIconBackground={projectIconBackground}
                       isCollapsed={isCollapsed}
                       alwaysShowActions={alwaysShowActions}
+                      isActiveProject={isActiveProject}
                     />
                     {statusIndicator ? (
                       <span className="ml-1 inline-flex flex-shrink-0 items-center">{statusIndicator}</span>

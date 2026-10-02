@@ -2207,6 +2207,8 @@ export const dict = {
   'chat.commandAutocomplete.badge.command': 'komut',
   'chat.commandAutocomplete.section.commands': 'Komutlar',
   'chat.commandAutocomplete.section.skills': 'Yetenekler',
+  'chat.commandAutocomplete.badge.rule': 'kural',
+  'chat.commandAutocomplete.section.rules': 'Kurallar',
   'chat.commandAutocomplete.badge.system': 'sistem',
   'chat.commandAutocomplete.empty': 'Komut bulunamadı',
   'chat.agentMentionAutocomplete.badge.system': 'sistem',

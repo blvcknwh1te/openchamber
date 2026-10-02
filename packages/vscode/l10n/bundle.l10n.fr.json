@@ -27,5 +27,11 @@
   "New Session": "Nouvelle session",
   "Session": "Session",
   "Agent Manager": "Gestionnaire d'agents",
-  "Table": "Tableau"
+  "Table": "Tableau",
+  "Update": "Mettre a jour",
+  "Later": "Plus tard",
+  "OpenChamber {0} is available": "OpenChamber {0} est disponible",
+  "OpenChamber is up to date": "OpenChamber est a jour",
+  "OpenChamber: update check failed - {0}": "OpenChamber : echec de la verification des mises a jour - {0}",
+  "OpenChamber could not update automatically. The release page is open; install the .vsix manually.": "OpenChamber n'a pas pu se mettre a jour automatiquement. La page de publication est ouverte ; installez le .vsix manuellement."
 }

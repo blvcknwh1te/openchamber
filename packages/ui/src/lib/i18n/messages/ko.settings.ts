@@ -497,6 +497,8 @@ export const settingsDict = {
   'settings.openchamber.about.actions.updateToVersion': '{version}으로 업데이트',
   'settings.openchamber.about.actions.checkForUpdates': '업데이트 확인',
   'settings.openchamber.about.toast.latestVersion': '최신 버전을 사용 중입니다',
+  'settings.openchamber.about.toast.updateInstalled': 'OpenChamber가 업데이트되었습니다. 완료하려면 창을 새로 고치세요.',
+  'settings.openchamber.about.toast.installManual': '자동 업데이트를 사용할 수 없습니다. 릴리스 페이지를 열었습니다. .vsix를 수동으로 설치하세요.',
   'settings.agents.sidebar.title': '에이전트',
   'settings.agents.sidebar.total': '총 {count}개',
   'settings.agents.sidebar.empty.title': '설정된 에이전트가 없습니다',
