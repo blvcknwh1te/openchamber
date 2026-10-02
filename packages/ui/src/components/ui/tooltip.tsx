@@ -272,7 +272,12 @@ function TooltipContent({
   return (
     <TooltipPartBoundary>
       <BaseTooltip.Portal>
-        <BaseTooltip.Positioner sideOffset={sideOffset} side={side} align={align} className="z-50">
+        {/* The positioner wrapper must not catch the pointer. Tooltips here are
+            informational (text and icons only), and a popup that overlaps a
+            scrollable list - a session row tooltip over the sidebar is the
+            common case - would otherwise swallow the wheel event, so the list
+            under the popup stops scrolling. */}
+        <BaseTooltip.Positioner sideOffset={sideOffset} side={side} align={align} className="pointer-events-none z-50">
           <BaseTooltip.Popup
             data-slot="tooltip-content"
             className={cn(

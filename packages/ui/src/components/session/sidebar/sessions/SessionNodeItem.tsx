@@ -1531,10 +1531,7 @@ function SessionNodeItemComponent(props: SessionNodeItemProps): React.ReactNode 
                     </div>
                   </button>
                 </TooltipTrigger>
-                {/* Informational only: a row tooltip must never swallow the
-                    pointer, or hovering it would take wheel scrolling away
-                    from the list (it overlays the rows on the right). */}
-                <TooltipContent side="right" sideOffset={8} className="pointer-events-none max-w-xs text-left">
+                <TooltipContent side="right" sideOffset={8} className="max-w-xs text-left">
                   <div className="flex min-w-44 flex-col gap-1.5 text-left text-xs">
                     <div className="flex items-center justify-between gap-3">
                       <span className="min-w-0 truncate font-medium text-foreground">{sessionTitle}</span>
