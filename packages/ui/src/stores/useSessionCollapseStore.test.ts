@@ -1,107 +1,85 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
+import { useSessionCollapseStore } from './useSessionCollapseStore';
 
-const storage = new Map<string, string>();
-
-const safeStorage = {
-  getItem: (key: string) => storage.get(key) ?? null,
-  setItem: (key: string, value: string) => {
-    storage.set(key, value);
-  },
-  removeItem: (key: string) => {
-    storage.delete(key);
-  },
-  clear: () => {
-    storage.clear();
-  },
-  key: (index: number) => Array.from(storage.keys())[index] ?? null,
-  get length() {
-    return storage.size;
-  },
-} as Storage;
-
-mock.module('./utils/safeStorage', () => ({
-  getDeferredSafeStorage: () => safeStorage,
-  getSafeStorage: () => safeStorage,
-}));
-
-const {
-  PROJECT_COLLAPSE_STORAGE_KEY,
-  PROJECT_COLLAPSE_CHOSEN_STORAGE_KEY,
-  useSessionCollapseStore,
-} = await import('./useSessionCollapseStore');
+// Only state transitions are asserted here: the payload format lives in
+// `sessionCollapsePersistence` and is covered without mocking, because other
+// store tests in the suite replace the shared storage module.
+const store = () => useSessionCollapseStore.getState();
 
 const resetStore = () => {
   useSessionCollapseStore.setState({
     collapsedProjectIds: [],
-    collapseChosen: false,
+    expandedProjectIds: [],
     knownProjectIds: [],
   });
 };
 
 describe('useSessionCollapseStore', () => {
   beforeEach(() => {
-    storage.clear();
     resetStore();
   });
 
-  test('collapseAll collapses every registered project and marks the choice', () => {
-    const store = useSessionCollapseStore.getState();
-    store.registerKnownProjectIds(['project-a', 'project-b']);
-    store.collapseAll();
+  test('collapseAll folds every registered project and expandAll unfolds them', () => {
+    store().registerKnownProjectIds(['project-a', 'project-b']);
+    store().collapseAll();
 
-    expect(useSessionCollapseStore.getState().collapsedProjectIds).toEqual(['project-a', 'project-b']);
-    expect(useSessionCollapseStore.getState().collapseChosen).toBe(true);
+    expect(store().collapsedProjectIds).toEqual(['project-a', 'project-b']);
+    expect(store().expandedProjectIds).toEqual([]);
+
+    store().expandAll();
+    expect(store().collapsedProjectIds).toEqual([]);
+    expect(store().expandedProjectIds).toEqual(['project-a', 'project-b']);
   });
 
-  test('expandAll clears the collapsed set and marks the choice', () => {
-    const store = useSessionCollapseStore.getState();
-    store.registerKnownProjectIds(['project-a']);
-    store.collapseAll();
-    store.expandAll();
+  test('folding everything drops an earlier hand-opened project', () => {
+    store().registerKnownProjectIds(['project-a']);
+    store().setProjectCollapsed('project-b', false);
+    store().collapseAll();
 
-    expect(useSessionCollapseStore.getState().collapsedProjectIds).toEqual([]);
-    expect(useSessionCollapseStore.getState().collapseChosen).toBe(true);
+    expect(store().collapsedProjectIds).toEqual(['project-a']);
+    expect(store().expandedProjectIds).toEqual([]);
   });
 
-  test('setCollapsedProjectIds dedupes and does not persist knownProjectIds', () => {
-    useSessionCollapseStore.getState().registerKnownProjectIds(['project-a']);
-    useSessionCollapseStore.getState().setCollapsedProjectIds(['project-a', 'project-a']);
-    expect(useSessionCollapseStore.getState().collapsedProjectIds).toEqual(['project-a']);
-    expect(JSON.parse(storage.get(PROJECT_COLLAPSE_STORAGE_KEY) ?? 'null')).toEqual(['project-a']);
+  test('unfolding everything drops an earlier hand-folded project', () => {
+    store().registerKnownProjectIds(['project-a']);
+    store().setProjectCollapsed('project-b', true);
+    store().expandAll();
+
+    expect(store().collapsedProjectIds).toEqual([]);
+    expect(store().expandedProjectIds).toEqual(['project-a']);
   });
 
-  test('reads collapse state stored under the legacy keys', async () => {
-    // Set the live registration state first: a `setState` persists the current
-    // collapse fields, so storage is seeded after it and before rehydrating.
-    useSessionCollapseStore.setState({ knownProjectIds: ['keep-me'] });
-    storage.set(PROJECT_COLLAPSE_STORAGE_KEY, JSON.stringify(['project-x']));
-    storage.set(PROJECT_COLLAPSE_CHOSEN_STORAGE_KEY, 'true');
+  test('a project only ever appears in one of the two sets', () => {
+    store().setProjectCollapsed('project-a', true);
+    expect(store().collapsedProjectIds).toEqual(['project-a']);
+    expect(store().expandedProjectIds).toEqual([]);
 
-    await useSessionCollapseStore.persist.rehydrate();
+    store().setProjectCollapsed('project-a', false);
+    expect(store().collapsedProjectIds).toEqual([]);
+    expect(store().expandedProjectIds).toEqual(['project-a']);
 
-    const state = useSessionCollapseStore.getState();
-    expect(state.collapsedProjectIds).toEqual(['project-x']);
-    expect(state.collapseChosen).toBe(true);
-    // Registration state is live, not persisted: hydration keeps the list.
-    expect(state.knownProjectIds).toEqual(['keep-me']);
+    store().setProjectCollapsed('project-a', true);
+    expect(store().collapsedProjectIds).toEqual(['project-a']);
+    expect(store().expandedProjectIds).toEqual([]);
   });
 
-  test('writes the legacy collapse keys back on change', () => {
-    useSessionCollapseStore.getState().setCollapsedProjectIds(['project-a']);
-    expect(storage.get(PROJECT_COLLAPSE_STORAGE_KEY)).toBe(JSON.stringify(['project-a']));
-
-    useSessionCollapseStore.getState().markCollapseChosen();
-    expect(storage.get(PROJECT_COLLAPSE_CHOSEN_STORAGE_KEY)).toBe('true');
-
-    useSessionCollapseStore.getState().expandAll();
-    expect(storage.get(PROJECT_COLLAPSE_STORAGE_KEY)).toBe('[]');
+  test('repeating a collapse decision keeps the state reference', () => {
+    store().setProjectCollapsed('project-a', true);
+    const afterFirst = store().collapsedProjectIds;
+    store().setProjectCollapsed('project-a', true);
+    expect(store().collapsedProjectIds).toBe(afterFirst);
   });
 
-  test('treats malformed stored data as empty', async () => {
-    storage.set(PROJECT_COLLAPSE_STORAGE_KEY, '{malformed');
-    await useSessionCollapseStore.persist.rehydrate();
+  test('registering the same project list keeps the state reference', () => {
+    store().registerKnownProjectIds(['project-a']);
+    const afterFirst = store().knownProjectIds;
+    store().registerKnownProjectIds(['project-a', 'project-a']);
+    expect(store().knownProjectIds).toBe(afterFirst);
+  });
 
-    expect(useSessionCollapseStore.getState().collapsedProjectIds).toEqual([]);
-    expect(useSessionCollapseStore.getState().collapseChosen).toBe(false);
+  test('registering a different project list replaces it', () => {
+    store().registerKnownProjectIds(['project-a']);
+    store().registerKnownProjectIds(['project-b']);
+    expect(store().knownProjectIds).toEqual(['project-b']);
   });
 });

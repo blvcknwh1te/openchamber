@@ -127,19 +127,11 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
     localStorage.removeItem('pinnedDirectories');
   }
 
-  if (Array.isArray(settings.projects) && settings.projects.length > 0) {
-    const collapsed = settings.projects
-      .filter((project) => project.sidebarCollapsed === true)
-      .map((project) => project.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
-    if (collapsed.length > 0) {
-      localStorage.setItem('oc.sessions.projectCollapse', JSON.stringify(collapsed));
-    } else {
-      localStorage.removeItem('oc.sessions.projectCollapse');
-    }
-  } else {
-    localStorage.removeItem('oc.sessions.projectCollapse');
-  }
+  // Collapsed projects deliberately stay out of this mirror. The sessions
+  // sidebar owns that state in `useSessionCollapseStore`, which persists through
+  // its own storage adapter; writing the same key from here made two writers
+  // race for it, and the VS Code project registry carries no `sidebarCollapsed`
+  // at all, so this branch always deleted what the store had just saved.
   if (typeof settings.gitmojiEnabled === 'boolean') {
     localStorage.setItem('gitmojiEnabled', String(settings.gitmojiEnabled));
   } else {

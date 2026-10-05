@@ -507,7 +507,7 @@ const SessionSidebarComponent: React.FC<SessionSidebarProps> = ({
     () => sortProjectsByOrder(normalizedProjects, projectSortOrder, manualProjectOrder),
     [normalizedProjects, projectSortOrder, manualProjectOrder],
   );
-  const projectView = useSessionProjectViewState({ isVSCode, projects: sortedProjects, activeProjectId });
+  const projectView = useSessionProjectViewState({ projects: sortedProjects, activeProjectId });
 
   const searchEmptyState = React.useMemo(() => (
     <div className="py-6 text-center text-muted-foreground">

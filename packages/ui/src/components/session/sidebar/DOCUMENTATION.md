@@ -103,18 +103,35 @@ once the sidebar has registered at least one project.
 Collapsed projects are owned by `useSessionCollapseStore`, not by the hook's
 component state, so both the sidebar and the VS Code header read and write the
 same set. The hook (`useSessionProjectViewState`) keeps the group collapse/order
-state, applies the first-run default, and registers the rendered project ids with
-the store so `collapseAll` works from the header.
+state and registers the rendered project ids with the store so `collapseAll`
+works from the header.
 
-On a first run the sidebar opens with every project folded except the active one,
-so a list spanning several projects starts on the one being worked in;
-`useSessionProjectViewState` applies that default once per mount, after the
-project list arrives, and never again when the active project changes. A
-separate `oc.sessions.projectCollapseChosen` marker records that the user has
-since collapsed or expanded something themselves, including "expand all": an
-empty `oc.sessions.projectCollapse` is otherwise indistinguishable from "no
-choice yet", and the default would fold every project again on the next run. The
-store keeps both keys byte-compatible with the previous local-state format.
+A project header is folded when the store does not say otherwise: the sidebar
+opens with every project folded except the active one, so a list spanning several
+projects starts on the one being worked in. The hook derives that from the
+rendered list on every pass instead of applying a default once, which is what
+keeps late arrivals folded — in VS Code the workspace folder is known immediately
+while projects found in the session database arrive later through sync. The
+active project is always open, so switching the window moves the open header with
+it and no project the user is working in can be folded.
+
+The store records two explicit sets, and nothing else: `collapsedProjectIds` for
+what the user folded by hand and `expandedProjectIds` for what they unfolded.
+`expanded` wins over `collapsed` for the same id, and a hand-unfolded project
+stays open across restarts. There is deliberately no "the user has made a choice"
+marker: a single marker could only be set, never cleared, so one expand-all click
+used to disable the default for the rest of that browser profile's life. Because
+the state is derived, "expand all" and "collapse all" are absolute — they clear
+the opposite set — while both keep the active project open.
+
+`oc.sessions.projectCollapse` stays byte-compatible with the previous format (a
+bare JSON string array), and its expand counterpart lives in
+`oc.sessions.projectExpand`; both are written by
+`stores/sessionCollapsePersistence.ts` and read back as empty when missing or
+malformed. `lib/persistence.ts` no longer mirrors the collapse key: that mirror
+had become a second writer of a key the sidebar owns, and in VS Code, whose
+project registry carries no `sidebarCollapsed`, it always deleted what the store
+had just saved.
 
 Session menus share `SessionAiRenameMenuItem` with header tabs and the
 single-session header. AI renaming uses the same leading spinner as a worktree

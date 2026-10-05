@@ -109,12 +109,17 @@ These stores coordinate persistent project/session metadata across multiple view
 
 `useSessionCollapseStore.ts` owns which project zones are collapsed in the
 sessions sidebar. The sidebar and the compact VS Code header both render from
-it, so the header's collapse-all/expand-all reach the same list. It persists to
-the legacy `oc.sessions.projectCollapse` (a JSON string array) and
-`oc.sessions.projectCollapseChosen` (`'true'`) keys through a custom storage
-adapter, keeping the pre-store format byte-compatible. `knownProjectIds` is
-registration state published by the sidebar, not persisted, and `collapseAll`
-folds exactly that list.
+it, so the header's collapse-all/expand-all reach the same list. It keeps two
+explicit sets — the projects the user folded and the ones they unfolded — and
+persists them through a custom storage adapter, leaving the payload format to
+`sessionCollapsePersistence.ts`. `oc.sessions.projectCollapse` keeps the legacy
+shape (a bare JSON string array) so an existing choice survives the update, and
+`oc.sessions.projectExpand` holds its counterpart; both keys are removed rather
+than written empty, because an empty list is the absence of a decision. There is
+no "the user has made a choice" marker: the sidebar derives which headers are
+folded from these sets plus the active project, so a stored choice can never
+latch the default off for good. `knownProjectIds` is registration state published
+by the sidebar, not persisted, and `collapseAll` folds exactly that list.
 
 `useProjectContextStore.ts` caches server-owned project notes, todos, and plan links, keyed by the path-derived project id. It replaced a pair of `window` CustomEvents that made every mounted notes panel re-read the whole project config. Writes are optimistic and roll back on failure; they are serialized per project, because the server's own store does a read-modify-write and two concurrent saves would otherwise race it. A load that resolves while a write is in flight keeps the local value for that field group only, so a slow snapshot cannot undo newer typing while still delivering the plan list it fetched. A failed load sets `error` and preserves the cached snapshot — an unreachable server must never render as "this project has no notes". Note and plan creation are deliberately not optimistic, since ids and timestamps are assigned by the server. Notes, todos, and plans are written through separate routes and tracked by separate in-flight flags, so a todo toggle cannot clobber a note edit in the same window. Pinned notes and plans are assembled into a synthetic context part by `lib/projectContextPinning.ts` at send time; that module tracks per-session what it already sent so an unchanged pinned set is not re-sent every turn.
 

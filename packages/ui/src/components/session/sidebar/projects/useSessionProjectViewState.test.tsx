@@ -69,41 +69,63 @@ const installMinimalDom = () => {
   };
 };
 
+const group = (id: string): SessionGroup => ({
+  id,
+  label: id,
+  branch: null,
+  description: null,
+  isMain: false,
+  worktree: null,
+  directory: null,
+  sessions: [],
+});
+
+const mountViewState = async (args: {
+  projects: readonly { id: string }[];
+  activeProjectId?: string | null;
+}) => {
+  await useSessionCollapseStore.persist.rehydrate();
+  const dom = installMinimalDom();
+  const root: Root = createRoot(dom.container);
+  const capture: HookCapture = { renderCount: 0 };
+  const Harness = ({ projects }: { projects: readonly { id: string }[] }) => {
+    capture.renderCount += 1;
+    const value = useSessionProjectViewState({
+      projects,
+      activeProjectId: args.activeProjectId ?? null,
+    });
+    capture.state = value.state;
+    capture.actions = value.actions;
+    return null;
+  };
+  await act(async () => root.render(React.createElement(Harness, { projects: args.projects })));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return { capture, root, dom, Harness };
+};
+
 describe('useSessionProjectViewState', () => {
   beforeEach(() => {
     const storage = getDeferredSafeStorage();
     storage.removeItem('oc.sessions.projectCollapse');
+    storage.removeItem('oc.sessions.projectExpand');
     storage.removeItem('oc.sessions.groupCollapse');
     storage.removeItem('oc.sessions.groupOrder');
-    // Most tests below describe a user who already made a choice, so the
-    // first-run default must keep out of their way. The first-run tests clear
-    // this key themselves.
-    storage.setItem('oc.sessions.projectCollapseChosen', 'true');
-    // Collapse state now lives in a module-level store; reset it to match the
-    // cleared storage so tests stay independent. Tests that seed storage call
-    // `persist.rehydrate()` to load it.
+    // Collapse state lives in a module-level store; reset it to match the
+    // cleared storage so tests stay independent.
     useSessionCollapseStore.setState({
       collapsedProjectIds: [],
-      collapseChosen: true,
+      expandedProjectIds: [],
       knownProjectIds: [],
     });
   });
 
   test('keeps stable state/actions and ignores selection-store updates', async () => {
-    const dom = installMinimalDom();
-    const root: Root = createRoot(dom.container);
-    const capture: HookCapture = { renderCount: 0 };
-    const projects = [{ id: 'project-a' }, { id: 'project-b' }];
-    const Harness = () => {
-      capture.renderCount += 1;
-      const viewState = useSessionProjectViewState({ isVSCode: true, projects });
-      capture.state = viewState.state;
-      capture.actions = viewState.actions;
-      return null;
-    };
+    const { capture, root, dom } = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
 
     try {
-      await act(async () => root.render(React.createElement(Harness)));
       const initialState = capture.state;
       const initialActions = capture.actions;
       const initialRenderCount = capture.renderCount;
@@ -116,10 +138,12 @@ describe('useSessionProjectViewState', () => {
       expect(capture.state).toBe(initialState);
       expect(capture.actions).toBe(initialActions);
 
-      await act(async () => initialActions.toggleProject('project-a'));
-      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a']));
+      await act(async () => initialActions.toggleProject('project-b'));
+      expect(capture.state?.collapsedProjects).toEqual(new Set());
+      expect(capture.state?.collapsedProjects.has('project-b')).toBe(false);
+
       await act(async () => initialActions.collapseAllProjects());
-      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-b']));
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
       await act(async () => initialActions.expandAllProjects());
       expect(capture.state?.collapsedProjects).toEqual(new Set());
 
@@ -133,22 +157,11 @@ describe('useSessionProjectViewState', () => {
           return next;
         });
       });
-      const group = (id: string): SessionGroup => ({
-        id,
-        label: id,
-        branch: null,
-        description: null,
-        isMain: false,
-        worktree: null,
-        directory: null,
-        sessions: [],
-      });
       expect(capture.actions?.getOrderedGroups('project-a', [group('group-a'), group('group-b')])
         .map((item) => item.id)).toEqual(['group-b', 'group-a']);
 
       await new Promise((resolve) => setTimeout(resolve, 0));
       const storage = getDeferredSafeStorage();
-      expect(JSON.parse(storage.getItem('oc.sessions.projectCollapse') ?? 'null')).toEqual([]);
       expect(JSON.parse(storage.getItem('oc.sessions.groupCollapse') ?? 'null')).toEqual(['project-a:group-a']);
       expect(JSON.parse(storage.getItem('oc.sessions.groupOrder') ?? 'null')).toEqual({
         'project-a': ['group-b', 'group-a'],
@@ -170,7 +183,7 @@ describe('useSessionProjectViewState', () => {
     const capture: HookCapture = { renderCount: 0 };
     const Harness = () => {
       capture.renderCount += 1;
-      const value = useSessionProjectViewState({ isVSCode: true, projects: [{ id: 'project-a' }] });
+      const value = useSessionProjectViewState({ projects: [{ id: 'project-a' }], activeProjectId: 'project-a' });
       capture.state = value.state;
       capture.actions = value.actions;
       return null;
@@ -207,7 +220,7 @@ describe('useSessionProjectViewState', () => {
     const Harness = ({ hidden }: { hidden: boolean }) => {
       void hidden;
       capture.renderCount += 1;
-      const value = useSessionProjectViewState({ isVSCode: true, projects: [{ id: 'project-a' }] });
+      const value = useSessionProjectViewState({ projects: [{ id: 'project-a' }], activeProjectId: null });
       capture.state = value.state;
       capture.actions = value.actions;
       return null;
@@ -232,135 +245,200 @@ describe('useSessionProjectViewState', () => {
     }
   });
 
-  describe('first run', () => {
-    const mountViewState = async (args: {
-      projects: readonly { id: string }[];
-      activeProjectId?: string | null;
-      /** false models a later run, where the marker of the user's choice survived. */
-      firstRun?: boolean;
-    }) => {
-      const storage = getDeferredSafeStorage();
-      if (args.firstRun !== false) {
-        storage.removeItem('oc.sessions.projectCollapse');
-        storage.removeItem('oc.sessions.projectCollapseChosen');
-      }
-      // Collapse state now lives in a module-level store; load whatever prior
-      // storage mutations left so each mount starts from the stored state.
-      await useSessionCollapseStore.persist.rehydrate();
-      const dom = installMinimalDom();
-      const root = createRoot(dom.container);
-      const capture: HookCapture = { renderCount: 0 };
-      const Harness = () => {
-        capture.renderCount += 1;
-        const value = useSessionProjectViewState({
-          isVSCode: true,
-          projects: args.projects,
-          activeProjectId: args.activeProjectId ?? null,
-        });
-        capture.state = value.state;
-        capture.actions = value.actions;
-        return null;
-      };
-      await act(async () => root.render(React.createElement(Harness)));
+  test('opens a several-project list on the active project with nothing stored', async () => {
+    // The regression this replaces: an empty collapse list combined with a
+    // leftover "user already chose" marker used to leave every project open.
+    const { capture, root, dom } = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }, { id: 'project-c' }],
+      activeProjectId: 'project-b',
+    });
+
+    try {
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-c']));
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
+  });
+
+  test('folds a project that appears after the first snapshot', async () => {
+    // VS Code knows the workspace folder immediately but discovers projects
+    // from the session database later. Those have to arrive folded too.
+    const { capture, root, dom, Harness } = await mountViewState({
+      projects: [{ id: 'project-a' }],
+      activeProjectId: 'project-a',
+    });
+
+    try {
+      expect(capture.state?.collapsedProjects).toEqual(new Set());
+
+      await act(async () => root.render(React.createElement(Harness, {
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      })));
       await new Promise((resolve) => setTimeout(resolve, 0));
-      return { capture, root, dom };
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
+  });
+
+  test('leaves a single-project list alone', async () => {
+    const { capture, root, dom } = await mountViewState({
+      projects: [{ id: 'project-a' }],
+      activeProjectId: 'project-a',
+    });
+
+    try {
+      expect(capture.state?.collapsedProjects).toEqual(new Set());
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
+  });
+
+  test('collapses everything when no project is active', async () => {
+    const { capture, root, dom } = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+    });
+
+    try {
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-b']));
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
+  });
+
+  test('keeps an expanded layout on the next run after expand all', async () => {
+    const first = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
+    try {
+      expect(first.capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+      await act(async () => first.capture.actions!.expandAllProjects());
+      expect(first.capture.state?.collapsedProjects).toEqual(new Set());
+    } finally {
+      await act(async () => first.root.unmount());
+      first.dom.restore();
+    }
+
+    const second = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
+    try {
+      expect(second.capture.state?.collapsedProjects).toEqual(new Set());
+    } finally {
+      await act(async () => second.root.unmount());
+      second.dom.restore();
+    }
+  });
+
+  test('keeps a project the user unfolded by hand across a remount', async () => {
+    const first = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
+    try {
+      expect(first.capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+      await act(async () => first.capture.actions!.toggleProject('project-b'));
+      expect(first.capture.state?.collapsedProjects).toEqual(new Set());
+    } finally {
+      await act(async () => first.root.unmount());
+      first.dom.restore();
+    }
+
+    const second = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
+    try {
+      // Opening a project by hand is a decision, and it survives a restart.
+      expect(second.capture.state?.collapsedProjects).toEqual(new Set());
+    } finally {
+      await act(async () => second.root.unmount());
+      second.dom.restore();
+    }
+  });
+
+  test('a project folded by hand stays folded on the next run', async () => {
+    const first = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
+    try {
+      await act(async () => first.capture.actions!.toggleProject('project-b'));
+      expect(first.capture.state?.collapsedProjects).toEqual(new Set());
+      await act(async () => first.capture.actions!.toggleProject('project-b'));
+      expect(first.capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+    } finally {
+      await act(async () => first.root.unmount());
+      first.dom.restore();
+    }
+
+    const second = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-a',
+    });
+    try {
+      expect(second.capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+    } finally {
+      await act(async () => second.root.unmount());
+      second.dom.restore();
+    }
+  });
+
+  test('never folds the project the user is working in', async () => {
+    const { capture, root, dom } = await mountViewState({
+      projects: [{ id: 'project-a' }, { id: 'project-b' }],
+      activeProjectId: 'project-b',
+    });
+
+    try {
+      await act(async () => capture.actions!.toggleProject('project-b'));
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a']));
+
+      await act(async () => capture.actions!.collapseAllProjects());
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a']));
+      expect(capture.state?.collapsedProjects.has('project-b')).toBe(false);
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
+  });
+
+  test('opens the newly active project when the window changes', async () => {
+    await useSessionCollapseStore.persist.rehydrate();
+    const dom = installMinimalDom();
+    const root: Root = createRoot(dom.container);
+    const capture: HookCapture = { renderCount: 0 };
+    const Harness = ({ activeProjectId }: { activeProjectId: string }) => {
+      capture.renderCount += 1;
+      const value = useSessionProjectViewState({
+        projects: [{ id: 'project-a' }, { id: 'project-b' }],
+        activeProjectId,
+      });
+      capture.state = value.state;
+      capture.actions = value.actions;
+      return null;
     };
 
-    test('collapses every project except the active one', async () => {
-      const { capture, root, dom } = await mountViewState({
-        projects: [{ id: 'project-a' }, { id: 'project-b' }, { id: 'project-c' }],
-        activeProjectId: 'project-b',
-      });
+    try {
+      await act(async () => root.render(React.createElement(Harness, { activeProjectId: 'project-a' })));
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
 
-      try {
-        expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-c']));
-      } finally {
-        await act(async () => root.unmount());
-        dom.restore();
-      }
-    });
+      await act(async () => root.render(React.createElement(Harness, { activeProjectId: 'project-b' })));
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a']));
 
-    test('leaves a single-project list alone', async () => {
-      const { capture, root, dom } = await mountViewState({
-        projects: [{ id: 'project-a' }],
-        activeProjectId: 'project-a',
-      });
-
-      try {
-        expect(capture.state?.collapsedProjects).toEqual(new Set());
-      } finally {
-        await act(async () => root.unmount());
-        dom.restore();
-      }
-    });
-
-    test('collapses everything when no project is active', async () => {
-      const { capture, root, dom } = await mountViewState({
-        projects: [{ id: 'project-a' }, { id: 'project-b' }],
-      });
-
-      try {
-        expect(capture.state?.collapsedProjects).toEqual(new Set(['project-a', 'project-b']));
-      } finally {
-        await act(async () => root.unmount());
-        dom.restore();
-      }
-    });
-
-    // The whole point of the marker: "expand all" stores an empty list, which is
-    // otherwise indistinguishable from "no choice yet", and the default would
-    // fold every project again on the next run.
-    test('does not undo the user choice on the next run', async () => {
-      const first = await mountViewState({
-        projects: [{ id: 'project-a' }, { id: 'project-b' }],
-        activeProjectId: 'project-a',
-      });
-      try {
-        expect(first.capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
-        await act(async () => first.capture.actions!.expandAllProjects());
-        expect(first.capture.state?.collapsedProjects).toEqual(new Set());
-      } finally {
-        await act(async () => first.root.unmount());
-        first.dom.restore();
-      }
-
-      const second = await mountViewState({
-        projects: [{ id: 'project-a' }, { id: 'project-b' }],
-        activeProjectId: 'project-a',
-        firstRun: false,
-      });
-      try {
-        expect(second.capture.state?.collapsedProjects).toEqual(new Set());
-      } finally {
-        await act(async () => second.root.unmount());
-        second.dom.restore();
-      }
-    });
-
-    test('keeps a project the user expanded by hand across a remount', async () => {
-      const first = await mountViewState({
-        projects: [{ id: 'project-a' }, { id: 'project-b' }],
-        activeProjectId: 'project-a',
-      });
-      try {
-        await act(async () => first.capture.actions!.toggleProject('project-b'));
-        expect(first.capture.state?.collapsedProjects).toEqual(new Set());
-      } finally {
-        await act(async () => first.root.unmount());
-        first.dom.restore();
-      }
-
-      const second = await mountViewState({
-        projects: [{ id: 'project-a' }, { id: 'project-b' }],
-        activeProjectId: 'project-a',
-        firstRun: false,
-      });
-      try {
-        expect(second.capture.state?.collapsedProjects).toEqual(new Set());
-      } finally {
-        await act(async () => second.root.unmount());
-        second.dom.restore();
-      }
-    });
+      // Switching the window moves the open header with it: the project in use
+      // stays open, the one left behind folds again.
+      await act(async () => root.render(React.createElement(Harness, { activeProjectId: 'project-a' })));
+      expect(capture.state?.collapsedProjects).toEqual(new Set(['project-b']));
+    } finally {
+      await act(async () => root.unmount());
+      dom.restore();
+    }
   });
 });
