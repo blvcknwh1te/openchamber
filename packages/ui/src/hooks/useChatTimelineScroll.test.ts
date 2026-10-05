@@ -781,6 +781,131 @@ describe('useChatTimelineScroll end following', () => {
         }
     });
 
+    test('lands the end of an opened session through the entry settle, not one snapshot write', async () => {
+        const node = createScrollNode();
+        const streamingId: StreamingIdBox = { value: null };
+        // The list lays its rows out from ESTIMATES: every read of the content
+        // height during the first pass measures taller content, until the real
+        // total lands. A single write reads the first estimate and stops there.
+        let reads = 0;
+        Object.defineProperty(node, 'scrollHeight', {
+            configurable: true,
+            get: () => {
+                reads += 1;
+                return Math.min(4000, 1200 + reads * 600);
+            },
+        });
+        const harness = await renderPinHarness(node, streamingId);
+
+        try {
+            // The caller asks for the entered session's snapshot while the entry
+            // settle is still moving the viewport. Settling the end here would
+            // fight the settle's own writes.
+            await act(async () => {
+                await harness.result().restoreSnapshot();
+            });
+            expect(harness.endCalls).toEqual([]);
+
+            // The settle re-asserts the end every frame, so it is what actually
+            // reaches the real end as the estimates resolve into measurements —
+            // a single write left the session wherever the last estimate had put
+            // it, which is an opened session sitting mid-conversation.
+            await flushFrames();
+            expect(node.scrollTop).toBe(3300);
+            expect(harness.endCalls).toEqual([]);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('lets a running answer pin again after a gesture and a return to the end', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600, msg_3: 2400 } });
+        const streamingId: StreamingIdBox = { value: 'msg_2' };
+        // The answer's FIRST message: it does not change while the answer runs,
+        // so a step boundary inside the answer leaves the anchor alone.
+        const anchor: StreamingIdBox = { value: 'msg_2' };
+        const harness = await renderPinHarness(node, streamingId, { anchor });
+
+        try {
+            await flushFrames();
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600]);
+
+            // The reader wheels up: the hold is dropped and the viewport is
+            // theirs.
+            node.scrollTop = 300;
+            act(() => {
+                node.dispatch('wheel', { deltaY: -120, target: node });
+            });
+            expect(harness.result().userOwnsScroll).toBe(true);
+            expect(harness.result().isTopPinned).toBe(false);
+
+            // They come back to the live edge — still inside the SAME answer.
+            act(() => {
+                harness.result().onIsAtEndChange(true);
+            });
+            expect(harness.result().userOwnsScroll).toBe(false);
+
+            // The answer's next step must be able to pin the answer's top edge
+            // again. The arming is latched once per answer, and the anchor does
+            // not change inside an answer: a latch that survives the gesture
+            // reads the next step as "already armed" and the answer stays
+            // unpinned for the rest of its life.
+            streamingId.value = 'msg_3';
+            await harness.rerender();
+            await flushFrames();
+            act(() => {
+                harness.result().onTimelineDataChange();
+            });
+
+            expect(harness.result().isTopPinned).toBe(true);
+            // The hold is the answer's first message, not the step streaming now.
+            expect(harness.scrolls).toEqual([1600, 1600]);
+            expect(node.scrollTop).toBe(1600);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
+    test('a send during a stream leaves the next answer free to pin', async () => {
+        const node = createScrollNode({ messageTops: { msg_2: 1600, msg_3: 2400 } });
+        const streamingId: StreamingIdBox = { value: null };
+        const anchor: StreamingIdBox = { value: null };
+        const harness = await renderPinHarness(node, streamingId, { anchor });
+
+        try {
+            anchor.value = 'msg_2';
+            streamingId.value = 'msg_2';
+            await harness.rerender();
+            await flushFrames();
+            expect(harness.result().isTopPinned).toBe(true);
+
+            // Sending mid-answer is the reader's own command, and it is how a
+            // conversation continues: the reply it starts is exactly the answer
+            // whose top edge they want held. It must not stand in for the
+            // explicit "watch the tail" pill, which is what opts out.
+            act(() => {
+                harness.result().scrollToBottomOnSend();
+            });
+            expect(harness.result().isTopPinned).toBe(false);
+
+            // The queued reply starts streaming.
+            anchor.value = 'msg_3';
+            streamingId.value = 'msg_3';
+            await harness.rerender();
+            await flushFrames();
+
+            expect(harness.result().isTopPinned).toBe(true);
+            expect(harness.scrolls).toEqual([1600, 2400]);
+            expect(node.scrollTop).toBe(2400);
+        } finally {
+            await harness.unmount();
+        }
+    });
+
     test('keeps the end re-asserts of a send away from an active pin', async () => {
         const node = createScrollNode({ messageTops: { msg_2: 1600 } });
         const streamingId: StreamingIdBox = { value: null };

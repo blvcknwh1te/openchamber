@@ -145,6 +145,13 @@ export interface UseChatTimelineScrollResult {
 // Hiding is always immediate.
 const SHOW_SCROLL_BUTTON_DELAY_MS = 150;
 const SAVE_DEBOUNCE_MS = 150;
+// An opened session is shown already at its end. The virtualized list lays rows
+// out from ESTIMATES before the first frame, so the end moves as the real
+// measurements land; the entry keeps re-asserting the live end until the
+// content height has held still for this many frames, bounded by the cap so a
+// list that keeps growing (images, late tool output) still opens.
+const ENTRY_SETTLE_STABLE_FRAMES = 2;
+const ENTRY_SETTLE_CAP_MS = 250;
 
 export const useChatTimelineScroll = ({
     currentSessionId,
@@ -173,6 +180,18 @@ export const useChatTimelineScroll = ({
     const [userOwnsScroll, setUserOwnsScroll] = React.useState(false);
     const userOwnsScrollRef = React.useRef(userOwnsScroll);
     userOwnsScrollRef.current = userOwnsScroll;
+    // True while the entry settle owns the position: the session was just
+    // opened and the list is still laying its rows out from estimates. A
+    // reported "not at the end" in that window is the estimates moving, not the
+    // reader leaving the edge (see the entry effect and onIsAtEndChange). Set
+    // synchronously on the key change below, before any effect of that commit
+    // runs, so the list's own first layout pass cannot slip past the guard.
+    const entrySettleRef = React.useRef(false);
+    const lastEntrySessionKeyRef = React.useRef<string | null>(null);
+    if (currentSessionKey !== lastEntrySessionKeyRef.current) {
+        lastEntrySessionKeyRef.current = currentSessionKey;
+        entrySettleRef.current = currentSessionKey !== null;
+    }
 
     const modeRef = React.useRef<TimelineScrollMode>('following-end');
     const isAtEndRef = React.useRef(true);
@@ -191,12 +210,11 @@ export const useChatTimelineScroll = ({
     const [topPinnedMessageId, setTopPinnedMessageId] = React.useState<string | null>(null);
     const topPinnedMessageIdRef = React.useRef<string | null>(null);
     topPinnedMessageIdRef.current = topPinnedMessageId;
-    // The streaming id the pin was last evaluated against, so a re-render of
-    // the same answer does not restart the pin, while a new answer re-pins.
-    const lastStreamingMessageIdRef = React.useRef<string | null>(null);
     // The answer the hold was armed for, so one answer costs one arming. Cleared
     // with the session, never on a step boundary: the answer's first message does
-    // not change while the answer runs.
+    // not change while the answer runs. It is also cleared when the reader takes
+    // the viewport back, so an answer armed while they were elsewhere can still
+    // pin once they return to the end.
     const lastTopPinAnchorRef = React.useRef<string | null>(null);
     // A pin waiting for its hold to land: the streaming answer whose top edge
     // belongs at the top of the viewport but whose geometry is not usable yet
@@ -226,8 +244,14 @@ export const useChatTimelineScroll = ({
     // together and NOTHING is scrolled, so releasing can never move the
     // viewport — the reader keeps the position they hold and ordinary
     // end-following rules take over from there.
-    const releaseTopPin = React.useCallback(() => {
+    //
+    // `force` also clears the once-per-answer latch, so the answer can pin
+    // again. It belongs to the reader taking the viewport back: without it, an
+    // answer armed while the reader was elsewhere would stay unpinned for the
+    // rest of its life, because the latch survives every later release.
+    const releaseTopPin = React.useCallback((force = false) => {
         topPinRequestRef.current = null;
+        if (force) lastTopPinAnchorRef.current = null;
         if (topPinnedMessageIdRef.current === null) return;
         topPinnedMessageIdRef.current = null;
         setTopPinnedMessageId(null);
@@ -327,7 +351,10 @@ export const useChatTimelineScroll = ({
         modeRef.current = 'free-scrolling';
         liveFollowGenerationRef.current = null;
         setUserOwnsScroll(true);
-        releaseTopPin();
+        // The reader drives now: an answer armed while they were elsewhere got
+        // no hold, so forget the armed answer too. A later return to the end
+        // then lets the running answer pin from the edge they chose.
+        releaseTopPin(true);
         // The reader drives again: an explicit "watch the tail" choice made
         // earlier does not survive their own gesture. Returning to the end
         // afterwards re-arms ordinary following, and a fresh answer may pin
@@ -460,6 +487,14 @@ export const useChatTimelineScroll = ({
         // leads to the sent message.
         if (!streamingAutoFollowEnabledRef.current && !isAtEndRef.current) return;
         goToBottom('instant');
+        // A send is the reader's own command, made while an answer may still be
+        // streaming. It must not suppress the top pin for the NEXT answer the
+        // way an explicit "scroll to bottom" pill does: sending mid-answer (or
+        // queueing one) is the normal way a conversation continues, and the
+        // reply it starts is exactly the answer whose top edge the reader wants
+        // held. Leaving the opt-out armed here pinned nothing at all for the
+        // rest of the session.
+        pinOptOutRef.current = false;
     }, [goToBottom]);
 
     const restoreSnapshot = React.useCallback(async (): Promise<boolean> => {
@@ -478,6 +513,13 @@ export const useChatTimelineScroll = ({
         ) {
             return false;
         }
+
+        // The entry settle of the session just opened owns the position and
+        // already lands the end; entering again must not fight it. Its
+        // repeated writes are what actually reach the end as the list resolves
+        // its row estimates, while one scrollToEnd only ever hits the first
+        // estimate.
+        if (entrySettleRef.current) return false;
 
         // Entering a session always returns to the live edge. Late async growth
         // is handled by the list staying at the end, not by a timed hold.
@@ -520,8 +562,10 @@ export const useChatTimelineScroll = ({
         // While an automatic movement owns the viewport, leaving the end is our
         // own doing (the glide trails its target between corrections) — not a
         // reason to offer the pill. Only a
-        // real gesture (free-scrolling) shows it.
-        if (!isAtEnd && isLiveFollowActive()) {
+        // real gesture (free-scrolling) shows it. Entering a session counts as
+        // such an automatic movement: the entry settle is still landing the end
+        // as the list resolves its row estimates.
+        if (!isAtEnd && (isLiveFollowActive() || entrySettleRef.current)) {
             hideScrollButton();
             return;
         }
@@ -853,32 +897,55 @@ export const useChatTimelineScroll = ({
 
     // ── entry pin ───────────────────────────────────────────────────────────
     // An opened session is shown once, already at its end: the reveal gate is
-    // held until the viewport sits on the end, and the pin is one instant
-    // write. The list lays its rows out before the first frame, so this
-    // resolves within a frame; the gate's own cap bounds the wait.
+    // held until the viewport sits on the end. The list lays its rows out from
+    // ESTIMATES before the first frame, and the real measurement lands over the
+    // next few frames, moving the end with it — so this is a settle, not a
+    // single write: the end is re-asserted every frame until the content height
+    // holds still for two frames, bounded by a cap so a session that keeps
+    // growing still opens. A single write left the session wherever the last
+    // estimate had put it, which is why it opened mid-conversation.
     React.useLayoutEffect(() => {
         if (!currentSessionKey || !scrollNode) return;
         const releaseReveal = revealGate?.hold() ?? null;
+        entrySettleRef.current = true;
         let frame: number | null = null;
+        let lastHeight = -1;
+        let stableFrames = 0;
+        const startedAt = typeof performance !== 'undefined' ? performance.now() : 0;
         const settle = () => {
             frame = null;
             // A hold that landed in the meantime is the reading position: the
             // entry write would drag the viewport back down to the end it was
             // already given, which is the frame of flicker between opening a
-            // streaming session and the answer's top edge.
-            if (
-                topPinnedMessageIdRef.current === null
-                && !userOwnsScrollRef.current
-                && modeRef.current === 'following-end'
-            ) {
-                const end = scrollNode.scrollHeight - scrollNode.clientHeight;
+            // streaming session and the answer's top edge. A gesture ends it
+            // too — the reader owns the position from then on.
+            if (topPinnedMessageIdRef.current !== null || userOwnsScrollRef.current) {
+                entrySettleRef.current = false;
+                releaseReveal?.();
+                return;
+            }
+            const height = scrollNode.scrollHeight;
+            if (modeRef.current === 'following-end') {
+                const end = height - scrollNode.clientHeight;
                 if (end - scrollNode.scrollTop > 1) scrollNode.scrollTop = end;
             }
+            stableFrames = height === lastHeight ? stableFrames + 1 : 0;
+            lastHeight = height;
+            const now = typeof performance !== 'undefined' ? performance.now() : startedAt;
+            if (
+                stableFrames < ENTRY_SETTLE_STABLE_FRAMES
+                && now - startedAt < ENTRY_SETTLE_CAP_MS
+            ) {
+                frame = requestAnimationFrame(settle);
+                return;
+            }
+            entrySettleRef.current = false;
             releaseReveal?.();
         };
         frame = requestAnimationFrame(settle);
         return () => {
             if (frame !== null) cancelAnimationFrame(frame);
+            entrySettleRef.current = false;
             releaseReveal?.();
         };
     }, [currentSessionKey, revealGate, scrollNode]);
@@ -953,7 +1020,6 @@ export const useChatTimelineScroll = ({
         modeRef.current = 'following-end';
         releaseTopPin();
         pinOptOutRef.current = false;
-        lastStreamingMessageIdRef.current = null;
         lastTopPinAnchorRef.current = null;
         liveFollowGenerationRef.current = userGenerationRef.current;
         hideScrollButton();
@@ -1040,7 +1106,6 @@ export const useChatTimelineScroll = ({
         if (anchorId === null) {
             // No answer in flight: the next answer arms a hold of its own.
             lastTopPinAnchorRef.current = null;
-            lastStreamingMessageIdRef.current = null;
             return;
         }
 
@@ -1052,8 +1117,6 @@ export const useChatTimelineScroll = ({
         // second time, which is the up/down jiggle the reader saw on every new
         // output.
         if (anchorId === lastTopPinAnchorRef.current) return;
-        lastTopPinAnchorRef.current = anchorId;
-        lastStreamingMessageIdRef.current = activeStreamingMessageId;
 
         // A held pin already owns this answer's top edge: the new step appends
         // BELOW the edge that is held, so re-writing the same kind of hold for
@@ -1065,12 +1128,22 @@ export const useChatTimelineScroll = ({
         if (pinOptOutRef.current) return;
 
         // Only a reader who is still following the end gets the pin; one who
-        // took over the scroll keeps their position.
+        // took over the scroll keeps their position. The arming is NOT latched
+        // here: this answer (a send from mid-history, a queued message) is left
+        // free to pin later, the moment the reader returns to the end and the
+        // next answer arms it.
         if (userOwnsScrollRef.current || modeRef.current !== 'following-end') return;
 
         // The pin is part of following: with auto-follow off, growth must never
         // move the viewport, and a pin is exactly growth moving it.
         if (!streamingAutoFollowEnabledRef.current) return;
+
+        // Latch the arming now that the hold is actually wanted. Doing it above
+        // would burn the answer's single arming on a reader who never asked for
+        // the hold, and the answer would then stay unpinned for the rest of its
+        // life — the once-per-answer latch has no other reset until the next
+        // answer.
+        lastTopPinAnchorRef.current = anchorId;
 
         // The answer is mounted in the same commit as its id, but the list may
         // still report an estimated offset for it, and a short answer cannot
