@@ -35,10 +35,11 @@ All primitives and class constants below live in
 
 Sidebar groups (`packages/ui/src/lib/settings/metadata.ts`, order in `SettingsView.tsx`):
 
-- **OpenChamber** (`general` group): General, Appearance, Chat, Notifications, Sessions, Shortcuts, Voice, Usage, About.
+- **OpenChamber** (`general` group): General, Appearance, Chat, Notifications, Sessions, Shortcuts, Voice, Usage.
 - **Workspace** (`projects`): Projects, Remote Instances, External Tunnel, Git.
 - **OpenCode** (`opencode`): Providers, Agents, Behavior, Commands, MCP, Plugins.
 - **Library** (`content`): Magic Prompts, Snippets, Skills, Skills Catalog.
+- **About** (`about`): About, closing the navigation last. It is one entry, not a feature area, so it carries the section header and the theme accent (`text-[var(--primary-base)]`) instead of plain foreground.
 
 Placement rules:
 

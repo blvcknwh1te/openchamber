@@ -70,6 +70,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': '工作區',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': '資源庫',
+  'settings.view.nav.group.about': '關於',
   'settings.page.projects.title': '專案',
   'settings.page.remoteInstances.title': '遠端執行個體',
   'settings.page.providers.title': '供應商',

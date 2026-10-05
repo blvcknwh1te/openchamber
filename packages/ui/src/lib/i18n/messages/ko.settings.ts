@@ -72,6 +72,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': '워크스페이스',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': '라이브러리',
+  'settings.view.nav.group.about': '정보',
   'settings.page.projects.title': '프로젝트',
   'settings.page.remoteInstances.title': '원격 인스턴스',
   'settings.page.providers.title': '프로바이더',

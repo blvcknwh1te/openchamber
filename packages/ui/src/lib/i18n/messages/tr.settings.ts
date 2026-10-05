@@ -71,6 +71,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': 'Çalışma alanı',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': 'Kitaplık',
+  'settings.view.nav.group.about': 'Hakkında',
   'settings.page.projects.title': 'Projeler',
   'settings.page.remoteInstances.title': 'Uzak Örnekler',
   'settings.page.providers.title': 'Provider\'lar',

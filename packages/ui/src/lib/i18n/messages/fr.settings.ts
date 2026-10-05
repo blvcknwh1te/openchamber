@@ -2127,6 +2127,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': 'Espace de travail',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': 'Bibliothèque',
+  'settings.view.nav.group.about': 'À propos',
   'settings.page.about.title': 'À propos',
   'settings.openchamber.tunnel.notAvailable.dependencyNotFound': '{dependency} est introuvable.',
   'settings.magicPrompts.sidebar.item.sessionExplore': 'Tour du codebase',

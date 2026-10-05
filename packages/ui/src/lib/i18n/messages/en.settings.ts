@@ -71,6 +71,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': 'Workspace',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': 'Library',
+  'settings.view.nav.group.about': 'About',
   'settings.page.projects.title': 'Projects',
   'settings.page.remoteInstances.title': 'Remote Instances',
   'settings.page.providers.title': 'Providers',

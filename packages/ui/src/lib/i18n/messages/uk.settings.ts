@@ -72,6 +72,7 @@ export const settingsDict = {
   "settings.view.nav.group.projects": "Робочий простір",
   "settings.view.nav.group.opencode": "OpenCode",
   "settings.view.nav.group.content": "Бібліотека",
+  "settings.view.nav.group.about": "Про застосунок",
   "settings.page.projects.title": "Проєкти",
   "settings.page.remoteInstances.title": "Віддалені інстанси",
   "settings.page.providers.title": "Провайдери",

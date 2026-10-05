@@ -72,6 +72,7 @@ export const settingsDict = {
   "settings.view.nav.group.projects": "Espaço de trabalho",
   "settings.view.nav.group.opencode": "OpenCode",
   "settings.view.nav.group.content": "Biblioteca",
+  "settings.view.nav.group.about": "Sobre",
   "settings.page.projects.title": "Projetos",
   "settings.page.remoteInstances.title": "Instâncias remotas",
   "settings.page.providers.title": "Provedores",

@@ -169,7 +169,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               size="sm"
               onClick={() => updateStore.checkForUpdates()}
               disabled={isChecking}
-              className="h-10 w-auto justify-center gap-2 rounded-xl px-4"
+              className="h-10 w-auto justify-center gap-2 rounded-xl px-4 text-[var(--primary-base)] hover:text-[var(--primary-base)]"
             >
               {isChecking ? <Icon name="loader" className="size-4 animate-spin" /> : <Icon name="refresh" className="size-4" />}
               {isChecking ? t('settings.openchamber.about.state.checking') : t('settings.openchamber.about.actions.checkForUpdates')}
@@ -293,6 +293,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               variant="outline"
               onClick={() => updateStore.checkForUpdates()}
               disabled={updateStore.checking}
+              className="text-[var(--primary-base)] hover:text-[var(--primary-base)]"
             >
               {t('settings.openchamber.about.actions.checkForUpdates')}
             </Button>

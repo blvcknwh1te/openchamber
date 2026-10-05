@@ -2208,6 +2208,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': 'Arbeitsbereich',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': 'Bibliothek',
+  'settings.view.nav.group.about': 'Über',
   'settings.page.appearance.description': 'Passe an, wie OpenChamber aussieht und sich anfühlt.',
   'settings.page.chat.description': 'Konfiguriere, wie Nachrichten und Werkzeuge angezeigt werden.',
   'settings.page.shortcuts.description': 'Tastenkürzel anpassen.',

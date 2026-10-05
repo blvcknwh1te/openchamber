@@ -107,7 +107,6 @@ const pageOrder: SettingsPageSlug[] = [
   'voice',
   'integrations',
   'usage',
-  'about',
   // 'projects' group — Workspace
   'projects',
   'remote-instances',
@@ -125,9 +124,11 @@ const pageOrder: SettingsPageSlug[] = [
   'snippets',
   'skills.installed',
   'skills.catalog',
+  // 'about' group - About
+  'about',
 ];
 
-const NAV_GROUP_ORDER = ['general', 'projects', 'opencode', 'content'] as const;
+const NAV_GROUP_ORDER = ['general', 'projects', 'opencode', 'content', 'about'] as const;
 
 const ADD_PROVIDER_SETTINGS_ID = '__add_provider__';
 
@@ -1004,6 +1005,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                     const iconName = getSettingsNavIcon(page.slug);
                     if (!iconName && page.slug !== 'mcp') return null;
 
+                    // The About entry closes the navigation as its own quiet
+                    // group, so it carries the theme accent instead of plain
+                    // foreground. The accent comes from `--primary-base`, the
+                    // same token the tinted button variants use: in VS Code it
+                    // resolves to the editor accent, elsewhere to the theme's
+                    // own primary. Selection still wins, or the label would
+                    // fight its own background.
+                    const accent = page.slug === 'about' && !selected;
+
                     return (
                       <Tooltip key={page.slug}>
                         <TooltipTrigger asChild>
@@ -1015,7 +1025,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                               'flex h-11 w-full items-center gap-2.5 rounded-md px-3 overflow-hidden sm:h-8 sm:gap-2 sm:px-2',
                               selected
                                 ? 'bg-interactive-selection text-foreground'
-                                : 'text-foreground hover:bg-interactive-hover'
+                                : 'text-foreground hover:bg-interactive-hover',
+                              accent && 'text-[var(--primary-base)] hover:text-[var(--primary-base)]'
                             )}
                           >
                             {page.slug === 'mcp'

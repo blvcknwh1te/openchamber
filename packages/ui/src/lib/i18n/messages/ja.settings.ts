@@ -72,6 +72,7 @@ export const settingsDict = {
   'settings.view.nav.group.projects': 'ワークスペース',
   'settings.view.nav.group.opencode': 'OpenCode',
   'settings.view.nav.group.content': 'ライブラリ',
+  'settings.view.nav.group.about': '概要',
   'settings.page.projects.title': 'プロジェクト',
   'settings.page.remoteInstances.title': 'リモートインスタンス',
   'settings.page.providers.title': 'プロバイダー',
