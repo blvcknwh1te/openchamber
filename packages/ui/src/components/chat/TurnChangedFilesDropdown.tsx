@@ -3,7 +3,9 @@ import type { ToolPart } from '@opencode-ai/sdk/v2';
 import { Popover } from '@base-ui/react/popover';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useIsGitRepo } from '@/stores/useGitStore';
-import { useUIStore } from '@/stores/useUIStore';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { openChangedFile } from './changedFileOpen';
 import {
     type ChangedFile,
     type ChangedFileEntry,
@@ -27,6 +29,8 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
     const triggerButtonRef = React.useRef<HTMLButtonElement | null>(null);
     const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
     const isGitRepo = useIsGitRepo(currentDirectory);
+    const runtime = useRuntimeAPIs();
+    const mobileActions = useMobileAppActions();
 
     const changedFiles = React.useMemo<ChangedFile[]>(() => {
         // Skip work entirely in git repos — the global PendingChangesBar handles those.
@@ -50,18 +54,19 @@ export const TurnChangedFilesDropdown: React.FC<TurnChangedFilesDropdownProps> =
         setPortalContainer(container || null);
     };
 
+    // The popover lists the same files the inline pills do, so a click opens the
+    // file itself, not the diff: both surfaces answer "which file".
     const handleOpenFile = (file: ChangedFileEntry) => {
         if (!currentDirectory) return;
 
-        const store = useUIStore.getState();
         const relativePath = toRelativePath(file.path, currentDirectory);
-        if (!store.isMobile) {
-            store.openContextDiff(currentDirectory, relativePath, false, 'turn');
-            setIsExpanded(false);
-            return;
-        }
-
-        store.navigateToDiff(relativePath, false, 'turn');
+        openChangedFile({
+            filePath: relativePath,
+            directory: currentDirectory,
+            activityParts,
+            runtime,
+            mobileActions,
+        });
         setIsExpanded(false);
     };
 

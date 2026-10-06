@@ -91,6 +91,7 @@ function Harness({ record, retired = false, changedFiles, isLatestTurn = true }:
                     turnId: 'user', isFirstAssistantInTurn: message === record.assistantMessages[0],
                     isLastAssistantInTurn: message === record.assistantMessages.at(-1),
                     isLatestTurn, changedFiles, isWorking: false, hasTools: record.hasTools, hasReasoning: record.hasReasoning,
+                    activityParts: record.activityParts,
                 }}
             />
         </div>
@@ -250,7 +251,7 @@ describe('live Activity with the real message body', () => {
         expect(container.querySelectorAll('button[aria-label^="Відкрити src/file-"]')).toHaveLength(4);
     });
 
-    test('a file without line counts shows its name alone, and one outside the turn diff is not a button', async () => {
+    test('a file without line counts shows its name alone, and every listed file opens', async () => {
         const record = turn([assistant('final', [text('answer', 'Done')], 'stop')]);
         await act(async () => root.render(<Harness record={record} changedFiles={[
             { file: 'src/a.ts' },
@@ -259,8 +260,49 @@ describe('live Activity with the real message body', () => {
         ]} />));
         expect(container.querySelector('button[aria-label="Open src/a.ts"]')?.textContent).toBe('a.ts');
         expect(container.querySelector('button[aria-label="Open src/b.ts"]')?.textContent).toBe('b.ts+1/-2');
-        expect(container.querySelector('button[aria-label="Open src/c.ts"]')).toBeNull();
-        expect(container.querySelector('span[title="src/c.ts"]')?.textContent).toBe('c.ts+1/-0');
+        // A path the turn diff has no entry for is still a file the reader can
+        // open: the pill answers "which file", not "what changed".
+        expect(container.querySelector('button[aria-label="Open src/c.ts"]')?.textContent).toBe('c.ts+1/-0');
+    });
+
+    test('a click opens the changed file at its first changed line', async () => {
+        const edit: Part = {
+            type: 'tool', tool: 'edit', id: 'edit', callID: 'edit', sessionID: 'session', messageID: 'progress',
+            state: { status: 'completed', input: { filePath: 'src/b.ts' }, output: '', title: 'Edit',
+                metadata: { files: [{ relativePath: 'src/b.ts', patch: '@@ -40,2 +41,3 @@\n-old\n+new\n+added' }] }, time: { start: 1, end: 2 } },
+        };
+        const record = turn([
+            assistant('progress', [edit], 'tool-calls'),
+            assistant('final', [text('answer', 'Done')], 'stop'),
+        ]);
+        useDirectoryStore.setState({ currentDirectory: '/project' });
+        await act(async () => root.render(<Harness record={record} changedFiles={[
+            { file: 'src/b.ts', additions: 2, deletions: 1 },
+        ]} />));
+
+        const chip = container.querySelector<HTMLButtonElement>('button[aria-label="Open src/b.ts"]');
+        expect(chip).not.toBeNull();
+        await act(async () => chip?.click());
+
+        expect(useUIStore.getState().pendingFileNavigation).toMatchObject({
+            path: '/project/src/b.ts',
+            line: 41,
+            column: 1,
+        });
+    });
+
+    test('a file whose patch is unknown still opens, at the top', async () => {
+        const record = turn([assistant('final', [text('answer', 'Done')], 'stop')]);
+        useDirectoryStore.setState({ currentDirectory: '/project' });
+        await act(async () => root.render(<Harness record={record} changedFiles={[{ file: 'src/a.ts' }]} />));
+
+        await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Open src/a.ts"]')?.click());
+
+        expect(useUIStore.getState().pendingFileNavigation).toMatchObject({
+            path: '/project/src/a.ts',
+            line: 1,
+            column: 1,
+        });
     });
 
     test('keeps historical files informational and withholds the list before stop', async () => {
@@ -272,6 +314,7 @@ describe('live Activity with the real message body', () => {
         expect(container.textContent).toContain('file-0.ts');
         await act(async () => container.querySelector<HTMLButtonElement>('[data-fixture-message="final"] button[aria-expanded]')?.click());
         expect(container.textContent).toContain('file-4.ts');
-        expect(container.querySelectorAll('button[aria-label^="Open src/file-"]')).toHaveLength(0);
+        // An earlier answer's files are just as openable as the latest turn's.
+        expect(container.querySelectorAll('button[aria-label^="Open src/file-"]')).toHaveLength(5);
     });
 });

@@ -9,7 +9,9 @@ import { MessageFilesDisplay } from '../FileAttachment';
 import { TurnChangedFilesDropdown } from '../TurnChangedFilesDropdown';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase, ToolPopupContent, AgentMentionInfo } from './types';
-import type { TurnActivityGroup, TurnChangedFile, TurnGroupingContext } from '../lib/turns/types';
+import type { TurnActivityGroup, TurnActivityRecord, TurnChangedFile, TurnGroupingContext } from '../lib/turns/types';
+import { openChangedFile } from '../changedFileOpen';
+import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { cn } from '@/lib/utils';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { isEmptyTextPart, extractTextContent } from './partUtils';
@@ -74,11 +76,11 @@ const getDisplayFileName = (file: string): string => {
     return segments.at(-1) ?? file;
 };
 
-const TurnChangedFileChipContent = React.memo(({ file, interactive = false }: { file: TurnChangedFile; interactive?: boolean }) => (
+const TurnChangedFileChipContent = React.memo(({ file }: { file: TurnChangedFile }) => (
     <span
         className={cn(
             'inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/30 bg-muted/30 px-2 py-1 text-xs text-muted-foreground',
-            interactive && 'transition-colors hover:border-border/60 hover:bg-interactive-hover'
+            'transition-colors hover:border-border/60 hover:bg-interactive-hover'
         )}
         style={{ lineHeight: 'round(1.35em, 1px)' }}
     >
@@ -114,51 +116,39 @@ const TurnChangedFilePillButton = React.memo(({
                 onOpen(file.file);
             }}
         >
-            <TurnChangedFileChipContent file={file} interactive />
+            <TurnChangedFileChipContent file={file} />
         </button>
     );
 });
 
-const StaticTurnChangedFilePills = React.memo(({ files }: { files: TurnChangedFile[] }) => (
-    <>
-        {files.map((file) => (
-            <span key={file.file} className="inline-flex h-8 max-w-full items-center" title={file.file}>
-                <TurnChangedFileChipContent file={file} />
-            </span>
-        ))}
-    </>
-));
-
-const InteractiveTurnChangedFilePills = React.memo(({ files }: { files: TurnChangedFile[] }) => {
+const InteractiveTurnChangedFilePills = React.memo(({
+    files,
+    activityParts,
+}: {
+    files: TurnChangedFile[];
+    activityParts?: TurnActivityRecord[];
+}) => {
     const effectiveDirectory = useEffectiveDirectory();
-    const isMobile = useUIStore((state) => state.isMobile);
-    const navigateToDiff = useUIStore((state) => state.navigateToDiff);
-    const openContextDiff = useUIStore((state) => state.openContextDiff);
+    const runtime = useRuntimeAPIs();
+    const mobileActions = useMobileAppActions();
 
-    const openLastTurnDiff = React.useCallback((file: string) => {
-        if (!isMobile && effectiveDirectory) {
-            openContextDiff(effectiveDirectory, file, false, 'turn');
-            return;
-        }
-
-        navigateToDiff(file, false, 'turn');
-    }, [effectiveDirectory, isMobile, navigateToDiff, openContextDiff]);
+    // A click opens the FILE the turn changed, at its first changed line. The
+    // diff view answers "what changed"; this list answers "which file", and a
+    // reader who picks a path out of it wants the file itself.
+    const openFile = React.useCallback((file: string) => {
+        openChangedFile({ filePath: file, directory: effectiveDirectory, activityParts, runtime, mobileActions });
+    }, [activityParts, effectiveDirectory, mobileActions, runtime]);
 
     return (
         <>
-            {files.map((file) => file.inTurnDiff === false ? (
-                // The turn diff has no entry to open for this path.
-                <span key={file.file} className="inline-flex h-8 max-w-full items-center" title={file.file}>
-                    <TurnChangedFileChipContent file={file} />
-                </span>
-            ) : (
-                <TurnChangedFilePillButton key={file.file} file={file} onOpen={openLastTurnDiff} />
+            {files.map((file) => (
+                <TurnChangedFilePillButton key={file.file} file={file} onOpen={openFile} />
             ))}
         </>
     );
 });
 
-const TurnChangedFilePills = React.memo(({ files, isInteractive }: { files?: TurnChangedFile[]; isInteractive: boolean }) => {
+const TurnChangedFilePills = React.memo(({ files, activityParts }: { files?: TurnChangedFile[]; activityParts?: TurnActivityRecord[] }) => {
     const { t } = useI18n();
     const [expanded, setExpanded] = React.useState(false);
     const triggerRef = React.useRef<HTMLButtonElement>(null);
@@ -171,9 +161,9 @@ const TurnChangedFilePills = React.memo(({ files, isInteractive }: { files?: Tur
     }, [expanded]);
     if (!files || files.length === 0) return null;
 
-    const Pills = isInteractive ? InteractiveTurnChangedFilePills : StaticTurnChangedFilePills;
+    const Pills = InteractiveTurnChangedFilePills;
     const visibleLimit = 4;
-    if (files.length <= visibleLimit) return <Pills files={files} />;
+    if (files.length <= visibleLimit) return <Pills files={files} activityParts={activityParts} />;
 
     return (
         <Collapsible
@@ -184,9 +174,9 @@ const TurnChangedFilePills = React.memo(({ files, isInteractive }: { files?: Tur
                 setExpanded(open);
             }}
         >
-            <Pills files={files.slice(0, visibleLimit)} />
+            <Pills files={files.slice(0, visibleLimit)} activityParts={activityParts} />
             <CollapsibleContent className={expanded ? 'contents transition-none' : 'hidden transition-none'}>
-                {expanded && <Pills files={files.slice(visibleLimit)} />}
+                {expanded && <Pills files={files.slice(visibleLimit)} activityParts={activityParts} />}
             </CollapsibleContent>
             <CollapsibleTrigger
                 ref={triggerRef}
@@ -2577,7 +2567,7 @@ const AssistantMessageBody = React.memo(({
                                 <TurnChangedFilesDropdown activityParts={turnGroupingContext?.activityParts} />
                                 <TurnChangedFilePills
                                     files={turnGroupingContext?.changedFiles}
-                                    isInteractive={turnGroupingContext?.isLatestTurn === true}
+                                    activityParts={turnGroupingContext?.activityParts}
                                 />
                             </div>
                         ) : null}

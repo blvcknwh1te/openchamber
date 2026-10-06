@@ -39,7 +39,11 @@ export interface TurnChangedFile {
     /** Absent when neither the turn diff nor the tool call reports line counts. */
     additions?: number;
     deletions?: number;
-    /** False when the turn diff view has no entry for this path, so a pill cannot open it. */
+    /**
+     * False when the turn diff view has no entry for this path. It decides
+     * whether the turn diff can show the file, not whether the reader can open
+     * it: the footer's file pills open the file itself.
+     */
     inTurnDiff?: boolean;
 }
 
