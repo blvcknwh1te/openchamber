@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import {
     getRowBottom,
+    resolveEndReport,
     resolveRealContentEndOffset,
     resolveTimelineIsAtEnd,
     resolveTopPinOffset,
+    shouldHoldEntrySettle,
     type TimelineListMeasurementState,
 } from './timelineScrollAnchoring';
 
@@ -189,5 +191,64 @@ describe('resolveTopPinOffset', () => {
             contentLength: 4000,
             scrollLength: undefined,
         })).toBeNull();
+    });
+});
+
+describe('resolveEndReport', () => {
+    test('reports reaching the end even when the end was already reported', () => {
+        expect(resolveEndReport(true, true)).toBe(true);
+    });
+
+    test('reports reaching the end from a free viewport', () => {
+        expect(resolveEndReport(false, true)).toBe(true);
+    });
+
+    test('reports leaving the end once', () => {
+        expect(resolveEndReport(true, false)).toBe(false);
+        expect(resolveEndReport(false, false)).toBeNull();
+    });
+});
+
+describe('shouldHoldEntrySettle', () => {
+    test('holds while the content height is still moving', () => {
+        expect(shouldHoldEntrySettle({
+            elapsedMs: 10,
+            capMs: 250,
+            stableFrames: 0,
+            stableFramesNeeded: 2,
+            atMeasuredEnd: true,
+        })).toBe(true);
+    });
+
+    test('holds after a stable height that is not yet the measured end', () => {
+        // The estimates stopped moving, but the rows still claim an end below
+        // the viewport: releasing here opens the session mid-history.
+        expect(shouldHoldEntrySettle({
+            elapsedMs: 10,
+            capMs: 250,
+            stableFrames: 5,
+            stableFramesNeeded: 2,
+            atMeasuredEnd: false,
+        })).toBe(true);
+    });
+
+    test('releases once the height settled and the measured end is reached', () => {
+        expect(shouldHoldEntrySettle({
+            elapsedMs: 10,
+            capMs: 250,
+            stableFrames: 2,
+            stableFramesNeeded: 2,
+            atMeasuredEnd: true,
+        })).toBe(false);
+    });
+
+    test('releases at the cap even when the end was never measured', () => {
+        expect(shouldHoldEntrySettle({
+            elapsedMs: 250,
+            capMs: 250,
+            stableFrames: 0,
+            stableFramesNeeded: 2,
+            atMeasuredEnd: false,
+        })).toBe(false);
     });
 });

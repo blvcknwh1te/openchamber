@@ -24,7 +24,7 @@ import type { StreamPhase } from './message/types';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionPartsForMessages } from '@/sync/sync-context';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
-import { resolveTimelineIsAtEnd } from './lib/scroll/timelineScrollAnchoring';
+import { resolveEndReport, resolveTimelineIsAtEnd } from './lib/scroll/timelineScrollAnchoring';
 import { measureMessageTop, messageElementSelector } from './lib/scroll/messageAnchor';
 import {
     USER_SHELL_MARKER,
@@ -1054,15 +1054,21 @@ const TimelineList = React.memo(({
     }, []);
 
     // The list reports scroll continuously; only end-crossings are interesting,
-    // so the edge is debounced to a state transition here rather than pushing a
-    // callback on every frame.
+    // so the report itself is debounced here rather than on every frame. A
+    // crossing into the end is always reported, even when the end was already
+    // reported — see resolveEndReport: a gesture that both leaves and reaches
+    // the end between two reports would otherwise be swallowed, and the owning
+    // hook, which left following on that gesture, would never be told the reader
+    // came back.
     const handleScroll = React.useCallback(() => {
         const state = listRef.current?.getState();
         if (!state) return;
         const isAtEnd = resolveTimelineIsAtEnd(state);
-        if (typeof isAtEnd !== 'boolean' || isAtEnd === isAtEndRef.current) return;
-        isAtEndRef.current = isAtEnd;
-        onIsAtEndChange(isAtEnd);
+        if (isAtEnd === undefined) return;
+        const report = resolveEndReport(isAtEndRef.current, isAtEnd);
+        if (report === null) return;
+        isAtEndRef.current = report;
+        onIsAtEndChange(report);
     }, [onIsAtEndChange]);
 
     // Data changes are the only moment an automatic correction can be needed;

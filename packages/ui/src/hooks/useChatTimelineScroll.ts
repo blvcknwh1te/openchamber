@@ -10,6 +10,7 @@ import {
     resolveRealContentEndOffset,
     resolveTimelineIsAtEnd,
     resolveTopPinOffset,
+    shouldHoldEntrySettle,
     TIMELINE_FOLLOW_REARM_THRESHOLD_PX,
     type TimelineListMeasurementState,
     type TimelineScrollMode,
@@ -569,6 +570,7 @@ export const useChatTimelineScroll = ({
             hideScrollButton();
             return;
         }
+
         if (isAtEndRef.current === isAtEnd) return;
         isAtEndRef.current = isAtEnd;
         setIsPinned(isAtEnd);
@@ -696,17 +698,6 @@ export const useChatTimelineScroll = ({
         // releases it without any extra state machine.
         if (topPinnedMessageIdRef.current !== null) return;
 
-        // A pending pin outranks everything below: the answer's top edge belongs
-        // at the top of the viewport as soon as it can reach it. The retry rides
-        // this growth signal, which the list already emits (the streaming tail
-        // grows inside one row), so it costs one measurement per growth event
-        // and only until the hold lands — no per-frame work, and no timer to
-        // outrun the layout. A pin is only ever ARMED on a streaming message id
-        // (see the top-pin effect), so a reader who released the hold by
-        // returning to the end is not pulled off the edge again here. Auto-follow
-        // off is excluded: with that preference growth must never move the
-        // viewport, and a wait outliving its first attempt is exactly growth
-        // moving it later.
         // A pending pin outranks everything below: the answer's top edge belongs
         // at the top of the viewport as soon as it can reach it. The retry rides
         // this growth signal, which the list already emits (the streaming tail
@@ -929,13 +920,24 @@ export const useChatTimelineScroll = ({
                 const end = height - scrollNode.clientHeight;
                 if (end - scrollNode.scrollTop > 1) scrollNode.scrollTop = end;
             }
+            // Two conditions have to hold before the entry lets go. The content
+            // height must have stopped moving — a list that is still resolving
+            // row estimates would be left wherever the last estimate put it. And
+            // the viewport must MEASURE as the end, from the real rows rather
+            // than the list's own estimated total, which is what every later
+            // correction uses: opening the session while the estimate still
+            // claims an end the rows do not have is how a long conversation
+            // landed mid-history.
             stableFrames = height === lastHeight ? stableFrames + 1 : 0;
             lastHeight = height;
             const now = typeof performance !== 'undefined' ? performance.now() : startedAt;
-            if (
-                stableFrames < ENTRY_SETTLE_STABLE_FRAMES
-                && now - startedAt < ENTRY_SETTLE_CAP_MS
-            ) {
+            if (shouldHoldEntrySettle({
+                elapsedMs: now - startedAt,
+                capMs: ENTRY_SETTLE_CAP_MS,
+                stableFrames,
+                stableFramesNeeded: ENTRY_SETTLE_STABLE_FRAMES,
+                atMeasuredEnd: realContentEndRelation() !== 'above',
+            })) {
                 frame = requestAnimationFrame(settle);
                 return;
             }
@@ -948,7 +950,7 @@ export const useChatTimelineScroll = ({
             entrySettleRef.current = false;
             releaseReveal?.();
         };
-    }, [currentSessionKey, revealGate, scrollNode]);
+    }, [currentSessionKey, realContentEndRelation, revealGate, scrollNode]);
 
     // ── pinned end ──────────────────────────────────────────────────────────
     // "At the end" is an invariant, not a one-time scroll: while the reader

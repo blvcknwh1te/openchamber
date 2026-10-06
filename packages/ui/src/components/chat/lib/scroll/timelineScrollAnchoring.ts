@@ -91,6 +91,51 @@ export const resolveRealContentEndOffset = ({
 // Keep return-to-end detection in a tight band, rather than half a viewport.
 export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
+// What a scroll position should be reported as, given what was reported last.
+//
+// `true` means "tell the owner the reader is on the end", `false` means "tell it
+// they left", and `null` means "nothing to say".
+//
+// Reaching the end is always reported, including when the last report already
+// said the end. The owner leaves following on a gesture, and a gesture whose
+// own scroll events place the viewport on the edge — a scrollbar drag back to
+// the bottom, a wheel whose final tick lands there — otherwise arrives as the
+// same value it reported before and is swallowed by the comparison. Nothing
+// then resumes following: corrections stay disabled and the viewport sits on the
+// live edge with the pill hidden. Leaving the end needs no such repeat: the
+// reported state is what the owner already left following for.
+export const resolveEndReport = (lastReported: boolean, isAtEnd: boolean): boolean | null => {
+    if (isAtEnd) return true;
+    return lastReported ? false : null;
+};
+
+// Whether the entry settle keeps writing the end for another frame.
+//
+// Opening a session has to land the end of the REAL rows: the list lays its
+// rows out from estimates and corrects them as they measure, so the total it
+// reports early is not the one the session ends up with. Releasing on a single
+// write — or as soon as the height stops moving for a frame, while the viewport
+// is still short of the end the rows already claim — is how a long conversation
+// opened mid-history.
+//
+// So the hold ends only when both hold: the content height has settled AND the
+// viewport measures at the end of the real rows. The cap is the escape hatch for
+// a session that can never settle, which would otherwise keep the settle running
+// for as long as the reader stays in the session.
+export const shouldHoldEntrySettle = ({
+    elapsedMs,
+    capMs,
+    stableFrames,
+    stableFramesNeeded,
+    atMeasuredEnd,
+}: {
+    readonly elapsedMs: number;
+    readonly capMs: number;
+    readonly stableFrames: number;
+    readonly stableFramesNeeded: number;
+    readonly atMeasuredEnd: boolean;
+}): boolean => elapsedMs < capMs && !(stableFrames >= stableFramesNeeded && atMeasuredEnd);
+
 export const resolveTimelineIsAtEnd = (
     state: {
         readonly contentLength?: number;
