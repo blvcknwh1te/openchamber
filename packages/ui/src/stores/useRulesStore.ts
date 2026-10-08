@@ -6,8 +6,11 @@ import {
   dedupeRules,
   expandEntryPattern,
   resolveEntryDirectory,
+  resolveProjectRuleFiles,
+  ruleScopeForPath,
   selectEntryFiles,
   toRuleInfo,
+  toRuleSourceEntry,
 } from "@/lib/rules/resolveRules";
 import type { RuleInfo } from "@/lib/rules/resolveRules";
 import { resolveRuleHome } from "@/lib/rules/ruleHome";
@@ -82,21 +85,29 @@ const EMPTY_RULES: RuleInfo[] = [];
 
 /**
  * Expands one `instructions` entry into rule files. A missing entry is not an
- * error: the config legitimately points at files a project may not have.
+ * error: the config legitimately points at files a project may not have. A
+ * relative entry belongs to the project the session works in, so it is resolved
+ * against that directory instead of the process working directory.
  */
-const resolveInstructionEntry = async (entry: string, home: string | null): Promise<RuleInfo[]> => {
-  const directory = resolveEntryDirectory(entry, home);
-  if (!directory) return [];
+const resolveInstructionEntry = async (
+  entry: string,
+  home: string | null,
+  directory: string | null,
+): Promise<RuleInfo[]> => {
+  const source = toRuleSourceEntry(entry, directory);
+  const parent = resolveEntryDirectory(source, home);
+  if (!parent) return [];
 
   let entries: Awaited<ReturnType<typeof opencodeClient.listLocalDirectory>>;
   try {
-    entries = await opencodeClient.listLocalDirectory(directory);
+    entries = await opencodeClient.listLocalDirectory(parent);
   } catch {
     return [];
   }
 
-  return selectEntryFiles(expandEntryPattern(entry, home), entries)
-    .map((file) => toRuleInfo(file, 'user'));
+  const scope = ruleScopeForPath(parent, directory);
+  return selectEntryFiles(expandEntryPattern(source, home), entries)
+    .map((file) => toRuleInfo(file, scope));
 };
 
 export const useRulesStore = create<RulesStore>()(
@@ -153,12 +164,19 @@ export const useRulesStore = create<RulesStore>()(
               const resolved = await Promise.all(
                 instructions
                   .filter((entry) => entry.trim().length > 0)
-                  .map((entry) => resolveInstructionEntry(entry, home)),
+                  .map((entry) => resolveInstructionEntry(entry, home, directory)),
+              );
+
+              // A project keeps its rules in `.agents/rules` next to the
+              // config's own entries, so it is discovered without a config line.
+              const projectRules = await resolveProjectRuleFiles(
+                directory,
+                (path) => opencodeClient.listLocalDirectory(path),
               );
 
               // The same file can be named twice, or by both a user and a
-              // project entry; it must count once.
-              const activeRules = dedupeRules(resolved.flat());
+              // project entry; it must count once. The config's order wins.
+              const activeRules = dedupeRules([...resolved.flat(), ...projectRules]);
 
               if (generation !== rulesGeneration) return false;
               set((state) => {

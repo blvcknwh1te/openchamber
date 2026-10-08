@@ -8,7 +8,13 @@
  * so the picker's list can be reasoned about and tested on its own.
  */
 
-import { expandHomePath, normalizeFilePath } from '@/lib/path-utils';
+import {
+  expandHomePath,
+  isAbsoluteFilePath,
+  isFilePathWithinDirectory,
+  normalizeFilePath,
+  toAbsoluteFilePath,
+} from '@/lib/path-utils';
 
 export type RuleScope = 'user' | 'project';
 
@@ -79,6 +85,66 @@ const basename = (filePath: string): string => {
 };
 
 const canonicalPath = (filePath: string): string => normalizeFilePath(filePath).toLowerCase();
+
+/**
+ * The project's own rules directory, as an absolute pattern.
+ *
+ * A project expresses its rules the same way the global config does, in a
+ * directory next to it, so the picker reads both through one mechanism instead
+ * of a second, project-only channel. The value is absolute because a relative
+ * path would be resolved against the server process, which is not necessarily
+ * the project.
+ */
+const PROJECT_RULES_ENTRY = '.agents/rules/*.md';
+
+export const toRuleSourceEntry = (
+  entry: string,
+  directory: string | null | undefined,
+): string => {
+  const trimmed = entry.trim();
+  // A `~` entry belongs to the user, not to the project, so it must keep its
+  // own expansion instead of being joined onto the project directory.
+  if (!trimmed || trimmed.startsWith('~') || isAbsoluteFilePath(trimmed)) {
+    return trimmed;
+  }
+  return toAbsoluteFilePath(directory, trimmed);
+};
+
+/** Which bucket a rule belongs to: inside the project directory, or the user's own. */
+export const ruleScopeForPath = (
+  filePath: string | null | undefined,
+  directory: string | null | undefined,
+): RuleScope =>
+  isFilePathWithinDirectory(filePath, directory) ? 'project' : 'user';
+
+/**
+ * Resolves the project's own rules, in addition to whatever the config names.
+ *
+ * A project keeps its rules in `.agents/rules`, the same way the user keeps
+ * theirs in a global rules directory, and both are meant to reach the picker.
+ * The project directory is the session's working directory: it is the
+ * directory the agent works in, and a rule tucked into a subdirectory of it is
+ * still the project's rule.
+ */
+export const resolveProjectRuleFiles = async (
+  directory: string | null | undefined,
+  listDirectory: (path: string) => Promise<readonly RuleListEntry[]>,
+): Promise<RuleInfo[]> => {
+  const entry = toRuleSourceEntry(PROJECT_RULES_ENTRY, directory);
+  const parent = entry ? resolveEntryDirectory(entry, null) : null;
+  // Without a project directory the entry stays relative, and a relative path
+  // would be resolved against the server process instead of the project.
+  if (!parent || !isAbsoluteFilePath(parent)) return [];
+
+  let entries: readonly RuleListEntry[];
+  try {
+    entries = await listDirectory(parent);
+  } catch {
+    return [];
+  }
+
+  return selectEntryFiles(entry, entries).map((file) => toRuleInfo(file, 'project'));
+};
 
 /**
  * Picks the files one `instructions` entry points at.
