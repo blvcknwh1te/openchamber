@@ -3,6 +3,9 @@ import type { DesktopBootOutcome } from '@/lib/desktopBoot';
 declare global {
   interface Window {
     __OPENCHAMBER_HOME__?: string;
+    // The user's real home directory, when the host knows it. Distinct from
+    // __OPENCHAMBER_HOME__, which is the folder the UI is rooted in.
+    __OPENCHAMBER_USER_HOME__?: string;
     __OPENCHAMBER_MACOS_MAJOR__?: number;
     __OPENCHAMBER_LOCAL_ORIGIN__?: string;
     __OPENCHAMBER_ELECTRON__?: { runtime?: string; arch?: string; trayEnabled?: boolean };

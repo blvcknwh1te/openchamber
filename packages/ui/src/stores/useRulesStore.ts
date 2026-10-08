@@ -10,6 +10,7 @@ import {
   toRuleInfo,
 } from "@/lib/rules/resolveRules";
 import type { RuleInfo } from "@/lib/rules/resolveRules";
+import { resolveRuleHome } from "@/lib/rules/ruleHome";
 import { useDirectoryStore } from "./useDirectoryStore";
 
 /**
@@ -144,7 +145,10 @@ export const useRulesStore = create<RulesStore>()(
             try {
               const config = await opencodeClient.getConfig(directory);
               const instructions = Array.isArray(config?.instructions) ? config.instructions : [];
-              const home = useDirectoryStore.getState().homeDirectory || null;
+              const home = resolveRuleHome(
+                typeof window !== 'undefined' ? window.__OPENCHAMBER_USER_HOME__ : undefined,
+                useDirectoryStore.getState().homeDirectory,
+              );
 
               const resolved = await Promise.all(
                 instructions

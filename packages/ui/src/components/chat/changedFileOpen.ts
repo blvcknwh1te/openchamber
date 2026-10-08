@@ -20,7 +20,7 @@ import { useUIStore } from '@/stores/useUIStore';
  * path recorded in the turn diff without a matching part (a write made by a
  * delegated subagent, for instance) has no line and opens at the top.
  */
-export const findChangedFileLine = (
+const findChangedFileLine = (
     activityParts: TurnActivityRecord[] | undefined,
     filePath: string,
 ): number | undefined => {

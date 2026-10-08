@@ -560,6 +560,13 @@ export const useChatTimelineScroll = ({
         // real end in one jump. Only a viewport that MEASURES as the end
         // releases the hold.
         if (isAtEnd && realContentEndRelation() !== 'above') releaseTopPin();
+        // A hold puts the viewport mid-answer, so the list reports an end that
+        // is no longer reached. That departure is the hold itself, never a
+        // gesture, so the pill stays offered: the reader needs the way back.
+        if (!isAtEnd && topPinnedMessageIdRef.current !== null) {
+            scheduleShowScrollButton();
+            return;
+        }
         // While an automatic movement owns the viewport, leaving the end is our
         // own doing (the glide trails its target between corrections) — not a
         // reason to offer the pill. Only a
@@ -1089,13 +1096,14 @@ export const useChatTimelineScroll = ({
         topPinRequestRef.current = null;
         topPinnedMessageIdRef.current = messageId;
         setTopPinnedMessageId(messageId);
-        // The pin is not the reader leaving the end: keep the pill hidden and
-        // the live-follow generation armed so a later return to the end is
-        // still recognised.
-        hideScrollButton();
+        // A hold is not the end: the reader is left mid-answer with content
+        // below them, so the way back to the live edge must be offered. Keeping
+        // it hidden left the pill inert exactly when it was needed — the chip
+        // carried a status label but no way to act on it.
+        scheduleShowScrollButton();
         void listRef.current?.scrollToOffset({ offset, animated: false });
         return true;
-    }, [hideScrollButton, scrollNode, stickyHeaderHeight]);
+    }, [scheduleShowScrollButton, scrollNode, stickyHeaderHeight]);
     attemptTopPinRef.current = attemptTopPin;
 
     React.useEffect(() => {
@@ -1106,7 +1114,10 @@ export const useChatTimelineScroll = ({
         // falls back to the streaming id, which is the previous behaviour.
         const anchorId = answerAnchorMessageId ?? activeStreamingMessageId;
         if (anchorId === null) {
-            // No answer in flight: the next answer arms a hold of its own.
+            // No answer in flight: the next answer arms a hold of its own. A
+            // gap between two steps of the SAME answer looks like this too, and
+            // the session is still working there, so the hold is kept — see the
+            // stop-of-work effect, which is what ends a hold.
             lastTopPinAnchorRef.current = null;
             return;
         }
@@ -1157,13 +1168,16 @@ export const useChatTimelineScroll = ({
     }, [activeStreamingMessageId, answerAnchorMessageId, attemptTopPin]);
 
     // A request that never resolved belongs to the turn that raised it: once the
-    // session stops working no answer is streaming, so it is dropped. The hold
-    // itself is NOT — the reader keeps reading the answer from the top edge they
-    // were given, exactly as when a gesture had not happened.
+    // session stops working no answer is streaming, so it is dropped, and the
+    // hold ends with the answer that earned it. Releasing moves nothing — the
+    // reader keeps the position they were given — it only stops suppressing the
+    // follow corrections, so a question card or an allow prompt that lands at
+    // the end can still bring them back to it. A hold that outlived its answer
+    // left growth at the end invisible: the chat looked frozen.
     React.useEffect(() => {
         if (sessionIsWorking) return;
-        topPinRequestRef.current = null;
-    }, [sessionIsWorking]);
+        releaseTopPin();
+    }, [releaseTopPin, sessionIsWorking]);
 
     // Suppress the overlay scrollbar thumb while automatic movement owns the
     // scroll position, so it does not jump on each correction.

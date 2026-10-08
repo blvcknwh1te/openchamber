@@ -265,6 +265,14 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       customCssPath: ${customCssPathJson},
     };
     window.__OPENCHAMBER_HOME__ = "${workspaceFolder.replace(/\\/g, '\\\\')}";
+    // The real user home, which is NOT the same thing as __OPENCHAMBER_HOME__:
+    // that one is the folder the UI is rooted in (the workspace) and is what the
+    // directory tree navigates. Config entries such as "instructions" are
+    // written against the user's home (for example
+    // ~/.config/opencode/rules/*.md), so expanding them against the workspace
+    // resolved to a path that does not exist and every home-relative rule
+    // silently vanished from the composer picker.
+    window.__OPENCHAMBER_USER_HOME__ = "${os.homedir().replace(/\\/g, '\\\\')}";
     // VS Code's display language. The UI bundle uses it as the default locale
     // until the user picks one; the splash below picks its strings from it too.
     window.__OPENCHAMBER_HOST_LANGUAGE__ = ${JSON.stringify(vscode.env.language)};
