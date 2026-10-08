@@ -223,6 +223,7 @@ export const listDirectoryEntries = async (dirPath: string) => {
     name,
     path: normalizeFsPath(vscode.Uri.joinPath(uri, name).fsPath),
     isDirectory: fileType === vscode.FileType.Directory,
+    isFile: fileType === vscode.FileType.File,
   }));
 };
 

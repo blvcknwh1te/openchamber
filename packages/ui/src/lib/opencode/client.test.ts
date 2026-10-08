@@ -305,3 +305,45 @@ describe('opencodeClient prompt retry behavior', () => {
     expect(promptAsyncCalls).toHaveLength(0);
   });
 });
+
+describe('opencodeClient local directory listing', () => {
+  type ListedEntry = { name: string; isFile: boolean; isDirectory: boolean };
+  const listing = (body: unknown): Response => new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  test('treats a listing that omits isFile as files, so rule discovery sees them', async () => {
+    runtimeFetchResults.push(listing({
+      path: '/home/user/.config/opencode/rules',
+      entries: [
+        { name: 'assume-then-act.md', path: '/home/user/.config/opencode/rules/assume-then-act.md', isDirectory: false },
+        { name: 'nested', path: '/home/user/.config/opencode/rules/nested', isDirectory: true },
+      ],
+    }));
+
+    const entries = await opencodeClient.listLocalDirectory('/home/user/.config/opencode/rules');
+
+    expect(entries.map((entry: ListedEntry) => ({ name: entry.name, isFile: entry.isFile, isDirectory: entry.isDirectory }))).toEqual([
+      { name: 'assume-then-act.md', isFile: true, isDirectory: false },
+      { name: 'nested', isFile: false, isDirectory: true },
+    ]);
+  });
+
+  test('keeps an explicit isFile instead of deriving it from isDirectory', async () => {
+    runtimeFetchResults.push(listing({
+      path: '/home/user/.config/opencode/rules-links',
+      entries: [
+        { name: 'link.md', path: '/home/user/.config/opencode/rules-links/link.md', isDirectory: false, isFile: false },
+        { name: 'real.md', path: '/home/user/.config/opencode/rules-links/real.md', isDirectory: false, isFile: true },
+      ],
+    }));
+
+    const entries = await opencodeClient.listLocalDirectory('/home/user/.config/opencode/rules-links');
+
+    expect(entries.map((entry: ListedEntry) => ({ name: entry.name, isFile: entry.isFile }))).toEqual([
+      { name: 'link.md', isFile: false },
+      { name: 'real.md', isFile: true },
+    ]);
+  });
+});

@@ -28,6 +28,7 @@ mock.module('vscode', () => ({
     file: (fsPath) => ({ fsPath }),
   },
   FileType: {
+    File: 1,
     Directory: 2,
   },
   window: {},
@@ -84,5 +85,28 @@ describe('bridge fs exec git read cache', () => {
     await handleFsBridgeMessage({ id: '2', type: 'api:fs:exec', payload: { commands: [command], cwd } }, deps);
 
     expect(execCalls).toHaveLength(2);
+  });
+});
+
+describe('bridge fs list', () => {
+  it('passes entries on with isFile, because the rules picker filters by it', async () => {
+    const listDeps = {
+      ...deps,
+      listDirectoryEntries: mock(async () => [
+        { name: 'assume-then-act.md', path: '/home/user/.config/opencode/rules/assume-then-act.md', isDirectory: false, isFile: true },
+        { name: 'nested', path: '/home/user/.config/opencode/rules/nested', isDirectory: true, isFile: false },
+      ]),
+    };
+
+    const response = await handleFsBridgeMessage(
+      { id: '1', type: 'api:fs:list', payload: { path: '/home/user/.config/opencode/rules' } },
+      listDeps,
+    );
+
+    expect(response?.success).toBe(true);
+    expect(response?.data?.entries).toEqual([
+      { name: 'assume-then-act.md', path: '/home/user/.config/opencode/rules/assume-then-act.md', isDirectory: false, isFile: true },
+      { name: 'nested', path: '/home/user/.config/opencode/rules/nested', isDirectory: true, isFile: false },
+    ]);
   });
 });

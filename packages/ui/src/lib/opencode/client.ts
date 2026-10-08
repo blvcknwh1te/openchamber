@@ -286,6 +286,26 @@ type FilesystemEntry = {
   isSymbolicLink?: boolean;
 };
 
+/** A listing source may leave `isFile` out, so a non-directory entry is a file. */
+type FilesystemEntrySource = {
+  name: string;
+  path: string;
+  isDirectory?: boolean;
+  isFile?: boolean;
+  isSymbolicLink?: boolean;
+};
+
+const toFilesystemEntry = (entry: FilesystemEntrySource): FilesystemEntry => {
+  const isDirectory = !!entry.isDirectory;
+  return {
+    name: entry.name,
+    path: normalizeFsPath(entry.path),
+    isDirectory,
+    isFile: typeof entry.isFile === 'boolean' ? entry.isFile : !isDirectory,
+    isSymbolicLink: !!entry.isSymbolicLink,
+  };
+};
+
 export type ProjectFileSearchHit = {
   name: string;
   path: string;
@@ -1801,13 +1821,7 @@ class OpencodeService {
               reason: 'invalid-response',
             });
           }
-          const entries = result.entries.map<FilesystemEntry>((entry) => ({
-            name: entry.name,
-            path: normalizeFsPath(entry.path),
-            isDirectory: !!entry.isDirectory,
-            isFile: !entry.isDirectory,
-            isSymbolicLink: false,
-          }));
+          const entries = result.entries.map(toFilesystemEntry);
           this.listDirectoryCache.set(cacheKey, {
             entries,
             expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS,
@@ -1840,7 +1854,7 @@ class OpencodeService {
           });
         }
 
-        const entries = result.entries as FilesystemEntry[];
+        const entries = (result.entries as FilesystemEntrySource[]).map(toFilesystemEntry);
         this.listDirectoryCache.set(cacheKey, {
           entries,
           expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS,
